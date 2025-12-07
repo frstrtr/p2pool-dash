@@ -8,7 +8,13 @@ Generic:
 * Zope.interface >=3.8.0
 * pycrypto >= 2.6.1
 
-Linux:
+Ubuntu 24.04 Automated Installer (Recommended):
+-------------------------
+For Ubuntu 24.04 systems, we provide an automated installer script that sets up PyPy2, builds a local OpenSSL 1.1, and configures p2pool with systemd integration. This is the easiest and most reliable method for modern Ubuntu systems.
+
+    ./install_p2pool_ubuntu_2404.sh
+
+Linux (Manual Installation):
 
     sudo apt-get install python2 python2-dev python2-twisted python2-pip-whl python2-setuptools-whl
     sudo apt-get install gcc g++
