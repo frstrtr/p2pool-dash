@@ -22,19 +22,20 @@ class ChecksummedType(pack.Type):
         self.checksum_func = checksum_func
     
     def read(self, file):
-        obj, file = self.inner.read(file)
+        obj = self.inner.read(file)
         data = self.inner.pack(obj)
         
         calculated_checksum = self.checksum_func(data)
-        checksum, file = pack.read(file, len(calculated_checksum))
+        checksum = file.read(len(calculated_checksum))
         if checksum != calculated_checksum:
             raise ValueError('invalid checksum')
         
-        return obj, file
+        return obj
     
     def write(self, file, item):
         data = self.inner.pack(item)
-        return (file, data), self.checksum_func(data)
+        file.write(data)
+        file.write(self.checksum_func(data))
 
 class FloatingInteger(object):
     __slots__ = ['bits', '_target']
@@ -80,11 +81,11 @@ class FloatingIntegerType(pack.Type):
     _inner = pack.IntType(32)
     
     def read(self, file):
-        bits, file = self._inner.read(file)
-        return FloatingInteger(bits), file
+        bits = self._inner.read(file)
+        return FloatingInteger(bits)
     
     def write(self, file, item):
-        return self._inner.write(file, item.bits)
+        self._inner.write(file, item.bits)
 
 address_type = pack.ComposedType([
     ('services', pack.IntType(64)),

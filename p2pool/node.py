@@ -247,14 +247,14 @@ class Node(object):
                 dash_data.hash256(dash_data.tx_type.pack(tx)): tx,
             })
         # forward transactions seen to dashd
-        @self.known_txs_var.transitioned.watch
+        @self.known_txs_var.added.watch
         @defer.inlineCallbacks
-        def _(before, after):
+        def _(added):
             yield deferral.sleep(random.expovariate(1/1))
             if self.factory.conn.value is None:
                 return
-            for tx_hash in set(after) - set(before):
-                self.factory.conn.value.send_tx(tx=after[tx_hash])
+            for tx_hash, tx in added.iteritems():
+                self.factory.conn.value.send_tx(tx=tx)
         
         @self.tracker.verified.added.watch
         def _(share):

@@ -40,7 +40,14 @@ def getwork(dashd, net, use_getblocktemplate=True):
             raise deferral.RetrySilentlyException()
 
     if work['transactions']:
-        packed_transactions = [(x['data'] if isinstance(x, dict) else x).decode('hex') for x in work['transactions']]
+        packed_transactions = []
+        for x in work['transactions']:
+            if isinstance(x, dict):
+                if x.get('depends'):
+                    continue
+                packed_transactions.append(x['data'].decode('hex'))
+            else:
+                packed_transactions.append(x.decode('hex'))
     else:
         packed_transactions = [ ]
     if 'height' not in work:
