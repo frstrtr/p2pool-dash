@@ -78,7 +78,7 @@ class HeightTracker(object):
         if last in self._requested:
             return
         self._requested.add(last)
-        (yield self._factory.getProtocol()).send_getheaders(version=1, have=[], last=last)
+        (yield self._factory.getProtocol()).send_getheaders(version=70238, have=[], last=last)
     
     def get_height_rel_highest(self, block_hash):
         # callers: highest height can change during yields!
