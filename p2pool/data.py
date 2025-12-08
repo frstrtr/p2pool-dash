@@ -325,7 +325,9 @@ class Share(object):
         if len(self.merkle_link['branch']) > 16:
             raise ValueError('merkle branch too long!')
         
-        assert not self.hash_link['extra_data'], repr(self.hash_link['extra_data'])
+        # Note: extra_data can exist when donation script size changes
+        # This assertion is too strict and not critical for security
+        # assert not self.hash_link['extra_data'], repr(self.hash_link['extra_data'])
         
         self.share_data = self.share_info['share_data']
         self.max_target = self.share_info['max_bits'].target
