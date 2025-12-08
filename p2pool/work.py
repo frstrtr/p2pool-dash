@@ -33,7 +33,8 @@ class WorkerBridge(worker_interface.WorkerBridge):
 		
         self.donation_percentage = args.donation_percentage
         self.worker_fee = args.worker_fee
-
+        self.p2pool_node_fee = args.p2pool_node_fee
+        self.p2pool_node_pubkey_hash = args.p2pool_node_pubkey_hash
 
         self.net = self.node.net.PARENT
         self.running = True
@@ -210,7 +211,11 @@ class WorkerBridge(worker_interface.WorkerBridge):
             if (c - self.pubkeys.stamp) > self.args.timeaddresses:
                 self.freshen_addresses(c)
 
-        if random.uniform(0, 100) < self.worker_fee:
+        # Apply p2pool node fee first (charged on all shares)
+        if self.p2pool_node_fee > 0 and random.uniform(0, 100) < self.p2pool_node_fee:
+            pubkey_hash = self.p2pool_node_pubkey_hash
+        # Then apply worker fee (for miners using their own address)
+        elif random.uniform(0, 100) < self.worker_fee:
             pubkey_hash = self.my_pubkey_hash
         else:
             try:
