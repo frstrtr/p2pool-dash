@@ -48,8 +48,50 @@ def load_share(share, net, peer_addr):
         return Share(net, peer_addr, Share.share_type.unpack(share['contents']))
     else:
         raise ValueError('unknown share type: %r' % (share['type'],))
-# XdgF55wEHBRWwbuBniNYH4GvvaoYMgL84u => p2pool-dash donation address (replaces lost eduffield key)
-DONATION_SCRIPT = '76a91420cb5c22b1e4d5947e5c112c7696b51ad9af3c6188ac'.decode('hex')
+
+def compressed_to_uncompressed_pubkey(compressed_hex):
+    """
+    Convert compressed public key to uncompressed format for P2PK donation script.
+    Compressed format: 02/03 + 32 bytes (33 bytes total)
+    Uncompressed format: 04 + 64 bytes (65 bytes total)
+    Uses pure Python with secp256k1 curve parameters (no external dependencies).
+    """
+    compressed = compressed_hex.decode('hex')
+    if len(compressed) != 33:
+        raise ValueError('Compressed pubkey must be 33 bytes')
+    
+    # Get the x coordinate (32 bytes after the prefix)
+    prefix = ord(compressed[0])
+    x = int(compressed[1:].encode('hex'), 16)
+    
+    # Secp256k1 curve parameters: y^2 = x^3 + 7 (mod p)
+    p = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F
+    
+    # Calculate y^2 = x^3 + 7 (mod p)
+    y_squared = (pow(x, 3, p) + 7) % p
+    
+    # Calculate y = sqrt(y^2) mod p using Fermat's little theorem
+    # For p ≡ 3 (mod 4), y = y_squared^((p+1)/4) mod p
+    y = pow(y_squared, (p + 1) // 4, p)
+    
+    # Choose the correct y based on prefix (02 = even, 03 = odd)
+    if (prefix == 0x02 and y % 2 != 0) or (prefix == 0x03 and y % 2 == 0):
+        y = p - y
+    
+    # Format as uncompressed key: 04 + x (32 bytes) + y (32 bytes)
+    uncompressed = '04' + ('%064x' % x) + ('%064x' % y)
+    return uncompressed.decode('hex')
+
+# XdgF55wEHBRWwbuBniNYH4GvvaoYMgL84u => p2pool-dash donation address
+# Compressed pubkey: 02fe6578f8021a7d466787827b3f26437aef88279ef380af326f87ec362633293a
+# Convert to uncompressed P2PK format (original P2Pool style: 0x41 <65-byte pubkey> 0xac)
+try:
+    uncompressed_pubkey = compressed_to_uncompressed_pubkey('02fe6578f8021a7d466787827b3f26437aef88279ef380af326f87ec362633293a')
+    # P2PK script format: 0x41 (length 65) + pubkey (65 bytes) + 0xac (OP_CHECKSIG)
+    DONATION_SCRIPT = '\x41' + uncompressed_pubkey + '\xac'
+except:
+    # Fallback to P2PKH if conversion fails
+    DONATION_SCRIPT = '76a914dc40fa48655277bccd8b99fe3b2e1f7e2c81f75888ac'.decode('hex')
 
 class Share(object):
     VERSION = 16
