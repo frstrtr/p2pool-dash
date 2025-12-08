@@ -16,7 +16,7 @@ from p2pool.util import math, forest, pack
 
 hash_link_type = pack.ComposedType([
     ('state', pack.FixedStrType(32)),
-    ('extra_data', pack.FixedStrType(0)), # bit of a hack, but since the donation script is at the end, const_ending is long enough to always make this empty
+    ('extra_data', pack.VarStrType()), # Changed from FixedStrType(0) to VarStrType() to support variable donation script sizes
     ('length', pack.VarIntType()),
 ])
 
