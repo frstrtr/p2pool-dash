@@ -13,3 +13,4 @@ build/
 ltc_scrypt.so
 
 .DS_Store
+.github/
