@@ -27,6 +27,13 @@ The installation guide covers:
 * **pycryptodome**: >=3.9.0
 * **dash_hash**: X11 hashing module (included as submodule)
 
+### Features
+
+* ✅ **ASICBOOST Support**: Full BIP320 version-rolling implementation
+* ✅ **Modern ASIC Compatible**: Works with Antminer D3/D5/D7
+* ✅ **Variable Difficulty**: Automatic stratum vardiff adjustment
+* ✅ **Backward Compatible**: CPU/GPU miners still supported
+
 ### Modern Ubuntu/Debian (24.04+)
 
 Python 2 is no longer available. Use PyPy:

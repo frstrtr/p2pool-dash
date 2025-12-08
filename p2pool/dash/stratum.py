@@ -27,7 +27,7 @@ class StratumRPCMiningProvider(object):
         
         self.recent_shares = []
         self.target = None
-        self.share_rate = wb.share_rate
+        self.share_rate = getattr(self.wb.net, 'STRATUM_SHARE_RATE', 10)  # From p2pool network config
         self.fixed_target = False
         self.desired_pseudoshare_target = None
     
@@ -46,7 +46,13 @@ class StratumRPCMiningProvider(object):
             self.authorized = username
         self.username = username.strip()
         
-        self.user, self.address, self.desired_share_target, self.desired_pseudoshare_target = self.wb.get_user_details(username)
+        # Dash doesn't have get_user_details, so we just parse the username directly
+        # Username can be: address, address+difficulty, address/difficulty
+        self.user = self.username
+        self.address = self.username.split('+')[0].split('/')[0]
+        self.desired_share_target = None
+        self.desired_pseudoshare_target = None
+        
         reactor.callLater(0, self._send_work)
         return True
     
@@ -85,7 +91,8 @@ class StratumRPCMiningProvider(object):
             self.target = max(self.target, int(x['bits'].target))
         else:
             self.fixed_target = False
-            self.target = x['share_target'] if self.target == None else max(x['min_share_target'], self.target)
+            # Dash doesn't have min_share_target, just use share_target or keep current
+            self.target = x['share_target'] if self.target == None else self.target
         
         jobid = str(random.randrange(2**128))
         self.other.svc_mining.rpc_set_difficulty(dash_data.target_to_difficulty(self.target)).addErrback(lambda err: None)
@@ -147,7 +154,8 @@ class StratumRPCMiningProvider(object):
                 if newtarget != self.target:
                     print "Clipping target from %064x to %064x" % (self.target, newtarget)
                 self.target = newtarget
-                self.target = max(x['min_share_target'], self.target)
+                # Dash doesn't have min_share_target, ensure target doesn't go below share_target
+                self.target = max(x['share_target'], self.target)
                 self.recent_shares = [time.time()]
                 self._send_work()
         
@@ -161,7 +169,8 @@ class StratumProtocol(jsonrpc.LineBasedPeer):
         self.svc_mining = StratumRPCMiningProvider(self.factory.wb, self.other, self.transport)
     
     def connectionLost(self, reason):
-        self.svc_mining.close()
+        if hasattr(self, 'svc_mining'):
+            self.svc_mining.close()
 
 class StratumServerFactory(protocol.ServerFactory):
     protocol = StratumProtocol

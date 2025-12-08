@@ -26,3 +26,4 @@ ADDRESS_EXPLORER_URL_PREFIX = 'https://chainz.cryptoid.info/dash/address.dws?'
 TX_EXPLORER_URL_PREFIX = 'https://chainz.cryptoid.info/dash/tx.dws?'
 SANE_TARGET_RANGE = (2**256//2**32//1000000 - 1, 2**256//2**32 - 1)
 DUST_THRESHOLD = 0.001e8
+STRATUM_SHARE_RATE = 10  # Target seconds per pseudoshare for stratum vardiff

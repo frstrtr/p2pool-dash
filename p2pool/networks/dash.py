@@ -17,3 +17,4 @@ WORKER_PORT = 7903
 BOOTSTRAP_ADDRS = 'dash01.p2poolmining.us dash02.p2poolmining.us dash03.p2poolmining.us crypto.office-on-the.net dash04.p2poolmining.us'.split(' ')
 ANNOUNCE_CHANNEL = '#p2pool-dash'
 VERSION_CHECK = lambda v: v >= 200000
+STRATUM_SHARE_RATE = 10  # Target seconds per pseudoshare for stratum vardiff
