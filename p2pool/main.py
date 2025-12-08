@@ -559,12 +559,6 @@ def run():
     worker_group.add_argument('-f', '--fee', metavar='FEE_PERCENTAGE',
         help='''charge workers mining to their own dash address (by setting their miner's username to a dash address) this percentage fee to mine on your p2pool instance. Amount displayed at http://127.0.0.1:WORKER_PORT/fee (default: 0)''',
         type=float, action='store', default=0, dest='worker_fee')
-    worker_group.add_argument('--p2pool-node-fee', metavar='FEE_PERCENTAGE',
-        help='charge all workers this percentage fee that goes to the node operator address (default: 0)',
-        type=float, action='store', default=0, dest='p2pool_node_fee')
-    worker_group.add_argument('--p2pool-node-address', metavar='ADDRESS',
-        help='dash address to receive p2pool node fees (required if --p2pool-node-fee is set)',
-        type=str, action='store', default=None, dest='p2pool_node_address')
     worker_group.add_argument('-s', '--share-rate', metavar='SECONDS_PER_SHARE',
         help='Auto-adjust stratum mining difficulty on each connection to target this many seconds per pseudoshare (default: 10)',
         type=float, action='store', default=10., dest='share_rate')
@@ -671,19 +665,6 @@ def run():
             parser.error('error parsing address: ' + repr(e))
     else:
         args.pubkey_hash = None
-    
-    # Validate p2pool node fee configuration
-    if args.p2pool_node_fee < 0 or args.p2pool_node_fee > 100:
-        parser.error('p2pool-node-fee must be between 0 and 100')
-    if args.p2pool_node_fee > 0 and args.p2pool_node_address is None:
-        parser.error('p2pool-node-address is required when p2pool-node-fee is set')
-    if args.p2pool_node_address is not None:
-        try:
-            args.p2pool_node_pubkey_hash = dash_data.address_to_pubkey_hash(args.p2pool_node_address, net.PARENT)
-        except Exception as e:
-            parser.error('error parsing p2pool-node-address: ' + repr(e))
-    else:
-        args.p2pool_node_pubkey_hash = None
     
     def separate_url(url):
         s = urlparse.urlsplit(url)
