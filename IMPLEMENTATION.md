@@ -26,13 +26,14 @@
   - dash_hash (compiled C extension from https://github.com/dashpay/dash_hash)
 
 ### P2Pool Configuration
-- **Branch**: master (commit e9b5f57)
+- **Branch**: master (commit e9b5f57 + ASICBOOST upgrade)
 - **Mode**: Standalone (PERSIST=False)
-- **Stratum Port**: 7903
+- **Stratum Port**: 7903 (with ASICBOOST support)
 - **P2P Port**: 8999
 - **Payout Address**: XdgF55wEHBRWwbuBniNYH4GvvaoYMgL84u
+- **ASICBOOST**: Enabled (version-rolling mask: 0x1fffe000)
 
-## Bugs Fixed
+## Bugs Fixed & Enhancements
 
 ### 1. Missing Type Classes in pack.py
 **Issue**: BCH port (commit 4af5916) accidentally removed critical type classes needed for Dash transaction serialization.
@@ -115,6 +116,7 @@ p2pool.util.jsonrpc.NarrowError: -12345 p2pool is not connected to any peers
 - [x] PyPy and Python dependencies installed
 - [x] dash_hash module compiled and installed
 - [x] Fixed 5 critical p2pool bugs
+- [x] **UPGRADED STRATUM WITH ASICBOOST SUPPORT** (jtoomim's implementation)
 - [x] P2pool starts successfully
 - [x] Stratum server listening on port 7903
 - [x] Miner successfully connects to stratum server
