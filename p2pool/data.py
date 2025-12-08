@@ -48,8 +48,8 @@ def load_share(share, net, peer_addr):
         return Share(net, peer_addr, Share.share_type.unpack(share['contents']))
     else:
         raise ValueError('unknown share type: %r' % (share['type'],))
-# XqPQ26xGigKkq4yCNmTfgkRPdt8FyB547J => it`s eduffield address
-DONATION_SCRIPT = '41047559d13c3f81b1fadbd8dd03e4b5a1c73b05e2b980e00d467aa9440b29c7de23664dde6428d75cafed22ae4f0d302e26c5c5a5dd4d3e1b796d7281bdc9430f35ac'.decode('hex')
+# XdgF55wEHBRWwbuBniNYH4GvvaoYMgL84u => p2pool-dash donation address (replaces lost eduffield key)
+DONATION_SCRIPT = '76a91420cb5c22b1e4d5947e5c112c7696b51ad9af3c6188ac'.decode('hex')
 
 class Share(object):
     VERSION = 16

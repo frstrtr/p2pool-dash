@@ -55,8 +55,10 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         height, last = node.tracker.get_height_and_last(node.best_share_var.value)
         weights, total_weight, donation_weight = node.tracker.get_cumulative_weights(node.best_share_var.value, min(height, 720), 65535*2**256)
         res = {}
-        for addr in sorted(weights, key=lambda s: weights[s]):
-            res[addr] = weights[addr]/total_weight
+        for script in sorted(weights, key=lambda s: weights[s]):
+            address = bitcoin_data.script2_to_address(script, node.net.PARENT)
+            if address is not None:
+                res[address] = weights[script]/total_weight
         return res
     
     def get_current_scaled_txouts(scale, trunc=0):
@@ -208,8 +210,9 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             node.tracker.get_height(node.best_share_var.value), node.net.PARENT)))
     web_root.putChild('fee', WebInterface(lambda: wb.worker_fee))
     web_root.putChild('current_payouts', WebInterface(lambda: dict(
-        (address, value/1e8) for address, value
-            in node.get_current_txouts().iteritems())))
+        (bitcoin_data.script2_to_address(script, node.net.PARENT), value/1e8)
+        for script, value in node.get_current_txouts().iteritems()
+        if bitcoin_data.script2_to_address(script, node.net.PARENT) is not None)))
     web_root.putChild('patron_sendmany', WebInterface(get_patron_sendmany, 'text/plain'))
     web_root.putChild('global_stats', WebInterface(get_global_stats))
     web_root.putChild('local_stats', WebInterface(get_local_stats))
@@ -226,9 +229,9 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         ])
     ))))
     web_root.putChild('peer_versions', WebInterface(lambda: dict(('%s:%i' % peer.addr, peer.other_sub_version) for peer in node.p2p_node.peers.itervalues())))
-    web_root.putChild('payout_addr', WebInterface(lambda: wb.address))
+    web_root.putChild('payout_addr', WebInterface(lambda: getattr(wb, 'address', None)))
     web_root.putChild('payout_addrs', WebInterface(
-        lambda: list(add['address'] for add in wb.pubkeys.keys)))
+        lambda: [bitcoin_data.pubkey_hash_to_address(pubkey_hash, node.net.PARENT) for pubkey_hash in wb.pubkeys.keys]))
     web_root.putChild('recent_blocks', WebInterface(lambda: [dict(
         ts=s.timestamp,
         hash='%064x' % s.header_hash,
@@ -261,9 +264,9 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         miner_hash_rates, miner_dead_hash_rates = wb.get_local_rates()
         
         my_current_payout=0.0
-        for add in wb.pubkeys.keys:
+        for pubkey_hash in wb.pubkeys.keys:
             my_current_payout += node.get_current_txouts().get(
-                    add['address'], 0)*1e-8
+                    pubkey_hash, 0)*1e-8
         stat_log.append(dict(
             time=time.time(),
             pool_hash_rate=p2pool_data.get_pool_attempts_per_second(node.tracker, node.best_share_var.value, lookbehind)/(1-global_stale_prop),
@@ -309,10 +312,8 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                 timestamp=share.timestamp,
                 target=share.target,
                 max_target=share.max_target,
-                payout_address=share.address if share.address else
-                                bitcoin_data.script2_to_address(
+                payout_address=bitcoin_data.script2_to_address(
                                     share.new_script,
-                                    node.net.PARENT.ADDRESS_VERSION,
                                     node.net.PARENT),
                 donation=share.share_data['donation']/65535,
                 stale_info=share.share_data['stale_info'],
@@ -461,7 +462,12 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                     pubkey_hash, 0) * 1e-8
         hd.datastreams['current_payout'].add_datum(t, my_current_payouts)
         miner_hash_rates, miner_dead_hash_rates = wb.get_local_rates()
-        current_txouts_by_address = current_txouts
+        # Convert script bytes to address strings for matching with miner_hash_rates
+        current_txouts_by_address = dict(
+            (bitcoin_data.script2_to_address(script, node.net.PARENT), value)
+            for script, value in current_txouts.iteritems()
+            if bitcoin_data.script2_to_address(script, node.net.PARENT) is not None
+        )
         hd.datastreams['current_payouts'].add_datum(t, dict((user, current_txouts_by_address[user]*1e-8) for user in miner_hash_rates if user in current_txouts_by_address))
         
         hd.datastreams['peers'].add_datum(t, dict(
