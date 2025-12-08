@@ -72,7 +72,7 @@ def getwork(dashd, net, use_getblocktemplate=True):
 
     for obj in payment_objects:
         g={}
-        if 'payee' in obj:
+        if 'payee' in obj and obj['payee']:  # Skip empty payee addresses
             g['payee'] = str(obj['payee'])
             g['amount'] = obj['amount']
             if g['amount'] > 0:
