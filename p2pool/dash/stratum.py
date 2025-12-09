@@ -24,6 +24,11 @@ class StratumRPCMiningProvider(object):
         self.worker_ip = transport.getPeer().host if transport else None  # Track worker IP
         self.handler_map = expiring_dict.ExpiringDict(300)
         
+        # Extranonce support for ASICs
+        self.extranonce_subscribe = False
+        self.extranonce1 = ""
+        self.last_extranonce_update = 0
+        
         self.watch_id = self.wb.new_work_event.watch(self._send_work)
         
         self.recent_shares = []
@@ -76,7 +81,11 @@ class StratumRPCMiningProvider(object):
         if 'minimum-difficulty' in extensions:
             print 'Extension method minimum-difficulty not implemented'
         if 'subscribe-extranonce' in extensions:
-            print 'Extension method subscribe-extranonce not implemented'
+            # Enable extranonce subscription for this connection (required for ASICs)
+            self.extranonce_subscribe = True
+            print '>>>ExtranOnce subscribed from %s' % (self.worker_ip)
+            # Return value indicates support
+            return {"subscribe-extranonce": True}
     
     def _send_work(self):
         try:
@@ -94,6 +103,15 @@ class StratumRPCMiningProvider(object):
             self.fixed_target = False
             # Use min_share_target as lower bound for difficulty adjustment
             self.target = x['share_target'] if self.target == None else max(x['min_share_target'], self.target)
+        
+        # For ASIC compatibility: periodically send extranonce updates
+        # Even with empty extranonce, this helps ASICs reset their state
+        if self.extranonce_subscribe:
+            current_time = time.time()
+            # Send extranonce update every 30 seconds or on first work
+            if current_time - self.last_extranonce_update > 30:
+                self._notify_extranonce_change()
+                self.last_extranonce_update = current_time
         
         jobid = str(random.randrange(2**128))
         self.other.svc_mining.rpc_set_difficulty(dash_data.target_to_difficulty(self.target)).addErrback(lambda err: None)
@@ -163,6 +181,66 @@ class StratumRPCMiningProvider(object):
                 self._send_work()
         
         return result
+    
+    def rpc_set_extranonce(self, extranonce1, extranonce2_size):
+        """
+        Handle mining.set_extranonce from pool/proxy
+        
+        This is sent BY THE POOL to miners when extranonce changes.
+        Miners that subscribed to 'subscribe-extranonce' expect this.
+        
+        Args:
+            extranonce1: New extranonce1 value (hex string)
+            extranonce2_size: Size of extranonce2 in bytes (integer)
+        
+        Returns:
+            True on success
+        """
+        if not self.extranonce_subscribe:
+            # Miner didn't subscribe to extranonce updates
+            return False
+        
+        # Update the extranonce for this connection
+        if extranonce1:
+            self.extranonce1 = extranonce1
+        else:
+            self.extranonce1 = ""
+        
+        if extranonce2_size != self.wb.COINBASE_NONCE_LENGTH:
+            print >>sys.stderr, 'WARNING: extranonce2_size mismatch: expected %d, got %d' % (
+                self.wb.COINBASE_NONCE_LENGTH, extranonce2_size)
+        
+        print '>>>Set extranonce: %s (size=%d) for %s' % (
+            extranonce1 if extranonce1 else "(empty)", 
+            extranonce2_size, 
+            self.worker_ip
+        )
+        
+        return True
+    
+    def _notify_extranonce_change(self, new_extranonce1=None):
+        """
+        Notify miners that subscribed to extranonce updates
+        Called when extranonce needs to change (e.g., reconnection, long mining session)
+        """
+        if not self.extranonce_subscribe:
+            return
+        
+        # Use current or new extranonce1
+        extranonce1 = new_extranonce1 if new_extranonce1 is not None else self.extranonce1
+        extranonce2_size = self.wb.COINBASE_NONCE_LENGTH
+        
+        # Send mining.set_extranonce notification to miner
+        self.other.svc_mining.rpc_set_extranonce(
+            extranonce1,
+            extranonce2_size
+        ).addErrback(lambda err: None)
+        
+        print '>>>Notified extranonce change to %s: %s (size=%d)' % (
+            self.worker_ip,
+            extranonce1 if extranonce1 else "(empty)",
+            extranonce2_size
+        )
     
     def close(self):
         self.wb.new_work_event.unwatch(self.watch_id)
