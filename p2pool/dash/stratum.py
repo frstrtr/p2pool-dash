@@ -48,7 +48,6 @@ class StratumRPCMiningProvider(object):
     
     def rpc_authorize(self, username, password):
         if not hasattr(self, 'authorized'):  # authorize can be called many times in one connection
-            print '>>>Authorize: %s from %s' % (username, self.worker_ip)
             self.authorized = username
         self.username = username.strip()
         
@@ -92,9 +91,15 @@ class StratumRPCMiningProvider(object):
     def _send_work(self):
         try:
             x, got_response = self.wb.get_work(*self.wb.preprocess_request('' if self.username is None else self.username))
-        except:
-            log.err()
-            self.transport.loseConnection()
+        except Exception as e:
+            # Don't disconnect for temporary errors like "lost contact with dashd"
+            # Just log and skip this work update - miner will keep working on old job
+            error_msg = str(e)
+            if 'lost contact' in error_msg or 'not connected' in error_msg:
+                # Temporary error - don't spam logs, just skip
+                pass
+            else:
+                log.err(None, 'Error getting work for stratum:')
             return
         
         if self.desired_pseudoshare_target:
@@ -103,14 +108,17 @@ class StratumRPCMiningProvider(object):
             self.target = max(self.target, int(x['bits'].target))
         else:
             self.fixed_target = False
-            # Use min_share_target as lower bound for difficulty adjustment
-            self.target = x['share_target'] if self.target == None else max(x['min_share_target'], self.target)
-            print '>>>Target for %s: diff=%.6f target=%064x (share_target=%064x)' % (
-                self.username or 'unknown',
-                dash_data.target_to_difficulty(self.target),
-                self.target,
-                x['share_target']
-            )
+            # min_share_target = maximum allowed target (easiest difficulty = P2Pool floor ~1.0)
+            # This is a CEILING on the target value (smaller target = harder difficulty)
+            max_allowed_target = x['min_share_target']
+            
+            if self.target is None:
+                # First connection: start at P2Pool share chain difficulty floor
+                self.target = max_allowed_target
+            else:
+                # Vardiff is active: keep current target but enforce ceiling
+                # Use min() because lower target = harder difficulty
+                self.target = min(self.target, max_allowed_target)
         
         # For ASIC compatibility: periodically send extranonce updates
         # Even with empty extranonce, this helps ASICs reset their state
@@ -121,7 +129,9 @@ class StratumRPCMiningProvider(object):
                 self._notify_extranonce_change()
                 self.last_extranonce_update = current_time
         
-        jobid = str(random.randrange(2**128))
+        # Use short job IDs for ASIC compatibility (8 hex chars max)
+        # ASICs like Antminer truncate long job IDs causing "job_id does not change" errors
+        jobid = '%08x' % random.randrange(2**32)
         self.other.svc_mining.rpc_set_difficulty(dash_data.target_to_difficulty(self.target)).addErrback(lambda err: None)
         self.other.svc_mining.rpc_notify(
             jobid, # jobid
@@ -139,14 +149,39 @@ class StratumRPCMiningProvider(object):
     def rpc_submit(self, worker_name, job_id, extranonce2, ntime, nonce, version_bits=None, *args):
         # ASICBOOST: version_bits is the version mask that the miner used
         worker_name = worker_name.strip()
-        print '>>>rpc_submit called: worker=%s job=%s extranonce2=%s' % (worker_name, job_id[:16], extranonce2[:8])
+        
+        # Rate limiting: drop submissions if coming too fast (more than 100/sec)
+        # This prevents server overload when difficulty is too low
+        now = time.time()
+        if not hasattr(self, '_last_submit_time'):
+            self._last_submit_time = 0
+            self._rapid_submit_count = 0
+        
+        time_since_last = now - self._last_submit_time
+        if time_since_last < 0.01:  # More than 100 submissions/sec
+            self._rapid_submit_count += 1
+            if self._rapid_submit_count > 10:
+                # Drop submission silently to reduce load, but still return True
+                # to avoid miner reconnecting
+                return True
+        else:
+            self._rapid_submit_count = 0
+        self._last_submit_time = now
+        
         if job_id not in self.handler_map:
-            print >>sys.stderr, '''Couldn't link returned work's job id with its handler (stale job). job_id=%s''' % (job_id[:16],)
-            return False
+            print >>sys.stderr, 'Stale job submission from %s: job_id=%s not found' % (worker_name, job_id[:16])
+            # Return error with reason for stratum protocol
+            raise ValueError('Stale job: %s' % job_id[:16])
         
         x, got_response = self.handler_map[job_id]
-        coinb_nonce = extranonce2.decode('hex')
-        assert len(coinb_nonce) == self.wb.COINBASE_NONCE_LENGTH
+        try:
+            coinb_nonce = extranonce2.decode('hex')
+        except Exception as e:
+            raise ValueError('Invalid extranonce2: %s' % str(e))
+        
+        if len(coinb_nonce) != self.wb.COINBASE_NONCE_LENGTH:
+            raise ValueError('Invalid extranonce2 length: got %d, expected %d' % (len(coinb_nonce), self.wb.COINBASE_NONCE_LENGTH))
+        
         new_packed_gentx = x['coinb1'] + coinb_nonce + x['coinb2']
         
         job_version = x['version']
@@ -169,29 +204,52 @@ class StratumRPCMiningProvider(object):
             nonce=pack.IntType(32).unpack(getwork._swap4(nonce.decode('hex'))),
         )
         # Dash's got_response takes 3 args: (header, user, coinbase_nonce)
-        # Bitcoin's takes 4: (header, username, coinbase_nonce, pseudoshare_target)
-        print '>>>Submit from %s (job %s, extranonce2 %s)' % (worker_name, job_id[:8], extranonce2[:8])
         result = got_response(header, worker_name, coinb_nonce)
-        if result:
-            print '>>>Submit accepted from %s' % (worker_name,)
-        else:
-            print '>>>Submit rejected from %s (stale/invalid)' % (worker_name,)
         
-        # Adjust difficulty on this stratum to target ~10sec/pseudoshare
+        # Aggressive vardiff: adjust difficulty to target ~share_rate seconds per pseudoshare
+        # For high-hashrate ASICs, we need to ramp up difficulty quickly to avoid flooding
         if not self.fixed_target:
-            self.recent_shares.append(time.time())
-            if len(self.recent_shares) > 12 or (time.time() - self.recent_shares[0]) > 10 * len(self.recent_shares) * self.share_rate:
-                old_time = self.recent_shares[0]
-                del self.recent_shares[0]
-                olddiff = dash_data.target_to_difficulty(self.target)
-                self.target = int(self.target * clip((time.time() - old_time) / (len(self.recent_shares) * self.share_rate), 0.5, 2.) + 0.5)
+            now = time.time()
+            self.recent_shares.append(now)
+            
+            # Aggressive adjustment: trigger on fewer shares and allow larger jumps
+            # Trigger if we have 3+ shares OR time exceeded (faster trigger than standard 12)
+            num_shares = len(self.recent_shares)
+            time_elapsed = now - self.recent_shares[0] if num_shares > 0 else 0
+            target_time = num_shares * self.share_rate
+            
+            # Adjust if: 3+ shares collected, OR time significantly exceeds/undershoots target
+            should_adjust = (num_shares >= 3 or 
+                            (num_shares >= 1 and time_elapsed > 2 * target_time) or
+                            (num_shares >= 1 and time_elapsed < target_time / 4))
+            
+            if should_adjust and num_shares > 0:
+                # Calculate actual share rate vs target
+                actual_rate = time_elapsed / num_shares if num_shares > 0 else self.share_rate
+                adjustment = actual_rate / self.share_rate
+                
+                # Allow larger adjustments (0.25x to 4x) for faster response
+                adjustment = clip(adjustment, 0.25, 4.0)
+                
+                old_diff = dash_data.target_to_difficulty(self.target)
+                self.target = int(self.target * adjustment + 0.5)
+                
+                # Clip to sane range
                 newtarget = clip(self.target, self.wb.net.SANE_TARGET_RANGE[0], self.wb.net.SANE_TARGET_RANGE[1])
                 if newtarget != self.target:
-                    print "Clipping target from %064x to %064x" % (self.target, newtarget)
-                self.target = newtarget
-                # Ensure target doesn't go below minimum share target
-                self.target = max(x['min_share_target'], self.target)
-                self.recent_shares = [time.time()]
+                    self.target = newtarget
+                
+                # Enforce ceiling on target (floor on difficulty) - use min() because lower target = harder
+                # min_share_target is the maximum allowed target (easiest difficulty = P2Pool floor)
+                self.target = min(x['min_share_target'], self.target)
+                
+                new_diff = dash_data.target_to_difficulty(self.target)
+                if abs(new_diff - old_diff) / old_diff > 0.1:  # Only log significant changes
+                    print 'Vardiff %s: %.2f -> %.2f (%.1f shares in %.1fs, target %.1fs)' % (
+                        worker_name, old_diff, new_diff, num_shares, time_elapsed, target_time)
+                
+                # Reset and send new work
+                self.recent_shares = [now]
                 self._send_work()
         
         return result

@@ -1,7 +1,7 @@
 import sys
 import time
 
-from twisted.internet import defer
+from twisted.internet import defer, error as twisted_error
 
 import p2pool
 from p2pool.dash import data as dash_data
@@ -29,6 +29,12 @@ def getwork(dashd, net, use_getblocktemplate=True):
         start = time.time()
         work = yield go()
         end = time.time()
+    except twisted_error.TimeoutError:
+        print >>sys.stderr, '    dashd RPC timeout - dashd may be busy or overloaded, retrying...'
+        raise deferral.RetrySilentlyException()
+    except twisted_error.ConnectionRefusedError:
+        print >>sys.stderr, '    dashd connection refused - is dashd running?'
+        raise deferral.RetrySilentlyException()
     except jsonrpc.Error_for_code(-32601): # Method not found
         use_getblocktemplate = not use_getblocktemplate
         try:

@@ -368,9 +368,14 @@ class WorkerBridge(worker_interface.WorkerBridge):
                     dash_data.average_attempts_to_target(local_hash_rate * 1)) # limit to 1 share response every second by modulating pseudoshare difficulty
         else:
             target = desired_pseudoshare_target
-        target = max(target, share_info['bits'].target)
         for aux_work, index, hashes in mm_later:
             target = max(target, aux_work['target'])
+        
+        # Critical fix: enforce P2Pool share difficulty floor, but also respect SANE_TARGET_RANGE
+        # When bootstrap (0 shares), share_info['bits'].target = MAX_TARGET (easy)
+        # SANE_TARGET_RANGE[1] is the minimum difficulty floor for this network
+        p2pool_share_floor = min(share_info['bits'].target, self.node.net.PARENT.SANE_TARGET_RANGE[1])
+        target = max(target, p2pool_share_floor)
         target = math.clip(target, self.node.net.PARENT.SANE_TARGET_RANGE)
 
         getwork_time = time.time()
@@ -399,6 +404,9 @@ class WorkerBridge(worker_interface.WorkerBridge):
         if gentx['version'] == 3 and gentx['type'] == 5:
             coinbase_payload_data_size = len(pack.VarStrType().pack(gentx['extra_payload']))
 
+        # Fixed based on jtoomim's p2pool implementation
+        # share_target = vardiff pseudoshare difficulty (already floored at p2pool_share_floor above)
+        # min_share_target = P2Pool share chain difficulty floor (respects SANE_TARGET_RANGE)
         ba = dict(
             version=self.current_work.value['version'],
             previous_block=self.current_work.value['previous_block'],
@@ -407,8 +415,8 @@ class WorkerBridge(worker_interface.WorkerBridge):
             coinb2=packed_gentx[-coinbase_payload_data_size-4:],
             timestamp=self.current_work.value['time'],
             bits=self.current_work.value['bits'],
-            min_share_target=share_info['bits'].target,  # Minimum share difficulty
-            share_target=target,
+            min_share_target=min(share_info['bits'].target, self.node.net.PARENT.SANE_TARGET_RANGE[1]),  # P2Pool share difficulty floor
+            share_target=target,  # Vardiff pseudoshare target (already floored)
         )
 
         received_header_hashes = set()
@@ -437,7 +445,10 @@ class WorkerBridge(worker_interface.WorkerBridge):
             assert header['merkle_root'] == dash_data.check_merkle_link(dash_data.hash256(new_packed_gentx), merkle_link)
             assert header['bits'] == ba['bits']
 
-            on_time = self.new_work_event.times == lp_count
+            # Allow shares that are within 3 work events of current (grace period for network latency)
+            # Work events fire on new blocks, new best shares, etc. - can be rapid
+            work_event_diff = self.new_work_event.times - lp_count
+            on_time = work_event_diff <= 3  # Allow up to 3 work events behind
 
             for aux_work, index, hashes in mm_later:
                 try:
