@@ -491,6 +491,11 @@ class WorkerBridge(worker_interface.WorkerBridge):
                     log.err(None, 'Error forwarding block solution:')
 
                 self.share_received.happened(dash_data.target_to_average_attempts(share.target), not on_time, share.hash)
+                
+                # Update local rate monitor for shares (they are also pseudoshares)
+                self.local_rate_monitor.add_datum(dict(work=dash_data.target_to_average_attempts(target), dead=not on_time, user=user, share_target=share_info['bits'].target))
+                self.local_addr_rate_monitor.add_datum(dict(work=dash_data.target_to_average_attempts(target), pubkey_hash=pubkey_hash))
+                received_header_hashes.add(header_hash)
 
             if pow_hash > target:
                 print 'Worker %s submitted share with hash > target:' % (user,)
