@@ -134,7 +134,7 @@ class CachingWorkerBridge(object):
         
         res = (
             dict(x, coinb1=x['coinb1'] + pack.IntType(self._my_bits).pack(nonce)),
-            lambda header, user, coinbase_nonce: handler(header, user, pack.IntType(self._my_bits).pack(nonce) + coinbase_nonce),
+            lambda header, user, coinbase_nonce, submitted_target=None: handler(header, user, pack.IntType(self._my_bits).pack(nonce) + coinbase_nonce, submitted_target),
         )
         
         if nonce + 1 != 2**self._my_bits:

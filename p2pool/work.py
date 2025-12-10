@@ -371,11 +371,12 @@ class WorkerBridge(worker_interface.WorkerBridge):
         for aux_work, index, hashes in mm_later:
             target = max(target, aux_work['target'])
         
-        # Critical fix: enforce P2Pool share difficulty floor, but also respect SANE_TARGET_RANGE
-        # When bootstrap (0 shares), share_info['bits'].target = MAX_TARGET (easy)
-        # SANE_TARGET_RANGE[1] is the minimum difficulty floor for this network
-        p2pool_share_floor = min(share_info['bits'].target, self.node.net.PARENT.SANE_TARGET_RANGE[1])
-        target = max(target, p2pool_share_floor)
+        # Clip to SANE_TARGET_RANGE: [min_target (hardest), max_target (easiest)]
+        # SANE_TARGET_RANGE[0] = lowest target = highest difficulty (e.g., 10000)
+        # SANE_TARGET_RANGE[1] = highest target = lowest difficulty (e.g., 1)
+        # We do NOT enforce P2Pool share floor here - that would prevent vardiff from
+        # setting difficulty higher than the (potentially easy) P2Pool share chain.
+        # Stratum separately checks if shares meet P2Pool criteria before crediting them.
         target = math.clip(target, self.node.net.PARENT.SANE_TARGET_RANGE)
 
         getwork_time = time.time()
@@ -421,7 +422,11 @@ class WorkerBridge(worker_interface.WorkerBridge):
 
         received_header_hashes = set()
 
-        def got_response(header, user, coinbase_nonce):
+        def got_response(header, user, coinbase_nonce, submitted_target=None):
+            # submitted_target: optional override for the target the miner was actually working at
+            # This is needed for vardiff - stratum adjusts target after get_work() returns
+            effective_target = submitted_target if submitted_target is not None else target
+            
             assert len(coinbase_nonce) == self.COINBASE_NONCE_LENGTH
             new_packed_gentx = packed_gentx[:-coinbase_payload_data_size-self.COINBASE_NONCE_LENGTH-4] + coinbase_nonce + packed_gentx[-coinbase_payload_data_size-4:] if coinbase_nonce != '\0'*self.COINBASE_NONCE_LENGTH else packed_gentx
             new_gentx = dash_data.tx_type.unpack(new_packed_gentx) if coinbase_nonce != '\0'*self.COINBASE_NONCE_LENGTH else gentx
@@ -504,24 +509,27 @@ class WorkerBridge(worker_interface.WorkerBridge):
                 self.share_received.happened(dash_data.target_to_average_attempts(share.target), not on_time, share.hash)
                 
                 # Update local rate monitor for shares (they are also pseudoshares)
-                self.local_rate_monitor.add_datum(dict(work=dash_data.target_to_average_attempts(target), dead=not on_time, user=user, share_target=share_info['bits'].target))
-                self.local_addr_rate_monitor.add_datum(dict(work=dash_data.target_to_average_attempts(target), pubkey_hash=pubkey_hash))
+                # Use effective_target (vardiff target) for work calculation
+                self.local_rate_monitor.add_datum(dict(work=dash_data.target_to_average_attempts(effective_target), dead=not on_time, user=user, share_target=share_info['bits'].target))
+                self.local_addr_rate_monitor.add_datum(dict(work=dash_data.target_to_average_attempts(effective_target), pubkey_hash=pubkey_hash))
                 received_header_hashes.add(header_hash)
-            elif pow_hash > target:
+            elif pow_hash > effective_target:
                 print 'Worker %s submitted share with hash > target:' % (user,)
                 print '    Hash:   %56x' % (pow_hash,)
-                print '    Target: %56x' % (target,)
+                print '    Target: %56x' % (effective_target,)
             elif header_hash in received_header_hashes:
                 print >>sys.stderr, 'Worker %s submitted share more than once!' % (user,)
             else:
                 received_header_hashes.add(header_hash)
 
-                self.pseudoshare_received.happened(dash_data.target_to_average_attempts(target), not on_time, user)
-                self.recent_shares_ts_work.append((time.time(), dash_data.target_to_average_attempts(target)))
+                work_value = dash_data.target_to_average_attempts(effective_target)
+                print 'DEBUG: Pseudoshare work=%d target=%x diff=%.2f' % (work_value, effective_target, dash_data.target_to_difficulty(effective_target))
+                self.pseudoshare_received.happened(work_value, not on_time, user)
+                self.recent_shares_ts_work.append((time.time(), work_value))
                 while len(self.recent_shares_ts_work) > 50:
                     self.recent_shares_ts_work.pop(0)
-                self.local_rate_monitor.add_datum(dict(work=dash_data.target_to_average_attempts(target), dead=not on_time, user=user, share_target=share_info['bits'].target))
-                self.local_addr_rate_monitor.add_datum(dict(work=dash_data.target_to_average_attempts(target), pubkey_hash=pubkey_hash))
+                self.local_rate_monitor.add_datum(dict(work=work_value, dead=not on_time, user=user, share_target=share_info['bits'].target))
+                self.local_addr_rate_monitor.add_datum(dict(work=work_value, pubkey_hash=pubkey_hash))
 
             return on_time
 

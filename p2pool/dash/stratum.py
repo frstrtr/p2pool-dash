@@ -103,22 +103,18 @@ class StratumRPCMiningProvider(object):
             return
         
         if self.desired_pseudoshare_target:
+            # Fixed target from username parsing (e.g., "wallet+1000")
+            # Note: we do NOT cap this at P2Pool share floor - vardiff should be
+            # allowed to go harder than the (potentially easy) bootstrap P2Pool chain
             self.fixed_target = True
             self.target = self.desired_pseudoshare_target
-            self.target = max(self.target, int(x['bits'].target))
         else:
             self.fixed_target = False
-            # min_share_target = maximum allowed target (easiest difficulty = P2Pool floor ~1.0)
-            # This is a CEILING on the target value (smaller target = harder difficulty)
-            max_allowed_target = x['min_share_target']
-            
+            # Start at a reasonable default difficulty that will quickly adjust via vardiff
+            # Don't cap at min_share_target - that would prevent vardiff from going harder
             if self.target is None:
-                # First connection: start at P2Pool share chain difficulty floor
-                self.target = max_allowed_target
-            else:
-                # Vardiff is active: keep current target but enforce ceiling
-                # Use min() because lower target = harder difficulty
-                self.target = min(self.target, max_allowed_target)
+                # First connection: start at difficulty 1 (easy), vardiff will adjust up
+                self.target = x['min_share_target']
         
         # For ASIC compatibility: periodically send extranonce updates
         # Even with empty extranonce, this helps ASICs reset their state
@@ -132,7 +128,8 @@ class StratumRPCMiningProvider(object):
         # Use short job IDs for ASIC compatibility (8 hex chars max)
         # ASICs like Antminer truncate long job IDs causing "job_id does not change" errors
         jobid = '%08x' % random.randrange(2**32)
-        self.other.svc_mining.rpc_set_difficulty(dash_data.target_to_difficulty(self.target)).addErrback(lambda err: None)
+        job_target = self.target  # Capture the target that will be sent with this job
+        self.other.svc_mining.rpc_set_difficulty(dash_data.target_to_difficulty(job_target)).addErrback(lambda err: None)
         self.other.svc_mining.rpc_notify(
             jobid, # jobid
             getwork._swap4(pack.IntType(256).pack(x['previous_block'])).encode('hex'), # prevhash
@@ -144,7 +141,7 @@ class StratumRPCMiningProvider(object):
             getwork._swap4(pack.IntType(32).pack(x['timestamp'])).encode('hex'), # ntime
             True, # clean_jobs
         ).addErrback(lambda err: None)
-        self.handler_map[jobid] = x, got_response
+        self.handler_map[jobid] = x, got_response, job_target  # Store job_target with the job
     
     def rpc_submit(self, worker_name, job_id, extranonce2, ntime, nonce, version_bits=None, *args):
         # ASICBOOST: version_bits is the version mask that the miner used
@@ -173,7 +170,7 @@ class StratumRPCMiningProvider(object):
             # Return error with reason for stratum protocol
             raise ValueError('Stale job: %s' % job_id[:16])
         
-        x, got_response = self.handler_map[job_id]
+        x, got_response, job_target = self.handler_map[job_id]  # Retrieve job_target
         try:
             coinb_nonce = extranonce2.decode('hex')
         except Exception as e:
@@ -203,8 +200,9 @@ class StratumRPCMiningProvider(object):
             bits=x['bits'],
             nonce=pack.IntType(32).unpack(getwork._swap4(nonce.decode('hex'))),
         )
-        # Dash's got_response takes 3 args: (header, user, coinbase_nonce)
-        result = got_response(header, worker_name, coinb_nonce)
+        # Dash's got_response takes 4 args: (header, user, coinbase_nonce, submitted_target)
+        # Use job_target (the target sent with THIS job) for proper validation and hashrate
+        result = got_response(header, worker_name, coinb_nonce, job_target)
         
         # Aggressive vardiff: adjust difficulty to target ~share_rate seconds per pseudoshare
         # For high-hashrate ASICs, we need to ramp up difficulty quickly to avoid flooding
@@ -234,14 +232,12 @@ class StratumRPCMiningProvider(object):
                 old_diff = dash_data.target_to_difficulty(self.target)
                 self.target = int(self.target * adjustment + 0.5)
                 
-                # Clip to sane range
+                # Clip to SANE_TARGET_RANGE only - don't cap at min_share_target
+                # SANE_TARGET_RANGE[0] = hardest (lowest target, e.g. diff 10000)
+                # SANE_TARGET_RANGE[1] = easiest (highest target, e.g. diff 1)
                 newtarget = clip(self.target, self.wb.net.SANE_TARGET_RANGE[0], self.wb.net.SANE_TARGET_RANGE[1])
                 if newtarget != self.target:
                     self.target = newtarget
-                
-                # Enforce ceiling on target (floor on difficulty) - use min() because lower target = harder
-                # min_share_target is the maximum allowed target (easiest difficulty = P2Pool floor)
-                self.target = min(x['min_share_target'], self.target)
                 
                 new_diff = dash_data.target_to_difficulty(self.target)
                 if abs(new_diff - old_diff) / old_diff > 0.1:  # Only log significant changes
