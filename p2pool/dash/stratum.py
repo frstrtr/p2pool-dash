@@ -38,6 +38,7 @@ class StratumRPCMiningProvider(object):
         self.desired_pseudoshare_target = None
     
     def rpc_subscribe(self, miner_version=None, session_id=None, *args):
+        print 'STRATUM: mining.subscribe from %s - miner: %s' % (self.worker_ip, miner_version)
         reactor.callLater(0, self._send_work)
         
         return [
@@ -50,6 +51,7 @@ class StratumRPCMiningProvider(object):
         if not hasattr(self, 'authorized'):  # authorize can be called many times in one connection
             self.authorized = username
         self.username = username.strip()
+        print 'STRATUM: mining.authorize from %s - worker: %s' % (self.worker_ip, self.username)
         
         # Dash doesn't have get_user_details, so we just parse the username directly
         # Username can be: address, address+difficulty, address/difficulty
@@ -66,27 +68,35 @@ class StratumRPCMiningProvider(object):
     def rpc_configure(self, extensions, extensionParameters):
         # extensions is a list of extension codes defined in BIP310
         # extensionParameters is a dict of parameters for each extension code
+        # Log the configure request for debugging
+        print 'STRATUM: mining.configure from %s - extensions: %s' % (self.worker_ip, extensions)
+        
+        result = {}
+        
         if 'version-rolling' in extensions:
-            # mask from miner is mandatory but we dont use it
-            miner_mask = extensionParameters['version-rolling.mask']
-            # min-bit-count from miner is mandatory but we dont use it
+            # ASICBoost support (BIP320)
+            miner_mask = extensionParameters.get('version-rolling.mask', '0')
             try:
-                minbitcount = extensionParameters['version-rolling.min-bit-count']
+                minbitcount = extensionParameters.get('version-rolling.min-bit-count', 2)
             except:
                 log.err("A miner tried to connect with a malformed version-rolling.min-bit-count parameter. This is probably a bug in your mining software. Braiins OS is known to have this bug. You should complain to them.")
-                minbitcount = 2  # probably not needed
-            # according to the spec, pool should return largest mask possible (to support mining proxies)
-            return {"version-rolling": True, "version-rolling.mask": '{:08x}'.format(self.pool_version_mask & (int(miner_mask, 16)))}
-            # pool can send mining.set_version_mask at any time if the pool mask changes
+                minbitcount = 2
+            # Return the negotiated mask (pool mask AND miner mask)
+            negotiated_mask = self.pool_version_mask & int(miner_mask, 16)
+            result["version-rolling"] = True
+            result["version-rolling.mask"] = '{:08x}'.format(negotiated_mask)
+            print 'STRATUM: ASICBoost enabled for %s - mask: %08x' % (self.worker_ip, negotiated_mask)
         
         if 'minimum-difficulty' in extensions:
-            print 'Extension method minimum-difficulty not implemented'
+            print 'STRATUM: minimum-difficulty requested from %s (not implemented)' % self.worker_ip
+            
         if 'subscribe-extranonce' in extensions:
             # Enable extranonce subscription for this connection (required for ASICs)
             self.extranonce_subscribe = True
-            print '>>>ExtranOnce subscribed from %s' % (self.worker_ip)
-            # Return value indicates support
-            return {"subscribe-extranonce": True}
+            result["subscribe-extranonce"] = True
+            print 'STRATUM: Extranonce subscription enabled for %s' % self.worker_ip
+        
+        return result if result else None
     
     def _send_work(self):
         try:
