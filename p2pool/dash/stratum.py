@@ -105,6 +105,12 @@ class StratumRPCMiningProvider(object):
             self.fixed_target = False
             # Use min_share_target as lower bound for difficulty adjustment
             self.target = x['share_target'] if self.target == None else max(x['min_share_target'], self.target)
+            print '>>>Target for %s: diff=%.6f target=%064x (share_target=%064x)' % (
+                self.username or 'unknown',
+                dash_data.target_to_difficulty(self.target),
+                self.target,
+                x['share_target']
+            )
         
         # For ASIC compatibility: periodically send extranonce updates
         # Even with empty extranonce, this helps ASICs reset their state
@@ -133,8 +139,9 @@ class StratumRPCMiningProvider(object):
     def rpc_submit(self, worker_name, job_id, extranonce2, ntime, nonce, version_bits=None, *args):
         # ASICBOOST: version_bits is the version mask that the miner used
         worker_name = worker_name.strip()
+        print '>>>rpc_submit called: worker=%s job=%s extranonce2=%s' % (worker_name, job_id[:16], extranonce2[:8])
         if job_id not in self.handler_map:
-            print >>sys.stderr, '''Couldn't link returned work's job id with its handler. This should only happen if this process was recently restarted!'''
+            print >>sys.stderr, '''Couldn't link returned work's job id with its handler (stale job). job_id=%s''' % (job_id[:16],)
             return False
         
         x, got_response = self.handler_map[job_id]
@@ -163,7 +170,12 @@ class StratumRPCMiningProvider(object):
         )
         # Dash's got_response takes 3 args: (header, user, coinbase_nonce)
         # Bitcoin's takes 4: (header, username, coinbase_nonce, pseudoshare_target)
+        print '>>>Submit from %s (job %s, extranonce2 %s)' % (worker_name, job_id[:8], extranonce2[:8])
         result = got_response(header, worker_name, coinb_nonce)
+        if result:
+            print '>>>Submit accepted from %s' % (worker_name,)
+        else:
+            print '>>>Submit rejected from %s (stale/invalid)' % (worker_name,)
         
         # Adjust difficulty on this stratum to target ~10sec/pseudoshare
         if not self.fixed_target:
