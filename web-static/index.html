@@ -64,7 +64,11 @@
                     var time_to_block = local_stats.attempts_to_block/global_stats.pool_hash_rate;
                     d3.select('#time_to_block').text(format_dt(time_to_block));
                     
-                    d3.select('#expected_payout_amount').text(d3.format('.3r')(local/global_stats.pool_hash_rate*local_stats.block_value*(1-local_stats.donation_proportion)));
+                    // Calculate expected payout for 24 hours of mining
+                    var blocks_in_24h = (24 * 3600) / time_to_block;
+                    var payout_per_block = (local/global_stats.pool_hash_rate) * local_stats.block_value_miner * (1-local_stats.donation_proportion);
+                    var expected_24h_payout = payout_per_block * blocks_in_24h;
+                    d3.select('#expected_payout_amount').text(d3.format('.3r')(expected_24h_payout));
                 });
             });
             
@@ -136,7 +140,7 @@
         <p>Node uptime: <span id="uptime"></span> Peers: <span id="peers_out"></span> out, <span id="peers_in"></span> in</p>
         <p>Local rate: <span id="local_rate"></span> (<span id="local_doa"></span> DOA) Expected time to share: <span id="time_to_share"></span></p>
         <p>Shares: <span id="shares_total"></span> total (<span id="shares_orphan"></span> orphaned, <span id="shares_dead"></span> dead) Efficiency: <span id="efficiency"></span></p>
-        <p>Payout if a block were found NOW: <span id="payout_totamount"></span> <span class="symbol"></span> to <a id="payout_addrs"></a>. Expected after mining for 24 hours:  <span id="expected_payout_amount"></span> <span class="symbol"></span> per block.</p>
+        <p>Payout if a block were found NOW: <span id="payout_totamount"></span> <span class="symbol"></span> to <a id="payout_addrs"></a>. Expected payout after mining for 24 hours: <span id="expected_payout_amount"></span> <span class="symbol"></span></p>
         <p>Current block value: <span id="block_value"></span> <span class="symbol"></span> (Masternode+Treasury: <span id="block_value_payments"></span>, Miner: <span id="block_value_miner"></span> <span class="symbol"></span>) Expected time to block: <span id="time_to_block"></span></p>
         <div id="warnings"></div>
         
