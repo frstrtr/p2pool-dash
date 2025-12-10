@@ -62,6 +62,8 @@ class StratumRPCMiningProvider(object):
         reactor.callLater(0, self._send_work)
         return True
     
+
+    
     def rpc_configure(self, extensions, extensionParameters):
         # extensions is a list of extension codes defined in BIP310
         # extensionParameters is a dict of parameters for each extension code
@@ -245,9 +247,31 @@ class StratumRPCMiningProvider(object):
     def close(self):
         self.wb.new_work_event.unwatch(self.watch_id)
 
+class ExtranonceService(object):
+    """Service for NiceHash-style mining.extranonce.subscribe"""
+    def __init__(self, parent):
+        self.parent = parent
+    
+    def rpc_subscribe(self):
+        """
+        NiceHash-style extranonce subscription
+        Called via mining.extranonce.subscribe method
+        
+        Many ASICs use this NiceHash protocol.
+        See: https://github.com/nicehash/Specifications/blob/master/NiceHash_extranonce_subscribe_extension.txt
+        
+        Returns:
+            True on success
+        """
+        self.parent.extranonce_subscribe = True
+        print '>>>ExtranOnce subscribed (NiceHash method) from %s' % (self.parent.worker_ip)
+        return True
+
 class StratumProtocol(jsonrpc.LineBasedPeer):
     def connectionMade(self):
         self.svc_mining = StratumRPCMiningProvider(self.factory.wb, self.other, self.transport)
+        # Add extranonce service for NiceHash compatibility
+        self.svc_mining.svc_extranonce = ExtranonceService(self.svc_mining)
     
     def connectionLost(self, reason):
         if hasattr(self, 'svc_mining'):
