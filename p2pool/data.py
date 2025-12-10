@@ -665,7 +665,9 @@ def get_warnings(tracker, best_share, net, dashd_getnetworkinfo, dashd_work_valu
     
     if dashd_getnetworkinfo['warnings'] != '':
         if 'This is a pre-release test build' not in dashd_getnetworkinfo['warnings']:
-            res.append('(from dashd) %s' % (dashd_getnetworkinfo['warnings'],))
+            # Filter out wallet encryption warning spam
+            if 'encrypt your wallet' not in dashd_getnetworkinfo['warnings']:
+                res.append('(from dashd) %s' % (dashd_getnetworkinfo['warnings'],))
     
     version_warning = getattr(net, 'VERSION_WARNING', lambda v: None)(dashd_getnetworkinfo['version'])
     if version_warning is not None:
