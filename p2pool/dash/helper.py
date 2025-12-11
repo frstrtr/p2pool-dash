@@ -47,15 +47,33 @@ def getwork(dashd, net, use_getblocktemplate=True):
 
     if work['transactions']:
         packed_transactions = []
-        for x in work['transactions']:
+        included_indices = set()  # Track which transaction indices we've included
+        
+        # First pass: include all transactions without dependencies
+        for i, x in enumerate(work['transactions']):
             if isinstance(x, dict):
-                # Skip transactions with dependencies - they should only be included
-                # if their parent transactions are also included (BIP 22)
-                if x.get('depends'):
-                    continue
-                packed_transactions.append(x['data'].decode('hex'))
+                if not x.get('depends'):
+                    packed_transactions.append(x['data'].decode('hex'))
+                    included_indices.add(i)
             else:
                 packed_transactions.append(x.decode('hex'))
+                included_indices.add(i)
+        
+        # Second pass: include transactions whose dependencies are all satisfied
+        # Repeat until no more can be added (handles chains of dependencies)
+        changed = True
+        while changed:
+            changed = False
+            for i, x in enumerate(work['transactions']):
+                if i in included_indices:
+                    continue
+                if isinstance(x, dict) and x.get('depends'):
+                    # Check if all dependencies are included
+                    deps = x.get('depends', [])
+                    if all(dep in included_indices for dep in deps):
+                        packed_transactions.append(x['data'].decode('hex'))
+                        included_indices.add(i)
+                        changed = True
     else:
         packed_transactions = [ ]
     if 'height' not in work:
