@@ -114,6 +114,25 @@
                     tr.append('td').append('a').text('→').attr('href', function(block){return 'share.html#' + block.share});
                     tr.append('td')
                         .style('color', function(block){
+                            if (!block.luck) return '#888';
+                            if (block.luck >= 100) return '#28a745';
+                            if (block.luck >= 75) return '#ffc107';
+                            return '#dc3545';
+                        })
+                        .style('font-weight', 'bold')
+                        .attr('title', function(block){
+                            if (!block.time_to_find) return '';
+                            var msg = 'Found in ' + format_dt(block.time_to_find);
+                            if (block.expected_time) msg += ' (expected: ' + format_dt(block.expected_time) + ')';
+                            if (block.luck_method) msg += ' [' + block.luck_method + ']';
+                            return msg;
+                        })
+                        .text(function(block){
+                            if (!block.luck) return '-';
+                            return d3.format('.0f')(block.luck) + '%';
+                        });
+                    tr.append('td')
+                        .style('color', function(block){
                             if (block.status === 'confirmed') return '#28a745';
                             if (block.status === 'orphaned') return '#dc3545';
                             return '#ffc107';
@@ -167,7 +186,7 @@
         <h2>Blocks found recently:</h2>
         <p>Note that blocks may have been orphaned from the P2Pool chain and so not be here.</p>
         <table border="1" id="blocks">
-            <tr><th>time</th><th>number</th><th>hash/explorer link</th><th>share</th><th>status</th></tr>
+            <tr><th>time</th><th>number</th><th>hash/explorer link</th><th>share</th><th>luck</th><th>status</th></tr>
         </table>
         
         <h2>Payouts if a block were found NOW:</h2>

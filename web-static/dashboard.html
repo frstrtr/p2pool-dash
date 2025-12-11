@@ -991,7 +991,12 @@
                     })
                     .attr('title', function(b) {
                         if (!b.time_to_find) return '';
-                        return 'Found in ' + format_dt(b.time_to_find) + (b.expected_time ? ' (expected: ' + format_dt(b.expected_time) + ')' : '');
+                        var tip = 'Found in ' + format_dt(b.time_to_find);
+                        if (b.expected_time) tip += ' (expected: ' + format_dt(b.expected_time) + ')';
+                        if (b.luck_method === 'time_weighted_avg') tip += '\n[Precise: ' + b.hashrate_samples_used + ' samples]';
+                        else if (b.luck_method === 'simple_avg') tip += '\n[Avg of block hashrates]';
+                        else if (b.luck_method) tip += '\n[' + b.luck_method + ']';
+                        return tip;
                     });
                 tr.append('td')
                     .attr('class', function(b) {
