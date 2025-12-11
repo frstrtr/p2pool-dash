@@ -2,7 +2,7 @@
 
 This document outlines potential future improvements for the p2pool-dash mining pool software.
 
-## Current Status (v1.2.0)
+## Current Status (v1.2.1)
 
 The following features are already implemented:
 
@@ -23,6 +23,8 @@ The following features are already implemented:
 | `--bench` flag | v1.1.0 | ✅ |
 | Dust threshold protection | v1.0.0 | ✅ |
 | Block explorer links | v1.0.0 | ✅ |
+| Block submission logging with chainlock monitoring | v1.2.1 | ✅ |
+| BIP 22 compliant transaction handling | v1.2.1 | ✅ |
 
 ---
 
@@ -271,6 +273,62 @@ def request_miner_version(self):
     """Request miner version information"""
     return self.other.svc_client.rpc_get_version()
 ```
+
+---
+
+## Evaluated and Rejected Improvements
+
+This section documents improvements from other p2pool forks that were evaluated but deemed unnecessary or inapplicable for p2pool-dash.
+
+### Transaction Caching System (from jtoomim/p2pool)
+
+**Source:** [jtoomim/p2pool](https://github.com/jtoomim/p2pool) - Bitcoin Cash focused fork
+
+**Evaluated Features:**
+
+1. **`txidcache`** - Cache mapping raw transaction hex → txid
+   - Purpose: Avoid rehashing the same raw transaction hex multiple times
+   - Implementation: Dictionary cleared every 30 minutes
+   
+2. **`feecache`** - Cache mapping txid → fee
+   - Purpose: Store transaction fees from getblocktemplate for later share validation
+   - Implementation: LRU queue with max 100,000 entries
+
+3. **`known_txs`** - Cache of already-unpacked transaction objects
+   - Purpose: Reuse parsed transaction objects instead of re-parsing
+
+4. **Naughty Share Detection** - Mark shares as "naughty" if they claim excessive block rewards
+   - Uses `feecache` to validate that claimed subsidy ≤ sum(tx fees) + base_subsidy
+   - Propagates punishment to descendants ("to the third and fourth generation")
+
+**Why These Are Not Needed for Dash:**
+
+| Feature | Reason for Rejection |
+|---------|---------------------|
+| `txidcache` | Dash has 2.5 minute blocks (vs Bitcoin's 10 min). With ~24 blocks/hour, the mempool churn is much faster and cache hit rate would be low. The computational overhead of maintaining the cache may exceed the savings. |
+| `feecache` | This is designed for Bitcoin's share structure (VERSION < 34) where subsidy is embedded in shares. Dash uses DIP (Dash Improvement Proposals) coinbase transactions where fees/rewards are validated by the dashd node itself during block template generation. |
+| `known_txs` | Same reasoning as `txidcache` - low cache hit rate with fast block times. |
+| Naughty detection | Not applicable to Dash's payment system. Masternode/superblock payments are validated by dashd, not by the p2pool share validation logic. |
+
+**What We Kept:**
+
+✅ **Transaction dependency handling** - Like jtoomim, we include ALL transactions from getblocktemplate in BIP 22 order. The original p2pool code incorrectly skipped transactions with a `depends` field, even when dependencies were satisfied. This was fixed in commit 17a2260.
+
+```python
+# Correct approach (matches jtoomim):
+for x in work.get('transactions', []):
+    packed_transactions.append(x['data'].decode('hex'))
+```
+
+**Performance Note:**
+
+jtoomim's fork includes `--bench` timing for debugging:
+```python
+if p2pool.BENCH:
+    print "%8.3f ms for helper.py:getwork(). Cache: %i hits %i misses..."
+```
+
+This benchmarking capability already exists in p2pool-dash via the `--bench` flag (added in v1.1.0), though it measures different aspects of performance.
 
 ---
 
