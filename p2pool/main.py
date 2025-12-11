@@ -327,7 +327,7 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint):
         print 'Listening for workers on %r port %i...' % (worker_endpoint[0], worker_endpoint[1])
         
         wb = work.WorkerBridge(node, my_pubkey_hash, args.donation_percentage, merged_urls, args.worker_fee, args, pubkeys, dashd)
-        web_root = web.get_web_root(wb, datadir_path, dashd_getnetworkinfo_var, static_dir=args.web_static)
+        web_root, record_block_found = web.get_web_root(wb, datadir_path, dashd_getnetworkinfo_var, static_dir=args.web_static)
         caching_wb = worker_interface.CachingWorkerBridge(wb)
         worker_interface.WorkerInterface(caching_wb).attach_to(web_root, get_handler=lambda request: request.redirect('/static/'))
         web_serverfactory = server.Site(web_root)
@@ -342,6 +342,23 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint):
         print '    ...success!'
         print
         
+        # Hook block recording for accurate luck calculation
+        def on_verified_share(share):
+            """Record block finds with hashrate data for accurate luck calculation."""
+            if share.pow_hash <= share.header['bits'].target:
+                # This is a block! Record it with current hashrate
+                block_hash = '%064x' % share.header_hash
+                try:
+                    block_height = p2pool_data.parse_bip0034(share.share_data['coinbase'])[0]
+                except Exception:
+                    block_height = 0
+                share_hash = '%064x' % share.hash
+                miner_address = dash_data.script2_to_address(share.new_script, net.PARENT)
+                
+                record_block_found(block_hash, block_height, share_hash, miner_address, share.timestamp)
+        
+        node.tracker.verified.added.watch(on_verified_share)
+        print 'Block recording for luck calculation enabled'
         
         # done!
         print 'Started successfully!'

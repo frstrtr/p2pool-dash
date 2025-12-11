@@ -475,6 +475,95 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     web_root.putChild('payout_addrs', WebInterface(
         lambda: [bitcoin_data.pubkey_hash_to_address(pubkey_hash, node.net.PARENT) for pubkey_hash in wb.pubkeys.keys]))
     
+    # ==========================================================================
+    # BLOCK HISTORY STORAGE - for accurate luck calculation
+    # ==========================================================================
+    # Stores pool hashrate at the time each block is found
+    # Format: {'block_hash': {'ts': timestamp, 'pool_hashrate': H/s, 'network_diff': diff, ...}}
+    
+    block_history_file = os.path.join(datadir_path, 'block_history.json')
+    block_history = {}
+    
+    # Load existing block history
+    if os.path.exists(block_history_file):
+        try:
+            with open(block_history_file, 'rb') as f:
+                block_history = json.loads(f.read())
+            print 'Loaded %d blocks from block history' % len(block_history)
+        except Exception as e:
+            log.err(e, 'Error loading block history:')
+            block_history = {}
+    
+    def save_block_history():
+        """Save block history to disk."""
+        try:
+            with open(block_history_file + '.new', 'wb') as f:
+                f.write(json.dumps(block_history, indent=2))
+            try:
+                os.rename(block_history_file + '.new', block_history_file)
+            except:
+                os.remove(block_history_file)
+                os.rename(block_history_file + '.new', block_history_file)
+        except Exception as e:
+            log.err(e, 'Error saving block history:')
+    
+    def record_block_found(block_hash, block_height, share_hash, miner_address, timestamp=None):
+        """Record a found block with current pool hashrate for accurate luck calculation."""
+        if block_hash in block_history:
+            return  # Already recorded
+        
+        ts = timestamp if timestamp else time.time()
+        
+        # Calculate current pool hashrate
+        pool_hashrate = None
+        stale_prop = None
+        network_diff = None
+        expected_time = None
+        
+        try:
+            height = node.tracker.get_height(node.best_share_var.value)
+            if height >= 2:
+                lookbehind = min(height, 3600 // node.net.SHARE_PERIOD)
+                if lookbehind >= 2:
+                    raw_hashrate = p2pool_data.get_pool_attempts_per_second(
+                        node.tracker, node.best_share_var.value, lookbehind)
+                    stale_prop = p2pool_data.get_average_stale_prop(
+                        node.tracker, node.best_share_var.value, lookbehind)
+                    pool_hashrate = raw_hashrate / (1 - stale_prop) if stale_prop < 1 else raw_hashrate
+                    
+                    # Get network difficulty
+                    if wb.current_work.value and 'bits' in wb.current_work.value:
+                        network_diff = bitcoin_data.target_to_difficulty(
+                            wb.current_work.value['bits'].target)
+                        if pool_hashrate > 0:
+                            expected_time = (network_diff * 2**32) / pool_hashrate
+        except Exception as e:
+            log.err(e, 'Error calculating hashrate for block record:')
+        
+        block_history[block_hash] = {
+            'ts': ts,
+            'block_height': block_height,
+            'share_hash': share_hash,
+            'miner': miner_address,
+            'pool_hashrate': pool_hashrate,
+            'stale_prop': stale_prop,
+            'network_diff': network_diff,
+            'expected_time': expected_time,
+        }
+        
+        print 'Recorded block %s at height %d with pool hashrate %.2f TH/s' % (
+            block_hash[:16], block_height, (pool_hashrate / 1e12) if pool_hashrate else 0)
+        
+        # Save to disk
+        save_block_history()
+    
+    def get_block_history_data(block_hash):
+        """Get historical data for a block if available."""
+        return block_history.get(block_hash)
+    
+    # Expose block history via API
+    web_root.putChild('block_history', WebInterface(lambda: block_history))
+    
     # Cache for block status to avoid repeated RPC calls
     block_status_cache = {}  # {block_hash: {'status': 'confirmed'|'orphaned'|'pending', 'checked': timestamp}}
     BLOCK_CACHE_TTL = 300  # 5 minutes cache for block status
@@ -548,10 +637,9 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         
         # Calculate luck for each block
         # Luck = expected_time / actual_time * 100%
-        # NOTE: We use CURRENT pool hashrate as approximation since we don't store historical hashrate
-        # This makes luck calculation approximate for older blocks
+        # Use historical hashrate from block_history if available, otherwise use current (approximate)
         if len(blocks) >= 1:
-            # Get current pool hashrate for luck estimation
+            # Get current pool hashrate as fallback for blocks without historical data
             current_pool_hashrate = None
             current_expected_time = None
             try:
@@ -576,11 +664,23 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             blocks_sorted = sorted(blocks, key=lambda x: x['ts'])
             
             for i, block in enumerate(blocks_sorted):
+                # Check if we have historical data for this block
+                hist_data = get_block_history_data(block['hash'])
+                
+                if hist_data and hist_data.get('expected_time'):
+                    # Use accurate historical data!
+                    block['expected_time'] = hist_data['expected_time']
+                    block['pool_hashrate_at_find'] = hist_data.get('pool_hashrate')
+                    block['luck_approximate'] = False  # Accurate!
+                else:
+                    # Fall back to current hashrate (approximate)
+                    block['expected_time'] = current_expected_time
+                    block['pool_hashrate_at_find'] = None
+                    block['luck_approximate'] = True
+                
                 # Initialize luck fields
                 block['luck'] = None
                 block['time_to_find'] = None
-                block['expected_time'] = current_expected_time  # Use current as approximation
-                block['luck_approximate'] = True  # Flag that this is approximate
                 
                 if i == 0:
                     # First block: can't calculate time_to_find without previous reference
@@ -595,22 +695,32 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                     
                 block['time_to_find'] = actual_time
                 
-                # Calculate luck using current hashrate (approximate)
-                if current_expected_time and current_expected_time > 0:
-                    block['luck'] = (current_expected_time / actual_time) * 100
+                # Calculate luck using expected_time (historical if available, else current)
+                if block['expected_time'] and block['expected_time'] > 0:
+                    block['luck'] = (block['expected_time'] / actual_time) * 100
             
             # Restore original order (newest first)
             blocks = sorted(blocks_sorted, key=lambda x: x['ts'], reverse=True)
             
             # Calculate overall luck stats
             valid_luck = [b['luck'] for b in blocks if b['luck'] is not None]
+            approximate_count = sum(1 for b in blocks if b.get('luck_approximate', True) and b.get('luck') is not None)
+            accurate_count = len(valid_luck) - approximate_count
+            
             if valid_luck:
                 avg_luck = sum(valid_luck) / len(valid_luck)
                 # Add summary to first item
                 if blocks:
                     blocks[0]['pool_avg_luck'] = avg_luck
                     blocks[0]['blocks_for_luck'] = len(valid_luck)
-                    blocks[0]['luck_note'] = "Luck is approximate (uses current pool hashrate)"
+                    blocks[0]['accurate_luck_count'] = accurate_count
+                    blocks[0]['approximate_luck_count'] = approximate_count
+                    if accurate_count == len(valid_luck):
+                        blocks[0]['luck_note'] = "All luck values are accurate (using historical hashrate)"
+                    elif accurate_count > 0:
+                        blocks[0]['luck_note'] = "%d accurate, %d approximate (using current hashrate)" % (accurate_count, approximate_count)
+                    else:
+                        blocks[0]['luck_note'] = "Luck is approximate (uses current pool hashrate)"
         
         defer.returnValue(blocks)
     
@@ -974,4 +1084,5 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     # Add security config endpoint
     web_root.putChild('security_config', WebInterface(lambda: sec_config.get_config_summary(), require_auth=True))
     
-    return web_root
+    # Return web_root and record_block_found function for block tracking
+    return web_root, record_block_found
