@@ -120,6 +120,19 @@ def submit_block_p2p(block, factory, net):
 @deferral.retry('Error submitting block: (will retry)', 10, 10)
 @defer.inlineCallbacks
 def submit_block_rpc(block, ignore_failure, dashd, dashd_work, net):
+    block_hash = dash_data.hash256(dash_data.block_header_type.pack(block['header']))
+    pow_hash = net.PARENT.POW_FUNC(dash_data.block_header_type.pack(block['header']))
+    block_height = block['header'].get('height', 'unknown')
+    
+    print ''
+    print '=' * 70
+    print 'BLOCK SUBMISSION STARTED at %s' % time.strftime('%Y-%m-%d %H:%M:%S')
+    print '  Block hash:   %064x' % block_hash
+    print '  POW hash:     %064x' % pow_hash
+    print '  Target:       %064x' % block['header']['bits'].target
+    print '  Transactions: %d' % len(block.get('txs', []))
+    print '=' * 70
+    
     if dashd_work.value['use_getblocktemplate']:
         try:
             result = yield dashd.rpc_submitblock(dash_data.block_type.pack(block).encode('hex'))
@@ -129,9 +142,18 @@ def submit_block_rpc(block, ignore_failure, dashd, dashd_work, net):
     else:
         result = yield dashd.rpc_getmemorypool(dash_data.block_type.pack(block).encode('hex'))
         success = result
-    success_expected = net.PARENT.POW_FUNC(dash_data.block_header_type.pack(block['header'])) <= block['header']['bits'].target
+    success_expected = pow_hash <= block['header']['bits'].target
+    
+    print 'BLOCK SUBMISSION RESULT:'
+    print '  Success: %s (result: %r)' % (success, result)
+    print '  Expected success: %s' % success_expected
+    
     if (not success and success_expected and not ignore_failure) or (success and not success_expected):
         print >>sys.stderr, 'Block submittal result: %s (%r) Expected: %s' % (success, result, success_expected)
+    
+    # Check chainlock status after submission
+    if success:
+        yield check_block_chainlock(dashd, block_hash, net)
 
 def submit_block(block, ignore_failure, factory, dashd, dashd_work, net):
     submit_block_rpc(block, ignore_failure, dashd, dashd_work, net)
@@ -145,3 +167,59 @@ def check_block_header(bitcoind, block_hash):
         defer.returnValue(False)
     else:
         defer.returnValue(True)
+
+@defer.inlineCallbacks
+def check_block_chainlock(dashd, block_hash, net):
+    """Check and log the chainlock status of a submitted block."""
+    from twisted.internet import reactor
+    
+    # Wait a few seconds for block to propagate
+    for delay in [2, 5, 10, 30, 60]:
+        yield deferral.sleep(delay)
+        try:
+            block_info = yield dashd.rpc_getblock('%064x' % block_hash)
+            chainlock = block_info.get('chainlock', False)
+            confirmations = block_info.get('confirmations', 0)
+            height = block_info.get('height', 'unknown')
+            
+            print ''
+            print 'CHAINLOCK STATUS CHECK (%ds after submission):' % delay
+            print '  Block hash:    %064x' % block_hash
+            print '  Height:        %s' % height
+            print '  Confirmations: %s' % confirmations
+            print '  ChainLock:     %s' % ('YES - LOCKED!' if chainlock else 'NO - not yet locked')
+            
+            if chainlock:
+                print ''
+                print '*** BLOCK CHAINLOCKED SUCCESSFULLY! ***'
+                print '  Explorer: %s%064x' % (net.PARENT.BLOCK_EXPLORER_URL_PREFIX, block_hash)
+                print ''
+                defer.returnValue(True)
+            
+            if confirmations < 0:
+                print ''
+                print '*** WARNING: BLOCK MAY BE ORPHANED (confirmations=%d) ***' % confirmations
+                print '  Another block may have been chainlocked at this height.'
+                print ''
+                # Check what block is at this height now
+                try:
+                    current_hash = yield dashd.rpc_getblockhash(height)
+                    if current_hash != '%064x' % block_hash:
+                        print '  Current block at height %s: %s' % (height, current_hash)
+                        current_block = yield dashd.rpc_getblock(current_hash)
+                        print '  Current block chainlock: %s' % current_block.get('chainlock', False)
+                except Exception as e:
+                    print '  Error checking current block: %s' % e
+                defer.returnValue(False)
+                
+        except jsonrpc.Error_for_code(-5):
+            print 'CHAINLOCK CHECK: Block %064x not found in local node (may be orphaned)' % block_hash
+            defer.returnValue(False)
+        except Exception as e:
+            print 'CHAINLOCK CHECK: Error checking block: %s' % e
+    
+    print ''
+    print '*** WARNING: Block not chainlocked after 60 seconds ***'
+    print '  Block may be at risk of being orphaned if another chainlock wins.'
+    print ''
+    defer.returnValue(False)
