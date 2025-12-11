@@ -61,6 +61,7 @@ class PoolStatistics(object):
         # Pool-wide configuration limits
         self.MAX_CONNECTIONS = 10000  # Maximum concurrent connections
         self.MIN_DIFFICULTY_FLOOR = 0.001  # Absolute minimum difficulty (pool protection)
+        self.MAX_DIFFICULTY_CEILING = 1000000  # Maximum difficulty (miner protection - prevents never finding shares)
         self.MAX_SUBMISSIONS_PER_SECOND = 1000  # Global rate limit
         
         # Performance metrics
@@ -165,6 +166,31 @@ class PoolStatistics(object):
             safe_diff = max(safe_diff, self.MIN_DIFFICULTY_FLOOR * load_factor * 10)
             print 'POOL LOAD: High submission rate (%.1f/s), enforcing min diff %.4f' % (
                 submission_rate, safe_diff)
+        
+        return safe_diff
+    
+    def get_safe_difficulty(self, requested_difficulty):
+        """
+        Calculate safe difficulty within pool-defined bounds.
+        
+        SAFEGUARDS:
+        1. Enforces minimum (prevents pool overload from low-diff flooding)
+        2. Enforces maximum (prevents miner from never finding shares and disconnecting)
+        
+        Args:
+            requested_difficulty: The difficulty requested by the miner
+            
+        Returns:
+            Safe difficulty clamped to [MIN_DIFFICULTY_FLOOR, MAX_DIFFICULTY_CEILING]
+        """
+        # Apply both floor and ceiling
+        safe_diff = self.get_safe_minimum_difficulty(requested_difficulty)
+        
+        # Cap at maximum to prevent miners from setting impossibly high difficulty
+        if safe_diff > self.MAX_DIFFICULTY_CEILING:
+            print 'MINER PROTECTION: Requested diff %.1f exceeds max, capping to %.1f' % (
+                safe_diff, self.MAX_DIFFICULTY_CEILING)
+            safe_diff = self.MAX_DIFFICULTY_CEILING
         
         return safe_diff
     
@@ -347,8 +373,8 @@ class StratumRPCMiningProvider(object):
             print 'STRATUM: Invalid suggest_difficulty from %s: %s' % (self.worker_ip, difficulty)
             return False
         
-        # PERFORMANCE SAFEGUARD: Apply pool-wide safety limits
-        safe_diff = pool_stats.get_safe_minimum_difficulty(requested_diff)
+        # PERFORMANCE SAFEGUARD: Apply pool-wide safety limits (floor AND ceiling)
+        safe_diff = pool_stats.get_safe_difficulty(requested_diff)
         
         # Also respect any minimum-difficulty set by BIP310 extension
         if self.minimum_difficulty is not None:
