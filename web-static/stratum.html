@@ -522,6 +522,45 @@
             </div>
         </div>
         
+        <!-- Share Statistics -->
+        <div class="section">
+            <div class="section-header">
+                <h2>📊 Share Statistics (Last Hour)</h2>
+            </div>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>✅ Total Shares</h3>
+                    <div class="stat-value" id="shares_total">-</div>
+                    <div class="stat-unit">submitted</div>
+                </div>
+                <div class="stat-card">
+                    <h3>🟢 Valid Shares</h3>
+                    <div class="stat-value success" id="shares_valid">-</div>
+                    <div class="stat-unit">accepted</div>
+                </div>
+                <div class="stat-card">
+                    <h3>👻 Orphan Shares</h3>
+                    <div class="stat-value warning" id="shares_orphan">-</div>
+                    <div class="stat-sub">Rate: <span id="orphan_rate">-</span></div>
+                </div>
+                <div class="stat-card">
+                    <h3>💀 Dead/DOA Shares</h3>
+                    <div class="stat-value danger" id="shares_dead">-</div>
+                    <div class="stat-sub">Rate: <span id="doa_rate">-</span></div>
+                </div>
+                <div class="stat-card">
+                    <h3>⚠️ Total Stale</h3>
+                    <div class="stat-value" id="shares_stale">-</div>
+                    <div class="stat-sub">Rate: <span id="stale_rate">-</span></div>
+                </div>
+                <div class="stat-card">
+                    <h3>🎯 Efficiency</h3>
+                    <div class="stat-value primary" id="share_efficiency">-</div>
+                    <div class="stat-unit">valid/total</div>
+                </div>
+            </div>
+        </div>
+        
         <!-- Connection Health Info -->
         <div class="section" id="conn-health-section" style="display: none;">
             <div class="section-header">
@@ -915,6 +954,57 @@
                 }
                 
                 d3.select('#last-refresh').text('Last update: ' + new Date().toLocaleTimeString());
+            });
+            
+            // Fetch share statistics from local_stats
+            d3.json('../local_stats', function(localData) {
+                if (!localData) {
+                    console.log('Local stats not available');
+                    return;
+                }
+                
+                // Share counts from my_share_counts_in_last_hour
+                var shareCounts = localData.my_share_counts_in_last_hour || {};
+                var shares = localData.shares || {};
+                var staleProps = localData.my_stale_proportions_in_last_hour || {};
+                
+                var totalShares = shareCounts.shares || shares.total || 0;
+                var validShares = shareCounts.unstale_shares || (totalShares - (shareCounts.stale_shares || 0));
+                var staleShares = shareCounts.stale_shares || 0;
+                var orphanShares = shareCounts.orphan_stale_shares || shares.orphan || 0;
+                var deadShares = shareCounts.doa_stale_shares || shares.dead || 0;
+                
+                // Update displays
+                d3.select('#shares_total').text(d3.format(',')(totalShares));
+                
+                var validEl = d3.select('#shares_valid');
+                validEl.text(d3.format(',')(validShares));
+                validEl.attr('class', 'stat-value success');
+                
+                var orphanEl = d3.select('#shares_orphan');
+                orphanEl.text(d3.format(',')(orphanShares));
+                orphanEl.attr('class', orphanShares > 0 ? 'stat-value warning' : 'stat-value success');
+                
+                var deadEl = d3.select('#shares_dead');
+                deadEl.text(d3.format(',')(deadShares));
+                deadEl.attr('class', deadShares > 0 ? 'stat-value danger' : 'stat-value success');
+                
+                d3.select('#shares_stale').text(d3.format(',')(staleShares));
+                
+                // Calculate rates
+                var orphanRate = staleProps.orphan_stale || (totalShares > 0 ? orphanShares / totalShares : 0);
+                var deadRate = staleProps.dead_stale || (totalShares > 0 ? deadShares / totalShares : 0);
+                var staleRate = staleProps.stale || (totalShares > 0 ? staleShares / totalShares : 0);
+                
+                d3.select('#orphan_rate').text(d3.format('.2%')(orphanRate));
+                d3.select('#doa_rate').text(d3.format('.2%')(deadRate));
+                d3.select('#stale_rate').text(d3.format('.2%')(staleRate));
+                
+                // Efficiency
+                var efficiency = localData.efficiency || (totalShares > 0 ? validShares / totalShares : 1);
+                var effEl = d3.select('#share_efficiency');
+                effEl.text(d3.format('.2%')(efficiency > 1 ? 1 : efficiency));
+                effEl.attr('class', efficiency >= 0.95 ? 'stat-value success' : (efficiency >= 0.90 ? 'stat-value warning' : 'stat-value danger'));
             });
             
             // Fetch security stats
