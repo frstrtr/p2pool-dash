@@ -259,6 +259,8 @@ class WorkerBridge(worker_interface.WorkerBridge):
 
     def get_work(self, pubkey_hash, desired_share_target, desired_pseudoshare_target):
         global print_throttle
+        t0 = time.time()  # Benchmarking start
+        
         if (self.node.p2p_node is None or len(self.node.p2p_node.peers) == 0) and self.node.net.PERSIST:
             raise jsonrpc.Error_for_code(-12345)(u'p2pool is not connected to any peers')
         if self.node.best_share_var.value is None and self.node.net.PERSIST:
@@ -532,4 +534,8 @@ class WorkerBridge(worker_interface.WorkerBridge):
 
             return on_time
 
+        t1 = time.time()
+        if p2pool.BENCH:
+            print "%8.3f ms for work.py:get_work(%s)" % ((t1-t0)*1000., dash_data.pubkey_hash_to_address(pubkey_hash, self.node.net.PARENT))
+        
         return ba, got_response

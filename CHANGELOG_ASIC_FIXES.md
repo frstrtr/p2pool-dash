@@ -2,6 +2,8 @@
 
 This document summarizes the fixes made to support high-hashrate ASIC miners (particularly Antminer D9 with ~1.7 TH/s each, ~10 TH/s total for 6 miners).
 
+**Release v1.0.0** - First stable release with full ASIC support (December 11, 2025)
+
 ## Summary of Changes
 
 ### 1. Fixed SANE_TARGET_RANGE for Correct Difficulty Calculation
@@ -118,3 +120,68 @@ After deploying these changes:
 3. Vardiff will ramp up to appropriate difficulty within seconds
 4. Local hashrate display should show correct values (~1.7 TH/s per D9 ASIC)
 5. Vardiff should stabilize around 3000-10000 for D9 miners with 10s target rate
+
+---
+
+## v1.1.0 Improvements (December 11, 2025)
+
+Based on comparison with jtoomim's p2pool fork, the following additional improvements were added:
+
+### 9. Performance Benchmarking (`--bench` flag)
+**Files:** `p2pool/__init__.py`, `p2pool/main.py`, `p2pool/work.py`, `p2pool/dash/stratum.py`
+
+- Added `BENCH` global flag (similar to jtoomim's implementation)
+- New `--bench` command-line argument to enable performance timing
+- `get_work()` and `rpc_submit()` now print timing info when BENCH enabled
+- Useful for identifying performance bottlenecks
+
+```bash
+# Enable benchmarking
+./run_p2pool.py --bench ...
+```
+
+### 10. Improved Stratum Error Handling
+**Files:** `p2pool/dash/stratum.py`
+
+- Changed stale job handling from raising exceptions to returning `False`
+- Better compatibility with various miner implementations
+- Added timing benchmarks for submit processing
+- Improved error logging with worker name context
+
+### 11. Hash Rate Estimation Integration
+**Files:** `p2pool/work.py`
+
+- Hash rate estimation already present via `_estimate_local_hash_rate()` and `get_local_addr_rates()`
+- Used for:
+  - Automatic share difficulty adjustment
+  - Dust threshold protection (prevents unpayable shares from low-hashrate miners)
+  - Local rate monitoring per address
+
+### 12. Dust Threshold Protection
+**Files:** `p2pool/work.py`, `p2pool/dash/networks/dash.py`
+
+Already implemented:
+- `DUST_THRESHOLD = 0.001e8` (0.001 DASH) in network config
+- Workers with expected payout < DUST_THRESHOLD get increased share difficulty
+- Prevents wasted work from miners who can't achieve payable share amounts
+
+### Features from jtoomim's fork already present in p2pool-dash:
+- ✅ Variable difficulty (vardiff) in stratum
+- ✅ Hash rate estimation
+- ✅ Dust threshold protection  
+- ✅ Version rolling / ASICBoost (BIP320)
+- ✅ Share rate parameter (`--share-rate`)
+- ✅ `parse_bip0034()` for block height extraction
+- ✅ Enhanced web interface with block explorer links
+- ✅ `currency_info` endpoint
+
+### Command Line Arguments
+
+```bash
+# New in v1.1.0:
+--bench              # Enable benchmarking mode (print performance timing)
+
+# Existing:
+--debug              # Enable debug mode
+--share-rate SECS    # Target seconds per pseudoshare (default: 10)
+```

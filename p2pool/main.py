@@ -495,6 +495,9 @@ def run():
     parser.add_argument('--debug',
         help='enable debugging mode',
         action='store_const', const=True, default=False, dest='debug')
+    parser.add_argument('--bench',
+        help='enable benchmarking mode (print performance timing info)',
+        action='store_const', const=True, default=False, dest='bench')
     parser.add_argument('-a', '--address',
         help='generate payouts to this address (default: <address requested from dashd>), or (dynamic)',
         type=str, action='store', default=None, dest='address')
@@ -591,6 +594,11 @@ def run():
         defer.setDebugging(True)
     else:
         p2pool.DEBUG = False
+    
+    if args.bench:
+        p2pool.BENCH = True
+    else:
+        p2pool.BENCH = False
     
     net_name = args.net_name + ('_testnet' if args.testnet else '')
     net = networks.nets[net_name]

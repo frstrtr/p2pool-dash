@@ -164,6 +164,7 @@ class StratumRPCMiningProvider(object):
     
     def rpc_submit(self, worker_name, job_id, extranonce2, ntime, nonce, version_bits=None, *args):
         # ASICBOOST: version_bits is the version mask that the miner used
+        t0 = time.time()  # Benchmarking start
         worker_name = worker_name.strip()
         
         # Rate limiting: drop submissions if coming too fast (more than 100/sec)
@@ -186,18 +187,21 @@ class StratumRPCMiningProvider(object):
         
         if job_id not in self.handler_map:
             print >>sys.stderr, 'Stale job submission from %s: job_id=%s not found' % (worker_name, job_id[:16])
-            # Return error with reason for stratum protocol
-            raise ValueError('Stale job: %s' % job_id[:16])
+            # Return False for stale jobs instead of raising exception
+            # This is more compatible with various miner implementations
+            return False
         
         x, got_response, job_target = self.handler_map[job_id]  # Retrieve job_target
         
         try:
             coinb_nonce = extranonce2.decode('hex')
         except Exception as e:
-            raise ValueError('Invalid extranonce2: %s' % str(e))
+            print >>sys.stderr, 'Invalid extranonce2 from %s: %s' % (worker_name, str(e))
+            return False
         
         if len(coinb_nonce) != self.wb.COINBASE_NONCE_LENGTH:
-            raise ValueError('Invalid extranonce2 length: got %d, expected %d' % (len(coinb_nonce), self.wb.COINBASE_NONCE_LENGTH))
+            print >>sys.stderr, 'Invalid extranonce2 length from %s: got %d, expected %d' % (worker_name, len(coinb_nonce), self.wb.COINBASE_NONCE_LENGTH)
+            return False
         
         new_packed_gentx = x['coinb1'] + coinb_nonce + x['coinb2']
         
@@ -267,6 +271,15 @@ class StratumRPCMiningProvider(object):
                 # Reset and send new work
                 self.recent_shares = [now]
                 self._send_work()
+        
+        # Benchmarking: print timing if BENCH enabled
+        t1 = time.time()
+        try:
+            import p2pool
+            if p2pool.BENCH and (t1-t0) > 0.01:  # Only log if > 10ms
+                print "%8.3f ms for stratum:rpc_submit(%s)" % ((t1-t0)*1000., worker_name)
+        except:
+            pass
         
         return result
     

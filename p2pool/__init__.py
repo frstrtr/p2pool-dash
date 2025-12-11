@@ -47,3 +47,4 @@ def _get_version():
 __version__ = _get_version()
 
 DEBUG = True
+BENCH = False  # Performance benchmarking flag - prints timing info when enabled
