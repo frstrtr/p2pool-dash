@@ -365,3 +365,126 @@ New dedicated web page for stratum statistics accessible from main index:
 | `subscribe-extranonce` | NiceHash | ✅ Full support |
 | `mining.suggest_difficulty` | Standard | ✅ NEW |
 
+---
+
+## v1.2.1 - Block Submission Logging & ChainLock Monitoring (December 11, 2025)
+
+Enhanced block submission tracking to help diagnose orphaned blocks.
+
+### 22. Comprehensive Block Submission Logging (NEW)
+**Files:** `p2pool/work.py`, `p2pool/dash/helper.py`
+
+When a Dash block is found, detailed logging now includes:
+
+**Block Discovery (work.py):**
+```
+######################################################################
+### DASH BLOCK FOUND! ###
+######################################################################
+Time:        2025-12-11 05:11:17
+Miner:       XminerAddress...
+Block hash:  0000000000000012efc296b9f6cc978c22391d63f93d8cb5732e202206577cd5
+POW hash:    000000000000000...
+Target:      000000000021...
+Height:      2386600
+Txs:         8
+Explorer:    https://chainz.cryptoid.info/dash/block.dws?...
+######################################################################
+```
+
+**Block Submission (helper.py):**
+```
+======================================================================
+BLOCK SUBMISSION STARTED at 2025-12-11 05:11:17
+  Block hash:   0000000000000012...
+  POW hash:     000000000000000...
+  Target:       000000000021...
+  Transactions: 8
+======================================================================
+BLOCK SUBMISSION RESULT:
+  Success: True (result: None)
+  Expected success: True
+```
+
+### 23. ChainLock Status Monitoring (NEW)
+**Files:** `p2pool/dash/helper.py`
+
+New `check_block_chainlock()` function monitors the chainlock status of submitted blocks:
+
+- Checks at 2s, 5s, 10s, 30s, and 60s after submission
+- Reports confirmations count and chainlock status
+- Warns if block may be orphaned (confirmations < 0)
+- Shows competing block if our block was orphaned
+
+**Sample output:**
+```
+CHAINLOCK STATUS CHECK (10s after submission):
+  Block hash:    0000000000000012...
+  Height:        2386600
+  Confirmations: 1
+  ChainLock:     YES - LOCKED!
+
+*** BLOCK CHAINLOCKED SUCCESSFULLY! ***
+  Explorer: https://chainz.cryptoid.info/dash/block.dws?...
+```
+
+**Orphan detection:**
+```
+CHAINLOCK STATUS CHECK (30s after submission):
+  Block hash:    0000000000000012...
+  Height:        2386600
+  Confirmations: -1
+  ChainLock:     NO - not yet locked
+
+*** WARNING: BLOCK MAY BE ORPHANED (confirmations=-1) ***
+  Another block may have been chainlocked at this height.
+  Current block at height 2386600: 000000000000000f2c6b...
+  Current block chainlock: True
+```
+
+### Why Blocks Get Orphaned
+
+Based on analysis of the orphaned block at height 2386600:
+
+| Our Block | Winning Block |
+|-----------|---------------|
+| Found at 05:11:17 | Found at 05:14:46 |
+| ChainLock: **false** | ChainLock: **true** |
+| 8 transactions | 30 transactions |
+| Confirmations: -1 | Confirmations: 267 |
+
+**Root Cause:** Our block was found 3.5 minutes EARLIER but the competing block received ChainLock first. Dash's ChainLock consensus overrides first-seen ordering.
+
+**Contributing Factor:** P2Pool had 0 peers, meaning our block propagated only via dashd (slower) rather than P2Pool's direct peer network.
+
+### P2Pool Bootstrap Node Status
+
+Current bootstrap nodes in `p2pool/networks/dash.py`:
+- `dash01.p2poolmining.us` - **OFFLINE** (DNS resolves, no service)
+- `dash02.p2poolmining.us` - **OFFLINE**
+- `dash03.p2poolmining.us` - **OFFLINE**
+- `dash04.p2poolmining.us` - **OFFLINE**
+- `crypto.office-on-the.net` - **OFFLINE** (connection refused)
+
+**Note:** All known Dash P2Pool bootstrap nodes are currently offline. The pool operates in solo mode, which increases orphan risk due to slower block propagation via dashd-only network.
+
+### Recommendations to Reduce Orphan Risk
+
+1. **Maximize dashd Peer Connections:**
+   ```bash
+   dash-cli getconnectioncount  # Should be high (100+)
+   ```
+
+2. **Ensure Low Latency to dashd:**
+   - Run dashd on same machine or LAN as P2Pool
+   - Use fast SSD for dashd blockchain storage
+
+3. **Include More Transactions:**
+   - Blocks with more transactions may receive ChainLock priority
+   - Don't filter out valid transactions from block template
+
+4. **Find Other P2Pool Nodes:**
+   - If other Dash P2Pool nodes exist, add them as peers
+   - Use `--p2pool-node` argument to specify known nodes
+
+

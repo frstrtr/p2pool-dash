@@ -437,11 +437,23 @@ class WorkerBridge(worker_interface.WorkerBridge):
             pow_hash = self.node.net.PARENT.POW_FUNC(dash_data.block_header_type.pack(header))
             try:
                 if pow_hash <= header['bits'].target or p2pool.DEBUG:
-                    helper.submit_block(dict(header=header, txs=[new_gentx] + other_transactions), False, self.node.factory, self.node.dashd, self.node.dashd_work, self.node.net)
                     if pow_hash <= header['bits'].target:
                         print
-                        print 'GOT BLOCK FROM MINER! Passing to dashd! %s%064x' % (self.node.net.PARENT.BLOCK_EXPLORER_URL_PREFIX, header_hash)
+                        print '#' * 70
+                        print '### DASH BLOCK FOUND! ###'
+                        print '#' * 70
+                        print 'Time:        %s' % time.strftime('%Y-%m-%d %H:%M:%S')
+                        print 'Miner:       %s' % user
+                        print 'Block hash:  %064x' % header_hash
+                        print 'POW hash:    %064x' % pow_hash
+                        print 'Target:      %064x' % header['bits'].target
+                        print 'Height:      %d' % share_info['height']
+                        print 'Txs:         %d' % (1 + len(other_transactions))
+                        print 'Explorer:    %s%064x' % (self.node.net.PARENT.BLOCK_EXPLORER_URL_PREFIX, header_hash)
+                        print '#' * 70
                         print
+                    helper.submit_block(dict(header=header, txs=[new_gentx] + other_transactions), False, self.node.factory, self.node.dashd, self.node.dashd_work, self.node.net)
+                    if pow_hash <= header['bits'].target:
                         # New block found
                         self.node.factory.new_block.happened(header_hash)
             except:
