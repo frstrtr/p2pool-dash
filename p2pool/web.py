@@ -1230,12 +1230,10 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             hd.datastreams['miner_hash_rates'].add_datum(t, {user: work})
             if dead:
                 hd.datastreams['miner_dead_hash_rates'].add_datum(t, {user: work})
-        # Record hashrate sample for time-weighted luck calculation
-        record_hashrate_sample()
     @wb.share_received.watch
     def _(work, dead, share_hash):
         t = time.time()
-        # Record hashrate sample on share submission (more significant event)
+        # Record hashrate sample on sharechain share submission for time-weighted luck calculation
         record_hashrate_sample()
         if not dead:
             hd.datastreams['local_share_hash_rates'].add_datum(t, dict(good=work))
