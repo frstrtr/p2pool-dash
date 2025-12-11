@@ -8,6 +8,7 @@ from twisted.python import log
 
 from p2pool.dash import data as dash_data, getwork
 from p2pool.util import expiring_dict, jsonrpc, pack
+from p2pool import security_config
 
 
 def clip(num, bot, top):
@@ -58,19 +59,22 @@ class PoolStatistics(object):
         # Session storage for resumption {session_id: session_data}
         self.sessions = expiring_dict.ExpiringDict(3600)  # 1 hour session timeout
         
-        # Pool-wide configuration limits
+        # Pool-wide configuration limits (can be overridden by security_config)
         self.MAX_CONNECTIONS = 10000  # Maximum concurrent connections
         self.MIN_DIFFICULTY_FLOOR = 0.001  # Absolute minimum difficulty (pool protection)
         self.MAX_DIFFICULTY_CEILING = 1000000  # Maximum difficulty (miner protection - prevents never finding shares)
         self.MAX_SUBMISSIONS_PER_SECOND = 1000  # Global rate limit
-        self.MAX_CONNECTIONS_PER_IP = 50  # Per-IP connection limit
+        
+        # Load settings from security_config (with fallback defaults)
+        sec_config = security_config.security_config
+        self.MAX_CONNECTIONS_PER_IP = sec_config.get('max_connections_per_ip', 50)
+        self.BAN_DURATION = sec_config.get('ban_duration_seconds', 3600)
+        self.MAX_VIOLATIONS_BEFORE_BAN = sec_config.get('max_violations_before_ban', 10)
         
         # Banning system for misbehaving miners
         self.banned_ips = {}  # {ip: ban_expire_time}
         self.banned_workers = {}  # {worker_name: ban_expire_time}
-        self.ip_violations = {}  # {ip: [(timestamp, reason), ...]}
-        self.BAN_DURATION = 3600  # 1 hour ban
-        self.BAN_THRESHOLD = 10  # violations before ban
+        self.ip_violations = {}  # {ip: violation_count}
         
         # Per-IP connection tracking
         self.ip_connections = {}  # {ip: count}
@@ -125,29 +129,36 @@ class PoolStatistics(object):
         """Record a violation for an IP, ban if threshold exceeded"""
         now = time.time()
         if ip not in self.ip_violations:
-            self.ip_violations[ip] = []
+            self.ip_violations[ip] = 0
         
-        # Add violation
-        self.ip_violations[ip].append((now, reason))
-        
-        # Prune old violations (older than 10 minutes)
-        self.ip_violations[ip] = [(t, r) for t, r in self.ip_violations[ip] if t > now - 600]
+        # Increment violation count
+        self.ip_violations[ip] += 1
         
         # Check if should ban
-        if len(self.ip_violations[ip]) >= self.BAN_THRESHOLD:
+        if self.ip_violations[ip] >= self.MAX_VIOLATIONS_BEFORE_BAN:
             self.ban_ip(ip, reason)
             return True
         return False
     
     def ban_ip(self, ip, reason):
         """Ban an IP address"""
-        if ip == '127.0.0.1':
+        # Check whitelist
+        sec_config = security_config.security_config
+        if sec_config.is_ip_whitelisted(ip):
+            print 'IP %s is whitelisted, not banning' % ip
+            return
+        if ip == '127.0.0.1' or ip == '::1':
             return  # Never ban localhost
         self.banned_ips[ip] = time.time() + self.BAN_DURATION
         print 'BANNED IP %s for %d seconds. Reason: %s' % (ip, self.BAN_DURATION, reason)
     
     def ban_worker(self, worker_name, reason):
         """Ban a worker name"""
+        # Check whitelist
+        sec_config = security_config.security_config
+        if sec_config.is_worker_whitelisted(worker_name):
+            print 'Worker %s is whitelisted, not banning' % worker_name
+            return
         self.banned_workers[worker_name] = time.time() + self.BAN_DURATION
         print 'BANNED WORKER %s for %d seconds. Reason: %s' % (worker_name, self.BAN_DURATION, reason)
     
@@ -157,18 +168,55 @@ class PoolStatistics(object):
         return current < self.MAX_CONNECTIONS_PER_IP
     
     def get_ban_stats(self):
-        """Get current ban statistics"""
+        """Get current ban statistics with detailed info for UI"""
         now = time.time()
         # Clean expired bans
         self.banned_ips = {k: v for k, v in self.banned_ips.items() if v > now}
         self.banned_workers = {k: v for k, v in self.banned_workers.items() if v > now}
         
+        # Build detailed banned IPs list
+        banned_ips_list = []
+        for ip, expires_at in self.banned_ips.items():
+            banned_at = expires_at - self.BAN_DURATION
+            banned_ips_list.append({
+                'ip': ip,
+                'banned_at': banned_at,
+                'expires_at': expires_at,
+                'remaining_seconds': int(expires_at - now),
+                'reason': 'Too many violations or connections'
+            })
+        
+        # Build detailed banned workers list
+        banned_workers_list = []
+        for worker, expires_at in self.banned_workers.items():
+            banned_at = expires_at - self.BAN_DURATION
+            banned_workers_list.append({
+                'worker': worker,
+                'banned_at': banned_at,
+                'expires_at': expires_at,
+                'remaining_seconds': int(expires_at - now),
+                'reason': 'Excessive share submission rate'
+            })
+        
+        # Build violations list
+        violations_list = []
+        for ip, count in self.ip_violations.items():
+            if count > 0:
+                violations_list.append({
+                    'ip': ip,
+                    'violations': count
+                })
+        violations_list.sort(key=lambda x: x['violations'], reverse=True)
+        
         return {
-            'banned_ips': len(self.banned_ips),
-            'banned_workers': len(self.banned_workers),
-            'banned_ip_list': list(self.banned_ips.keys()),
-            'banned_worker_list': list(self.banned_workers.keys()),
+            'banned_ips_count': len(self.banned_ips),
+            'banned_workers_count': len(self.banned_workers),
+            'banned_ips': banned_ips_list,
+            'banned_workers': banned_workers_list,
+            'ip_violations': violations_list[:20],  # Top 20 violators
             'ip_connections': dict(self.ip_connections),
+            'ban_duration': self.BAN_DURATION,
+            'max_violations': self.MAX_VIOLATIONS_BEFORE_BAN,
         }
 
     def record_share(self, worker_name, difficulty, accepted=True):

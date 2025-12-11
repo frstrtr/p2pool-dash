@@ -418,6 +418,135 @@
         @media (max-width: 900px) {
             .two-col { grid-template-columns: 1fr; }
         }
+        
+        /* Hashrate Graph Section */
+        .graph-section {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid var(--border);
+            margin-bottom: 30px;
+        }
+        
+        .graph-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        
+        .graph-header h2 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: white;
+        }
+        
+        .time-selector {
+            display: flex;
+            gap: 5px;
+            background: var(--darker);
+            padding: 4px;
+            border-radius: 8px;
+        }
+        
+        .time-btn {
+            padding: 6px 14px;
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .time-btn:hover {
+            color: var(--text);
+        }
+        
+        .time-btn.active {
+            background: var(--primary);
+            color: white;
+        }
+        
+        .graph-container {
+            height: 300px;
+            position: relative;
+        }
+        
+        .graph-container svg {
+            width: 100%;
+            height: 100%;
+        }
+        
+        .graph-line {
+            fill: none;
+            stroke: var(--primary);
+            stroke-width: 2;
+        }
+        
+        .graph-area {
+            fill: url(#graph-gradient);
+            opacity: 0.3;
+        }
+        
+        .graph-axis path,
+        .graph-axis line {
+            stroke: var(--border);
+        }
+        
+        .graph-axis text {
+            fill: var(--text-muted);
+            font-size: 11px;
+        }
+        
+        .graph-grid line {
+            stroke: var(--border);
+            stroke-opacity: 0.5;
+            stroke-dasharray: 3,3;
+        }
+        
+        .graph-tooltip {
+            position: absolute;
+            background: var(--darker);
+            border: 1px solid var(--border);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+            z-index: 100;
+        }
+        
+        .graph-tooltip.visible {
+            opacity: 1;
+        }
+        
+        .graph-stats {
+            display: flex;
+            gap: 30px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+        }
+        
+        .graph-stat {
+            text-align: center;
+        }
+        
+        .graph-stat-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+        
+        .graph-stat-value {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--primary);
+        }
     </style>
 </head>
 <body>
@@ -527,6 +656,41 @@
                     <tbody></tbody>
                 </table>
                 <div class="loading" id="payouts_loading">Loading payouts</div>
+            </div>
+        </div>
+        
+        <!-- Pool Hashrate Graph -->
+        <div class="graph-section">
+            <div class="graph-header">
+                <h2>📈 Pool Hashrate History</h2>
+                <div class="time-selector">
+                    <button class="time-btn active" data-period="hour" onclick="selectGraphPeriod('hour')">1 Hour</button>
+                    <button class="time-btn" data-period="day" onclick="selectGraphPeriod('day')">1 Day</button>
+                    <button class="time-btn" data-period="week" onclick="selectGraphPeriod('week')">1 Week</button>
+                    <button class="time-btn" data-period="month" onclick="selectGraphPeriod('month')">1 Month</button>
+                    <button class="time-btn" data-period="year" onclick="selectGraphPeriod('year')">1 Year</button>
+                </div>
+            </div>
+            <div class="graph-container" id="hashrate-graph">
+                <div class="graph-tooltip" id="graph-tooltip"></div>
+            </div>
+            <div class="graph-stats">
+                <div class="graph-stat">
+                    <div class="graph-stat-label">Current</div>
+                    <div class="graph-stat-value" id="graph-current">-</div>
+                </div>
+                <div class="graph-stat">
+                    <div class="graph-stat-label">Average</div>
+                    <div class="graph-stat-value" id="graph-average">-</div>
+                </div>
+                <div class="graph-stat">
+                    <div class="graph-stat-label">Peak</div>
+                    <div class="graph-stat-value" id="graph-peak">-</div>
+                </div>
+                <div class="graph-stat">
+                    <div class="graph-stat-label">Low</div>
+                    <div class="graph-stat-value" id="graph-low">-</div>
+                </div>
             </div>
         </div>
         
@@ -789,6 +953,195 @@
             });
         }
         
+        // =============================================
+        // Hashrate Graph
+        // =============================================
+        var currentGraphPeriod = 'hour';
+        var graphData = [];
+        
+        function selectGraphPeriod(period) {
+            currentGraphPeriod = period;
+            // Update button states
+            document.querySelectorAll('.time-btn').forEach(function(btn) {
+                btn.classList.remove('active');
+                if (btn.dataset.period === period) {
+                    btn.classList.add('active');
+                }
+            });
+            loadHashrateGraph();
+        }
+        
+        function loadHashrateGraph() {
+            var endpoints = {
+                'hour': '../web/graph_data/pool_rates/last_hour',
+                'day': '../web/graph_data/pool_rates/last_day',
+                'week': '../web/graph_data/pool_rates/last_week',
+                'month': '../web/graph_data/pool_rates/last_month',
+                'year': '../web/graph_data/pool_rates/last_year'
+            };
+            
+            d3.json(endpoints[currentGraphPeriod], function(data) {
+                if (!data || data.length === 0) {
+                    document.getElementById('hashrate-graph').innerHTML = 
+                        '<div style="text-align:center; color: var(--text-muted); padding: 100px 0;">No data available for this period</div>';
+                    return;
+                }
+                
+                graphData = data;
+                renderHashrateGraph(data);
+            });
+        }
+        
+        function renderHashrateGraph(data) {
+            var container = document.getElementById('hashrate-graph');
+            var tooltip = document.getElementById('graph-tooltip');
+            
+            // Clear previous
+            d3.select('#hashrate-graph svg').remove();
+            
+            var margin = {top: 20, right: 30, bottom: 40, left: 70};
+            var width = container.offsetWidth - margin.left - margin.right;
+            var height = 260 - margin.top - margin.bottom;
+            
+            if (width < 100) return; // Container not ready
+            
+            var svg = d3.select('#hashrate-graph')
+                .append('svg')
+                .attr('width', width + margin.left + margin.right)
+                .attr('height', height + margin.top + margin.bottom)
+                .append('g')
+                .attr('transform', 'translate(' + margin.left + ',' + margin.top + ')');
+            
+            // Create gradient
+            var defs = svg.append('defs');
+            var gradient = defs.append('linearGradient')
+                .attr('id', 'graph-gradient')
+                .attr('x1', '0%').attr('y1', '0%')
+                .attr('x2', '0%').attr('y2', '100%');
+            gradient.append('stop').attr('offset', '0%').attr('stop-color', '#008de4').attr('stop-opacity', 0.4);
+            gradient.append('stop').attr('offset', '100%').attr('stop-color', '#008de4').attr('stop-opacity', 0.05);
+            
+            // Parse data
+            var parseTime = function(d) { return d[0] * 1000; };
+            var parseValue = function(d) { return d[1]; };
+            
+            var xExtent = d3.extent(data, parseTime);
+            var yMax = d3.max(data, parseValue) * 1.1;
+            var yMin = d3.min(data, parseValue) * 0.9;
+            
+            var x = d3.time.scale().domain(xExtent).range([0, width]);
+            var y = d3.scale.linear().domain([Math.max(0, yMin), yMax]).range([height, 0]);
+            
+            // Grid lines
+            svg.append('g')
+                .attr('class', 'graph-grid')
+                .attr('transform', 'translate(0,' + height + ')')
+                .call(d3.svg.axis().scale(x).orient('bottom').tickSize(-height).tickFormat(''));
+            
+            svg.append('g')
+                .attr('class', 'graph-grid')
+                .call(d3.svg.axis().scale(y).orient('left').ticks(5).tickSize(-width).tickFormat(''));
+            
+            // Area
+            var area = d3.svg.area()
+                .x(function(d) { return x(parseTime(d)); })
+                .y0(height)
+                .y1(function(d) { return y(parseValue(d)); });
+            
+            svg.append('path')
+                .datum(data)
+                .attr('class', 'graph-area')
+                .attr('d', area)
+                .style('fill', 'url(#graph-gradient)');
+            
+            // Line
+            var line = d3.svg.line()
+                .x(function(d) { return x(parseTime(d)); })
+                .y(function(d) { return y(parseValue(d)); });
+            
+            svg.append('path')
+                .datum(data)
+                .attr('class', 'graph-line')
+                .attr('d', line);
+            
+            // X axis
+            var xAxis = d3.svg.axis().scale(x).orient('bottom').ticks(6);
+            if (currentGraphPeriod === 'hour') {
+                xAxis.tickFormat(d3.time.format('%H:%M'));
+            } else if (currentGraphPeriod === 'day') {
+                xAxis.tickFormat(d3.time.format('%H:%M'));
+            } else if (currentGraphPeriod === 'week') {
+                xAxis.tickFormat(d3.time.format('%a %d'));
+            } else {
+                xAxis.tickFormat(d3.time.format('%b %d'));
+            }
+            
+            svg.append('g')
+                .attr('class', 'graph-axis')
+                .attr('transform', 'translate(0,' + height + ')')
+                .call(xAxis);
+            
+            // Y axis
+            var yAxis = d3.svg.axis().scale(y).orient('left').ticks(5)
+                .tickFormat(function(d) { return format_hashrate(d).replace(' ', ''); });
+            
+            svg.append('g')
+                .attr('class', 'graph-axis')
+                .call(yAxis);
+            
+            // Tooltip overlay
+            var focus = svg.append('g').style('display', 'none');
+            focus.append('circle').attr('r', 5).style('fill', '#008de4');
+            focus.append('line').attr('class', 'x-hover-line')
+                .attr('y1', 0).attr('y2', height)
+                .style('stroke', '#008de4').style('stroke-width', 1).style('stroke-dasharray', '3,3');
+            
+            svg.append('rect')
+                .attr('width', width).attr('height', height)
+                .style('fill', 'none').style('pointer-events', 'all')
+                .on('mouseover', function() { focus.style('display', null); tooltip.classList.add('visible'); })
+                .on('mouseout', function() { focus.style('display', 'none'); tooltip.classList.remove('visible'); })
+                .on('mousemove', function() {
+                    var x0 = x.invert(d3.mouse(this)[0]);
+                    var bisect = d3.bisector(function(d) { return d[0] * 1000; }).left;
+                    var i = bisect(data, x0, 1);
+                    if (i >= data.length) i = data.length - 1;
+                    var d0 = data[i - 1], d1 = data[i];
+                    var d = x0 - d0[0]*1000 > d1[0]*1000 - x0 ? d1 : d0;
+                    
+                    focus.attr('transform', 'translate(' + x(d[0]*1000) + ',' + y(d[1]) + ')');
+                    focus.select('.x-hover-line').attr('y1', -y(d[1]));
+                    
+                    var date = new Date(d[0] * 1000);
+                    tooltip.innerHTML = '<strong>' + format_hashrate(d[1]) + '</strong><br>' + 
+                        date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+                    tooltip.style.left = (d3.mouse(container)[0] + 10) + 'px';
+                    tooltip.style.top = (d3.mouse(container)[1] - 40) + 'px';
+                });
+            
+            // Update stats
+            var values = data.map(parseValue);
+            var current = values[values.length - 1];
+            var avg = d3.mean(values);
+            var peak = d3.max(values);
+            var low = d3.min(values);
+            
+            document.getElementById('graph-current').textContent = format_hashrate(current || 0);
+            document.getElementById('graph-average').textContent = format_hashrate(avg || 0);
+            document.getElementById('graph-peak').textContent = format_hashrate(peak || 0);
+            document.getElementById('graph-low').textContent = format_hashrate(low || 0);
+        }
+        
+        // Resize handler
+        window.addEventListener('resize', function() {
+            if (graphData.length > 0) {
+                renderHashrateGraph(graphData);
+            }
+        });
+        
+        // Load graph on page load
+        loadHashrateGraph();
+        
         // Manual refresh - auto-refresh disabled by default to reduce backend load
         var autoRefreshInterval = null;
         
@@ -802,6 +1155,7 @@
             } else {
                 autoRefreshInterval = setInterval(function() {
                     loadStats();
+                    loadHashrateGraph();
                     document.getElementById('last-update').textContent = 'Last update: ' + new Date().toLocaleTimeString();
                 }, 30000);
                 btn.textContent = '▶ Auto-Refresh: ON (30s)';
@@ -813,6 +1167,7 @@
             loadStats();
             loadBlocks();
             loadPayouts();
+            loadHashrateGraph();
             document.getElementById('last-update').textContent = 'Last update: ' + new Date().toLocaleTimeString();
         }
     </script>
