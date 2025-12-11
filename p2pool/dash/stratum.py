@@ -580,6 +580,10 @@ class StratumRPCMiningProvider(object):
         #   address+diff+sN              - Difficulty + share rate N seconds
         #   address.worker               - Address with worker name
         #   address_worker               - Address with worker name (alt format)
+        #
+        # Password formats supported:
+        #   d=<difficulty>               - Set starting difficulty (e.g., d=0.001)
+        #   anything                     - Ignored (any password accepted)
         
         self.user = self.username
         self.address = self.username.split('+')[0].split('/')[0].split('.')[0].split('_')[0]
@@ -602,6 +606,27 @@ class StratumRPCMiningProvider(object):
                     self.desired_pseudoshare_target = dash_data.difficulty_to_target(diff)
                 except:
                     pass
+        
+        # ==== NEW: Parse difficulty from password ====
+        # Support formats: d=0.001, diff=0.001, difficulty=0.001
+        if password:
+            password_str = str(password).lower()
+            for prefix in ['d=', 'diff=', 'difficulty=']:
+                if prefix in password_str:
+                    try:
+                        diff_str = password_str.split(prefix)[1].split(',')[0].split(' ')[0]
+                        diff = float(diff_str)
+                        if diff > 0:
+                            # Apply pool-wide safety limits
+                            safe_diff = pool_stats.get_safe_minimum_difficulty(diff)
+                            self.suggested_difficulty = safe_diff
+                            diff1_target = 0xFFFF * 2**208
+                            self.target = diff1_target // int(safe_diff)
+                            print 'STRATUM: Worker %s requested difficulty from password: %.6f (using %.6f)' % (
+                                self.username, diff, safe_diff)
+                            break
+                    except (ValueError, IndexError):
+                        pass
         
         reactor.callLater(0, self._send_work)
         return True

@@ -1008,11 +1008,13 @@
                         tr.append('td').text(item.count);
                         
                         // Status based on connection count
+                        // ASICs typically use 2 connections per worker, so 20+ from one IP is high
+                        // 10-20 is normal for a multi-ASIC setup, <10 is light usage
                         var statusTd = tr.append('td');
-                        if (item.count > 10) {
-                            statusTd.html('<span class="status-badge danger">⚠ High</span>');
-                        } else if (item.count > 5) {
-                            statusTd.html('<span class="status-badge warning">Elevated</span>');
+                        if (item.count > 50) {
+                            statusTd.html('<span class="status-badge danger">⚠ Very High</span>');
+                        } else if (item.count > 20) {
+                            statusTd.html('<span class="status-badge warning">High</span>');
                         } else {
                             statusTd.html('<span class="status-badge success">Normal</span>');
                         }
