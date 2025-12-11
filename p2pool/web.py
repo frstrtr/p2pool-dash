@@ -520,10 +520,16 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         blocks = []
         try:
             height = node.tracker.get_height(node.best_share_var.value)
+            if height < 1:
+                defer.returnValue([])
+                
             for s in node.tracker.get_chain(node.best_share_var.value, min(height, node.net.CHAIN_LENGTH)):
                 if s.pow_hash <= s.header['bits'].target:
                     block_hash = '%064x' % s.header_hash
-                    block_number = p2pool_data.parse_bip0034(s.share_data['coinbase'])[0]
+                    try:
+                        block_number = p2pool_data.parse_bip0034(s.share_data['coinbase'])[0]
+                    except Exception:
+                        block_number = 0
                     
                     # Check block status
                     status = yield get_block_status(block_hash)
@@ -538,50 +544,60 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                     ))
         except Exception as e:
             log.err(e, 'Error getting recent blocks:')
+            defer.returnValue([])
         
         # Calculate luck for each block
         # Luck = expected_time / actual_time * 100%
-        # We need pool hashrate at time of each block to calculate expected time
+        # NOTE: We use CURRENT pool hashrate as approximation since we don't store historical hashrate
+        # This makes luck calculation approximate for older blocks
         if len(blocks) >= 1:
+            # Get current pool hashrate for luck estimation
+            current_pool_hashrate = None
+            current_expected_time = None
+            try:
+                lookbehind = min(height, 3600 // node.net.SHARE_PERIOD)
+                if lookbehind >= 2:
+                    pool_hashrate = p2pool_data.get_pool_attempts_per_second(
+                        node.tracker, node.best_share_var.value, lookbehind)
+                    stale_prop = p2pool_data.get_average_stale_prop(
+                        node.tracker, node.best_share_var.value, lookbehind)
+                    current_pool_hashrate = pool_hashrate / (1 - stale_prop) if stale_prop < 1 else pool_hashrate
+                    
+                    # Get current network difficulty for expected time calculation
+                    if wb.current_work.value and 'bits' in wb.current_work.value:
+                        block_difficulty = bitcoin_data.target_to_difficulty(
+                            wb.current_work.value['bits'].target)
+                        if current_pool_hashrate > 0:
+                            current_expected_time = (block_difficulty * 2**32) / current_pool_hashrate
+            except Exception as e:
+                log.err(e, 'Error calculating pool hashrate for luck:')
+            
             # Sort by timestamp (oldest first for calculation)
             blocks_sorted = sorted(blocks, key=lambda x: x['ts'])
             
             for i, block in enumerate(blocks_sorted):
+                # Initialize luck fields
+                block['luck'] = None
+                block['time_to_find'] = None
+                block['expected_time'] = current_expected_time  # Use current as approximation
+                block['luck_approximate'] = True  # Flag that this is approximate
+                
                 if i == 0:
-                    # First block: can't calculate luck without previous reference
-                    # Use time since pool start or estimate from share chain
-                    block['luck'] = None
-                    block['time_to_find'] = None
-                    block['expected_time'] = None
-                else:
-                    # Time between this block and previous block
-                    prev_block = blocks_sorted[i - 1]
-                    actual_time = block['ts'] - prev_block['ts']
-                    block['time_to_find'] = actual_time
+                    # First block: can't calculate time_to_find without previous reference
+                    continue
+                
+                # Time between this block and previous block
+                prev_block = blocks_sorted[i - 1]
+                actual_time = block['ts'] - prev_block['ts']
+                
+                if actual_time <= 0:
+                    continue  # Invalid time difference
                     
-                    # Get pool hashrate around the time of this block
-                    # Use current pool stats as approximation
-                    try:
-                        lookbehind = min(height, 3600 // node.net.SHARE_PERIOD)
-                        pool_hashrate = p2pool_data.get_pool_attempts_per_second(
-                            node.tracker, node.best_share_var.value, lookbehind)
-                        stale_prop = p2pool_data.get_average_stale_prop(
-                            node.tracker, node.best_share_var.value, lookbehind)
-                        effective_hashrate = pool_hashrate / (1 - stale_prop) if stale_prop < 1 else pool_hashrate
-                        
-                        # Expected time = difficulty * 2^32 / hashrate
-                        block_difficulty = bitcoin_data.target_to_difficulty(
-                            node.tracker.items[node.best_share_var.value].header['bits'].target)
-                        expected_time = (block_difficulty * 2**32) / effective_hashrate if effective_hashrate > 0 else 0
-                        
-                        block['expected_time'] = expected_time
-                        if actual_time > 0 and expected_time > 0:
-                            block['luck'] = (expected_time / actual_time) * 100
-                        else:
-                            block['luck'] = None
-                    except Exception:
-                        block['luck'] = None
-                        block['expected_time'] = None
+                block['time_to_find'] = actual_time
+                
+                # Calculate luck using current hashrate (approximate)
+                if current_expected_time and current_expected_time > 0:
+                    block['luck'] = (current_expected_time / actual_time) * 100
             
             # Restore original order (newest first)
             blocks = sorted(blocks_sorted, key=lambda x: x['ts'], reverse=True)
@@ -590,10 +606,11 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             valid_luck = [b['luck'] for b in blocks if b['luck'] is not None]
             if valid_luck:
                 avg_luck = sum(valid_luck) / len(valid_luck)
-                # Add summary to first item or create metadata
+                # Add summary to first item
                 if blocks:
                     blocks[0]['pool_avg_luck'] = avg_luck
                     blocks[0]['blocks_for_luck'] = len(valid_luck)
+                    blocks[0]['luck_note'] = "Luck is approximate (uses current pool hashrate)"
         
         defer.returnValue(blocks)
     
@@ -613,7 +630,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         valid_blocks = [b for b in blocks if b.get('luck') is not None]
         
         if len(valid_blocks) < 1:
-            # Only one block, can't calculate luck
+            # Only one block or no luck calculated, can't show stats
             defer.returnValue(dict(
                 blocks_found=len(blocks),
                 luck_available=False,
@@ -621,39 +638,54 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             ))
         
         luck_values = [b['luck'] for b in valid_blocks]
-        times_to_find = [b['time_to_find'] for b in valid_blocks if b.get('time_to_find')]
+        times_to_find = [b['time_to_find'] for b in valid_blocks if b.get('time_to_find') and b.get('time_to_find') > 0]
         
         # Current expected time to block
+        current_expected_time = None
         try:
-            lookbehind = min(node.tracker.get_height(node.best_share_var.value), 3600 // node.net.SHARE_PERIOD)
-            pool_hashrate = p2pool_data.get_pool_attempts_per_second(
-                node.tracker, node.best_share_var.value, lookbehind)
-            stale_prop = p2pool_data.get_average_stale_prop(
-                node.tracker, node.best_share_var.value, lookbehind)
-            effective_hashrate = pool_hashrate / (1 - stale_prop) if stale_prop < 1 else pool_hashrate
-            
-            block_difficulty = bitcoin_data.target_to_difficulty(
-                wb.current_work.value['bits'].target)
-            current_expected_time = (block_difficulty * 2**32) / effective_hashrate if effective_hashrate > 0 else 0
-        except Exception:
-            current_expected_time = None
+            height = node.tracker.get_height(node.best_share_var.value)
+            if height and height >= 2:
+                lookbehind = min(height, 3600 // node.net.SHARE_PERIOD)
+                if lookbehind >= 2:
+                    pool_hashrate = p2pool_data.get_pool_attempts_per_second(
+                        node.tracker, node.best_share_var.value, lookbehind)
+                    stale_prop = p2pool_data.get_average_stale_prop(
+                        node.tracker, node.best_share_var.value, lookbehind)
+                    effective_hashrate = pool_hashrate / (1 - stale_prop) if stale_prop < 1 else pool_hashrate
+                    
+                    if wb.current_work.value and 'bits' in wb.current_work.value and effective_hashrate > 0:
+                        block_difficulty = bitcoin_data.target_to_difficulty(
+                            wb.current_work.value['bits'].target)
+                        current_expected_time = (block_difficulty * 2**32) / effective_hashrate
+        except Exception as e:
+            log.err(e, 'Error calculating expected time for luck_stats:')
         
         # Time since last block
+        time_since_last = None
         if blocks:
-            newest_block = max(blocks, key=lambda x: x['ts'])
-            time_since_last = time.time() - newest_block['ts']
-        else:
-            time_since_last = None
+            try:
+                newest_block = max(blocks, key=lambda x: x['ts'])
+                time_since_last = time.time() - newest_block['ts']
+                if time_since_last < 0:
+                    time_since_last = 0  # Clock skew protection
+            except Exception:
+                pass
+        
+        # Calculate current luck trend safely
+        current_luck_trend = None
+        if current_expected_time and time_since_last and time_since_last > 0:
+            current_luck_trend = (current_expected_time / time_since_last) * 100
         
         defer.returnValue(dict(
             blocks_found=len(blocks),
             blocks_with_luck=len(valid_blocks),
             luck_available=True,
+            luck_approximate=True,  # Note: luck uses current hashrate, not historical
             
             # Luck statistics
-            average_luck=sum(luck_values) / len(luck_values),
-            min_luck=min(luck_values),
-            max_luck=max(luck_values),
+            average_luck=sum(luck_values) / len(luck_values) if luck_values else None,
+            min_luck=min(luck_values) if luck_values else None,
+            max_luck=max(luck_values) if luck_values else None,
             
             # Timing statistics  
             avg_time_between_blocks=sum(times_to_find) / len(times_to_find) if times_to_find else None,
@@ -663,7 +695,10 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             # Current state
             current_expected_time=current_expected_time,
             time_since_last_block=time_since_last,
-            current_luck_trend=(current_expected_time / time_since_last * 100) if (current_expected_time and time_since_last and time_since_last > 0) else None,
+            current_luck_trend=current_luck_trend,
+            
+            # Note about approximation
+            note="Luck values are approximate (calculated using current pool hashrate)",
             
             # Individual block luck (newest first)
             blocks=[dict(
