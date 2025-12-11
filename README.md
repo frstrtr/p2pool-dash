@@ -179,6 +179,10 @@ All issues and solutions are documented in **[INSTALL.md](INSTALL.md)**, includi
 - ✅ Configurable vardiff with --share-rate parameter (default: 10 seconds)
 - ✅ Improved min_share_target bounds for better difficulty adjustment
 - ✅ Fixed Dash-specific got_response() signature compatibility
+- ✅ **Block luck calculation** with time-weighted average hashrate
+- ✅ **Hashrate sampling** for precise luck statistics
+- ✅ **Telegram notifications** for block announcements
+- ✅ **Block status tracking** (confirmed/orphaned/pending)
 
 ## Port Forwarding
 
@@ -187,6 +191,50 @@ If behind NAT, forward these ports:
 - **7903**: Stratum (for miners)
 
 Do NOT forward port 9998 (Dash RPC - security risk)
+
+## Web Interface & API
+
+P2Pool provides a web interface at `http://YOUR_IP:7903/`:
+
+### Web Pages
+- `/static/index.html` - Classic status page
+- `/static/dashboard.html` - Modern dashboard with graphs
+- `/static/graphs.html` - Detailed statistics graphs
+
+### API Endpoints
+- `/local_stats` - Local node statistics
+- `/global_stats` - Pool-wide statistics
+- `/recent_blocks` - Recently found blocks with luck info
+- `/current_payouts` - Current payout distribution
+- `/hashrate_samples` - Hashrate sampling stats for luck calculation
+- `/block_history` - Historical block data
+
+### Luck Calculation
+
+Block luck shows how "lucky" the pool was finding each block:
+- **>100%** (green): Found faster than expected
+- **75-100%** (yellow): Normal range
+- **<75%** (red): Found slower than expected
+
+Luck is calculated using: `(expected_time / actual_time) × 100%`
+
+The pool uses three methods for hashrate estimation (in order of preference):
+1. **Time-weighted average**: Uses actual hashrate samples between blocks (most precise)
+2. **Simple average**: Average of hashrates at previous and current block
+3. **Single hashrate**: Fallback to current pool hashrate
+
+### Telegram Notifications
+
+To enable Telegram block announcements:
+1. Create a bot via [@BotFather](https://t.me/botfather)
+2. Edit `data/dash/telegram_config.json`:
+```json
+{
+  "enabled": true,
+  "bot_token": "YOUR_BOT_TOKEN",
+  "chat_id": "YOUR_CHAT_ID"
+}
+```
 
 Official wiki :
 -------------------------
