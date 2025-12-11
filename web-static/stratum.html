@@ -243,6 +243,18 @@
             font-weight: 600;
         }
         
+        /* Health Info Box */
+        .health-info {
+            padding: 15px;
+            background: var(--darker);
+            border-radius: 8px;
+            line-height: 1.8;
+        }
+        
+        .health-info p {
+            margin: 0;
+        }
+        
         /* Error Message */
         #error-msg {
             background: rgba(220, 53, 69, 0.15);
@@ -320,13 +332,20 @@
         
         <!-- Pool Overview Stats -->
         <div class="stats-grid">
-            <div class="stat-card">
+            <div class="stat-card" title="Total TCP socket connections from all miners">
                 <h3>🔗 Active Connections</h3>
                 <div class="stat-value primary" id="connections">-</div>
+                <div class="stat-unit">TCP sockets</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card" title="Unique worker names (miner identifiers)">
                 <h3>👷 Unique Workers</h3>
                 <div class="stat-value" id="workers">-</div>
+                <div class="stat-unit">miners</div>
+            </div>
+            <div class="stat-card" title="Connections per worker - Normal: 1-3, Warning: >3 may indicate connection issues">
+                <h3>📡 Conn/Worker Ratio</h3>
+                <div class="stat-value" id="conn_ratio">-</div>
+                <div class="stat-unit" id="conn_ratio_status">-</div>
             </div>
             <div class="stat-card">
                 <h3>✅ Total Accepted</h3>
@@ -349,6 +368,14 @@
                 <h3>⏱️ Stratum Uptime</h3>
                 <div class="stat-value" id="uptime">-</div>
             </div>
+        </div>
+        
+        <!-- Connection Health Info -->
+        <div class="section" id="conn-health-section" style="display: none;">
+            <div class="section-header">
+                <h2>ℹ️ Connection Health</h2>
+            </div>
+            <div class="health-info" id="conn-health-info"></div>
         </div>
         
         <!-- Connected Workers -->
@@ -509,12 +536,61 @@
                 var workers = data.workers || {};
                 
                 // Update pool stats
-                d3.select('#connections').text(pool.connections || 0);
-                d3.select('#workers').text(Object.keys(workers).length || pool.workers || 0);
+                var connections = pool.connections || 0;
+                var workerCount = Object.keys(workers).length || pool.workers || 0;
+                
+                d3.select('#connections').text(connections);
+                d3.select('#workers').text(workerCount);
                 d3.select('#total_accepted').text(d3.format(',')(pool.total_accepted || 0));
                 d3.select('#total_rejected').text(d3.format(',')(pool.total_rejected || 0));
                 d3.select('#submission_rate').text(d3.format('.1f')(pool.submission_rate || 0));
                 d3.select('#uptime').text(format_dt(pool.uptime || 0));
+                
+                // Calculate and display connection/worker ratio with health status
+                var ratio = workerCount > 0 ? connections / workerCount : 0;
+                var ratioEl = d3.select('#conn_ratio');
+                var ratioStatusEl = d3.select('#conn_ratio_status');
+                var healthSection = d3.select('#conn-health-section');
+                var healthInfo = d3.select('#conn-health-info');
+                
+                ratioEl.text(d3.format('.1f')(ratio));
+                
+                if (workerCount === 0) {
+                    ratioEl.attr('class', 'stat-value');
+                    ratioStatusEl.text('no workers');
+                    healthSection.style('display', 'none');
+                } else if (ratio <= 1.5) {
+                    // 1 connection per worker - single connection miners
+                    ratioEl.attr('class', 'stat-value success');
+                    ratioStatusEl.text('✓ single-conn miners');
+                    healthSection.style('display', 'none');
+                } else if (ratio <= 3.0) {
+                    // 2-3 connections per worker - normal for most ASICs
+                    ratioEl.attr('class', 'stat-value success');
+                    ratioStatusEl.text('✓ normal (dual-conn)');
+                    healthSection.style('display', 'block');
+                    healthInfo.html('<p style="color: var(--success);">✓ <strong>Healthy:</strong> Each miner maintains ~' + d3.format('.0f')(ratio) + ' connections.</p>' +
+                        '<p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 8px;">This is normal behavior. Many ASICs (like Bitmain D-series) maintain dual TCP connections for redundancy and faster job switching.</p>');
+                } else if (ratio <= 5.0) {
+                    // 4-5 connections per worker - slightly elevated
+                    ratioEl.attr('class', 'stat-value warning');
+                    ratioStatusEl.text('⚠ elevated');
+                    healthSection.style('display', 'block');
+                    healthInfo.html('<p style="color: var(--warning);">⚠ <strong>Elevated:</strong> ~' + d3.format('.1f')(ratio) + ' connections per worker.</p>' +
+                        '<p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 8px;">This may indicate connection instability, frequent reconnects, or stale connections not being cleaned up. Check if miners are experiencing network issues.</p>');
+                } else {
+                    // >5 connections per worker - anomaly
+                    ratioEl.attr('class', 'stat-value danger');
+                    ratioStatusEl.text('⚠ anomaly detected');
+                    healthSection.style('display', 'block');
+                    healthInfo.html('<p style="color: var(--danger);">⚠ <strong>Anomaly:</strong> ' + d3.format('.1f')(ratio) + ' connections per worker is unusually high.</p>' +
+                        '<p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 8px;">Possible causes:<br>' +
+                        '• Connection leaks (stale sockets not closing)<br>' +
+                        '• Miner firmware bugs creating duplicate connections<br>' +
+                        '• Network instability causing rapid reconnects<br>' +
+                        '• Possible connection flood attack<br><br>' +
+                        'Consider restarting miners or investigating network stability.</p>');
+                }
                 
                 // Calculate reject rate
                 var total = (pool.total_accepted || 0) + (pool.total_rejected || 0);
