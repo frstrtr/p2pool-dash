@@ -564,6 +564,167 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     # Expose block history via API
     web_root.putChild('block_history', WebInterface(lambda: block_history))
     
+    # ==========================================================================
+    # Hashrate sampling for precise luck calculation
+    # Stores pool hashrate samples at each share submission for time-weighted average
+    # Format: {'samples': [{'ts': timestamp, 'hashrate': H/s, 'network_diff': diff}, ...]}
+    
+    hashrate_samples_file = os.path.join(datadir_path, 'hashrate_samples.json')
+    hashrate_samples = []
+    MAX_HASHRATE_SAMPLES = 10000  # Keep last N samples (roughly 1 week at 1 sample/minute)
+    SAMPLE_INTERVAL = 30  # Minimum seconds between samples to avoid excessive storage
+    last_sample_time = 0
+    
+    # Load existing hashrate samples
+    if os.path.exists(hashrate_samples_file):
+        try:
+            with open(hashrate_samples_file, 'rb') as f:
+                data = json.loads(f.read())
+                hashrate_samples = data.get('samples', [])
+            print 'Loaded %d hashrate samples' % len(hashrate_samples)
+        except Exception as e:
+            log.err(e, 'Error loading hashrate samples:')
+            hashrate_samples = []
+    
+    def save_hashrate_samples():
+        """Save hashrate samples to disk."""
+        try:
+            with open(hashrate_samples_file + '.new', 'wb') as f:
+                f.write(json.dumps({'samples': hashrate_samples}, indent=2))
+            try:
+                os.rename(hashrate_samples_file + '.new', hashrate_samples_file)
+            except:
+                os.remove(hashrate_samples_file)
+                os.rename(hashrate_samples_file + '.new', hashrate_samples_file)
+        except Exception as e:
+            log.err(e, 'Error saving hashrate samples:')
+    
+    def record_hashrate_sample(force=False):
+        """Record current pool hashrate sample. Called on each share submission."""
+        global last_sample_time
+        
+        now = time.time()
+        
+        # Rate limit sampling unless forced
+        if not force and (now - last_sample_time) < SAMPLE_INTERVAL:
+            return
+        
+        try:
+            height = node.tracker.get_height(node.best_share_var.value)
+            if height < 2:
+                return
+            
+            lookbehind = min(height, 3600 // node.net.SHARE_PERIOD)
+            if lookbehind < 2:
+                return
+            
+            raw_hashrate = p2pool_data.get_pool_attempts_per_second(
+                node.tracker, node.best_share_var.value, lookbehind)
+            stale_prop = p2pool_data.get_average_stale_prop(
+                node.tracker, node.best_share_var.value, lookbehind)
+            pool_hashrate = raw_hashrate / (1 - stale_prop) if stale_prop < 1 else raw_hashrate
+            
+            # Get network difficulty
+            network_diff = None
+            if wb.current_work.value and 'bits' in wb.current_work.value:
+                network_diff = bitcoin_data.target_to_difficulty(
+                    wb.current_work.value['bits'].target)
+            
+            sample = {
+                'ts': now,
+                'hashrate': pool_hashrate,
+                'network_diff': network_diff,
+            }
+            
+            hashrate_samples.append(sample)
+            last_sample_time = now
+            
+            # Prune old samples
+            if len(hashrate_samples) > MAX_HASHRATE_SAMPLES:
+                hashrate_samples[:] = hashrate_samples[-MAX_HASHRATE_SAMPLES:]
+            
+            # Save periodically (every 10 samples)
+            if len(hashrate_samples) % 10 == 0:
+                save_hashrate_samples()
+                
+        except Exception as e:
+            log.err(e, 'Error recording hashrate sample:')
+    
+    def get_time_weighted_average_hashrate(start_ts, end_ts):
+        """Calculate time-weighted average hashrate between two timestamps.
+        
+        Uses actual hashrate samples recorded during that period.
+        Returns (avg_hashrate, sample_count) or (None, 0) if insufficient data.
+        """
+        if not hashrate_samples or start_ts >= end_ts:
+            return None, 0
+        
+        # Find samples within the time range
+        relevant_samples = []
+        
+        # Also include the sample just before start_ts for interpolation
+        sample_before = None
+        for s in hashrate_samples:
+            if s['ts'] < start_ts:
+                sample_before = s
+            elif s['ts'] <= end_ts:
+                relevant_samples.append(s)
+        
+        if sample_before:
+            relevant_samples.insert(0, sample_before)
+        
+        if len(relevant_samples) < 2:
+            # Not enough samples, return simple average if any exist
+            if relevant_samples:
+                return relevant_samples[0]['hashrate'], 1
+            return None, 0
+        
+        # Calculate time-weighted average
+        total_weighted = 0
+        total_time = 0
+        
+        for i in range(len(relevant_samples) - 1):
+            s1 = relevant_samples[i]
+            s2 = relevant_samples[i + 1]
+            
+            # Clamp to our time range
+            t1 = max(s1['ts'], start_ts)
+            t2 = min(s2['ts'], end_ts)
+            
+            if t2 > t1:
+                duration = t2 - t1
+                # Use average of the two samples for this interval
+                avg_hashrate = (s1['hashrate'] + s2['hashrate']) / 2
+                total_weighted += avg_hashrate * duration
+                total_time += duration
+        
+        # Handle time after last sample within range
+        last_sample = relevant_samples[-1]
+        if last_sample['ts'] < end_ts:
+            duration = end_ts - max(last_sample['ts'], start_ts)
+            if duration > 0:
+                total_weighted += last_sample['hashrate'] * duration
+                total_time += duration
+        
+        if total_time > 0:
+            return total_weighted / total_time, len(relevant_samples)
+        return None, 0
+    
+    # Expose hashrate samples via API
+    web_root.putChild('hashrate_samples', WebInterface(lambda: {
+        'sample_count': len(hashrate_samples),
+        'oldest_sample': hashrate_samples[0] if hashrate_samples else None,
+        'newest_sample': hashrate_samples[-1] if hashrate_samples else None,
+        'sample_interval': SAMPLE_INTERVAL,
+    }))
+    
+    # Save hashrate samples on shutdown
+    def save_samples_on_shutdown():
+        if hashrate_samples:
+            print 'Saving %d hashrate samples on shutdown...' % len(hashrate_samples)
+            save_hashrate_samples()
+    stop_event.watch(save_samples_on_shutdown)
+    
     # Cache for block status to avoid repeated RPC calls
     block_status_cache = {}  # {block_hash: {'status': 'confirmed'|'orphaned'|'pending', 'checked': timestamp}}
     BLOCK_CACHE_TTL = 300  # 5 minutes cache for block status
@@ -689,6 +850,8 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                 block['time_to_find'] = None
                 block['expected_time'] = None
                 block['avg_hashrate_used'] = None
+                block['hashrate_samples_used'] = 0
+                block['luck_method'] = None
                 
                 if i == 0:
                     # First block: can't calculate time_to_find without previous reference
@@ -703,35 +866,56 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                     
                 block['time_to_find'] = actual_time
                 
-                # Calculate AVERAGE hashrate between prev block and this block
-                prev_hashrate = None
-                if prev_hist_data and prev_hist_data.get('pool_hashrate'):
-                    prev_hashrate = prev_hist_data['pool_hashrate']
-                elif block['luck_approximate']:
-                    prev_hashrate = current_pool_hashrate  # Fallback
-                else:
-                    prev_hashrate = block_hashrate  # Use current block's hashrate if we don't have prev
+                # Try to calculate time-weighted average hashrate from samples first (most accurate)
+                tw_avg_hashrate, sample_count = get_time_weighted_average_hashrate(
+                    prev_block['ts'], block['ts'])
                 
-                if prev_hashrate and block_hashrate:
-                    avg_hashrate = (prev_hashrate + block_hashrate) / 2
-                    block['avg_hashrate_used'] = avg_hashrate
+                if tw_avg_hashrate and sample_count >= 2:
+                    # Use time-weighted average from actual samples
+                    block['avg_hashrate_used'] = tw_avg_hashrate
+                    block['hashrate_samples_used'] = sample_count
+                    block['luck_method'] = 'time_weighted_avg'
+                    block['luck_approximate'] = False
                     
-                    # Calculate expected time using average hashrate
-                    if block_network_diff and avg_hashrate > 0:
-                        expected_time = (block_network_diff * 2**32) / avg_hashrate
+                    if block_network_diff and tw_avg_hashrate > 0:
+                        expected_time = (block_network_diff * 2**32) / tw_avg_hashrate
                         block['expected_time'] = expected_time
                         block['luck'] = (expected_time / actual_time) * 100
-                elif block_hashrate and block_network_diff:
-                    # Fallback to single hashrate
-                    expected_time = (block_network_diff * 2**32) / block_hashrate
-                    block['expected_time'] = expected_time
-                    block['luck'] = (expected_time / actual_time) * 100
+                else:
+                    # Fallback: Calculate simple average hashrate between prev block and this block
+                    prev_hashrate = None
+                    if prev_hist_data and prev_hist_data.get('pool_hashrate'):
+                        prev_hashrate = prev_hist_data['pool_hashrate']
+                    elif block['luck_approximate']:
+                        prev_hashrate = current_pool_hashrate  # Fallback
+                    else:
+                        prev_hashrate = block_hashrate  # Use current block's hashrate if we don't have prev
+                    
+                    if prev_hashrate and block_hashrate:
+                        avg_hashrate = (prev_hashrate + block_hashrate) / 2
+                        block['avg_hashrate_used'] = avg_hashrate
+                        block['luck_method'] = 'simple_avg'
+                        
+                        # Calculate expected time using average hashrate
+                        if block_network_diff and avg_hashrate > 0:
+                            expected_time = (block_network_diff * 2**32) / avg_hashrate
+                            block['expected_time'] = expected_time
+                            block['luck'] = (expected_time / actual_time) * 100
+                    elif block_hashrate and block_network_diff:
+                        # Fallback to single hashrate
+                        block['luck_method'] = 'single_hashrate'
+                        expected_time = (block_network_diff * 2**32) / block_hashrate
+                        block['expected_time'] = expected_time
+                        block['luck'] = (expected_time / actual_time) * 100
             
             # Restore original order (newest first)
             blocks = sorted(blocks_sorted, key=lambda x: x['ts'], reverse=True)
             
             # Calculate overall luck stats
             valid_luck = [b['luck'] for b in blocks if b['luck'] is not None]
+            time_weighted_count = sum(1 for b in blocks if b.get('luck_method') == 'time_weighted_avg')
+            simple_avg_count = sum(1 for b in blocks if b.get('luck_method') == 'simple_avg')
+            single_hashrate_count = sum(1 for b in blocks if b.get('luck_method') == 'single_hashrate')
             approximate_count = sum(1 for b in blocks if b.get('luck_approximate', True) and b.get('luck') is not None)
             accurate_count = len(valid_luck) - approximate_count
             
@@ -743,8 +927,17 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                     blocks[0]['blocks_for_luck'] = len(valid_luck)
                     blocks[0]['accurate_luck_count'] = accurate_count
                     blocks[0]['approximate_luck_count'] = approximate_count
-                    if accurate_count == len(valid_luck):
-                        blocks[0]['luck_note'] = "All luck values are accurate (using avg hashrate between blocks)"
+                    blocks[0]['time_weighted_luck_count'] = time_weighted_count
+                    blocks[0]['simple_avg_luck_count'] = simple_avg_count
+                    blocks[0]['single_hashrate_luck_count'] = single_hashrate_count
+                    
+                    if time_weighted_count == len(valid_luck):
+                        blocks[0]['luck_note'] = "All luck values use time-weighted avg hashrate from samples (most precise)"
+                    elif time_weighted_count > 0:
+                        blocks[0]['luck_note'] = "%d time-weighted, %d simple avg, %d single hashrate" % (
+                            time_weighted_count, simple_avg_count, single_hashrate_count)
+                    elif accurate_count == len(valid_luck):
+                        blocks[0]['luck_note'] = "All luck values use avg hashrate between blocks"
                     elif accurate_count > 0:
                         blocks[0]['luck_note'] = "%d accurate, %d approximate (using current hashrate)" % (accurate_count, approximate_count)
                     else:
@@ -1037,9 +1230,13 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             hd.datastreams['miner_hash_rates'].add_datum(t, {user: work})
             if dead:
                 hd.datastreams['miner_dead_hash_rates'].add_datum(t, {user: work})
+        # Record hashrate sample for time-weighted luck calculation
+        record_hashrate_sample()
     @wb.share_received.watch
     def _(work, dead, share_hash):
         t = time.time()
+        # Record hashrate sample on share submission (more significant event)
+        record_hashrate_sample()
         if not dead:
             hd.datastreams['local_share_hash_rates'].add_datum(t, dict(good=work))
         else:
