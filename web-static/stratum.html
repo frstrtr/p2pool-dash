@@ -393,6 +393,29 @@
             font-size: 0.9rem;
         }
         
+        .status-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        
+        .status-badge.success {
+            background: rgba(40, 167, 69, 0.2);
+            color: var(--success);
+        }
+        
+        .status-badge.warning {
+            background: rgba(255, 193, 7, 0.2);
+            color: var(--warning);
+        }
+        
+        .status-badge.danger {
+            background: rgba(220, 53, 69, 0.2);
+            color: var(--danger);
+        }
+        
         .ban-tab-content table {
             width: 100%;
         }
@@ -964,6 +987,38 @@
                         .style('text-align', 'center')
                         .style('color', 'var(--text-muted)')
                         .text('No workers connected');
+                }
+                
+                // Update IP Connections table
+                var ipConns = pool.ip_connections || {};
+                var ipTbody = d3.select('#ip-connections-table tbody');
+                ipTbody.selectAll('tr').remove();
+                
+                var ipList = [];
+                for (var ip in ipConns) {
+                    ipList.push({ip: ip, count: ipConns[ip]});
+                }
+                ipList.sort(function(a, b) { return b.count - a.count; });
+                
+                if (ipList.length > 0) {
+                    d3.select('#no-ip-connections').style('display', 'none');
+                    ipList.forEach(function(item) {
+                        var tr = ipTbody.append('tr');
+                        tr.append('td').text(item.ip);
+                        tr.append('td').text(item.count);
+                        
+                        // Status based on connection count
+                        var statusTd = tr.append('td');
+                        if (item.count > 10) {
+                            statusTd.html('<span class="status-badge danger">⚠ High</span>');
+                        } else if (item.count > 5) {
+                            statusTd.html('<span class="status-badge warning">Elevated</span>');
+                        } else {
+                            statusTd.html('<span class="status-badge success">Normal</span>');
+                        }
+                    });
+                } else {
+                    d3.select('#no-ip-connections').style('display', 'block');
                 }
                 
                 d3.select('#last-refresh').text('Last update: ' + new Date().toLocaleTimeString());
