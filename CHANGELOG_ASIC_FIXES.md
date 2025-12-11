@@ -564,4 +564,51 @@ ASICs often create multiple stratum connections per worker (for redundancy, per-
 | Pure backup connections | Silent vardiff adjustments, no log spam |
 | Failover activation | Backup connection immediately usable at reduced difficulty |
 
+---
+
+## v1.2.3 - Suggest Difficulty Timing Fix (December 12, 2025)
+
+Fixed timing issue with `mining.suggest_difficulty` for CPU miners and low-hashrate devices.
+
+### 28. Re-send Work After Suggest Difficulty (FIX)
+**Files:** `p2pool/dash/stratum.py`
+
+- **Problem:** CPU miners send `mining.suggest_difficulty` AFTER `mining.authorize`, but `_send_work()` is called during `mining.authorize`. This means the first work is sent with default difficulty (100) instead of the suggested difficulty (e.g., 0.005). The miner then has to wait for vardiff to gradually reduce the difficulty, wasting time and causing "share above target" rejections.
+
+- **Protocol Flow (Before Fix):**
+  1. `mining.subscribe` → work sent at diff 100
+  2. `mining.configure` → minimum-difficulty set  
+  3. `mining.authorize` → work sent at diff 100 again
+  4. `mining.suggest_difficulty(0.005)` → difficulty updated but no new work sent
+  5. Miner submits share at diff 0.005 → **REJECTED** (work was at diff 100)
+  6. Vardiff slowly reduces difficulty... eventually works
+
+- **Protocol Flow (After Fix):**
+  1. `mining.subscribe` → work sent at diff 100
+  2. `mining.configure` → minimum-difficulty set
+  3. `mining.authorize` → work sent at diff 100
+  4. `mining.suggest_difficulty(0.005)` → difficulty updated AND new work sent at diff 0.005 ✓
+  5. Miner submits share at diff 0.005 → **ACCEPTED** ✓
+
+- **Solution:** Call `_send_work()` immediately after processing `rpc_suggest_difficulty()` to send new work at the suggested difficulty. Uses a 0.1s delay to avoid race conditions with the difficulty update notification.
+
+```python
+# After updating difficulty in suggest_difficulty:
+self.other.svc_mining.rpc_set_difficulty(safe_diff).addErrback(lambda err: None)
+
+# NEW: Re-send work with correct difficulty
+reactor.callLater(0.1, self._send_work)
+```
+
+- **Result:** CPU miners and other low-hashrate devices using `suggest_difficulty` now immediately receive work at their requested difficulty, eliminating warmup time and share rejections.
+
+### Impact on CPU Miners
+
+| Metric | Before | After |
+|--------|--------|-------|
+| Initial difficulty | 100 (default) | 0.005 (suggested) |
+| Time to first valid share | ~30s+ (vardiff warmup) | Immediate |
+| Initial share rejections | Multiple | None |
+| Vardiff oscillation | Severe | None |
+
 

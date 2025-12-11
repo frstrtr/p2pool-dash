@@ -700,6 +700,12 @@ class StratumRPCMiningProvider(object):
         # Send immediate difficulty update to miner
         self.other.svc_mining.rpc_set_difficulty(safe_diff).addErrback(lambda err: None)
         
+        # ==== FIX: Send new work immediately with the suggested difficulty ====
+        # mining.suggest_difficulty often arrives AFTER mining.authorize, so the
+        # initial work sent during authorize uses wrong difficulty. Re-send work
+        # now with the correct difficulty target.
+        reactor.callLater(0.1, self._send_work)
+        
         return True
     
     def rpc_configure(self, extensions, extensionParameters):
