@@ -87,7 +87,8 @@ if [ "$DAEMON_MODE" = true ]; then
         --dashd-address 127.0.0.1 \
         --dashd-rpc-port 9998 \
         -a XrTwUgw3ikobuXdLKvvSUjL9JpuPs9uqL7 \
-        >> '$LOG_FILE' 2>&1" &
+        >> '$LOG_FILE' 2>&1" > /dev/null 2>&1 &
+    disown
     
     # Save PID
     echo $! > "$PID_FILE"
@@ -95,9 +96,10 @@ if [ "$DAEMON_MODE" = true ]; then
     
     # Verify it started
     if pgrep -f "pypy.*run_p2pool" > /dev/null; then
-        echo "P2Pool started successfully (PID: $(cat $PID_FILE))"
+        echo "P2Pool started successfully (PID: $(pgrep -f 'pypy.*run_p2pool' | head -1))"
         echo "Log file: $LOG_FILE"
         echo "Use 'tail -f $LOG_FILE' to follow logs"
+        exit 0
     else
         echo "ERROR: P2Pool failed to start. Check $LOG_FILE for details."
         exit 1
