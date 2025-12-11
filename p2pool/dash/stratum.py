@@ -823,9 +823,12 @@ class StratumRPCMiningProvider(object):
                 new_diff = max(new_diff, pool_stats.get_safe_minimum_difficulty(new_diff))
                 if new_diff < current_diff:
                     self.target = dash_data.difficulty_to_target(new_diff)
-                    print 'Vardiff timeout %s: %.4f -> %.4f (no shares for %.1fs, target %.1fs)' % (
-                        self.username or self.worker_ip, current_diff, new_diff, 
-                        time_since_last_share, effective_share_rate)
+                    # Only log timeout for connections that have submitted shares
+                    # This suppresses noise from idle backup/redundant ASIC connections
+                    if self.shares_submitted > 0:
+                        print 'Vardiff timeout %s: %.4f -> %.4f (no shares for %.1fs, target %.1fs)' % (
+                            self.username or self.worker_ip, current_diff, new_diff, 
+                            time_since_last_share, effective_share_rate)
                     # Reset the timer so we don't immediately reduce again
                     self.last_share_time = time.time()
         
