@@ -611,4 +611,59 @@ reactor.callLater(0.1, self._send_work)
 | Initial share rejections | Multiple | None |
 | Vardiff oscillation | Severe | None |
 
+### Important Note: CPU Miners and P2Pool Shares
+
+While CPU miners can now submit **pseudoshares** at appropriate low difficulty (verified working at ~1 MH/s with difficulty 0.004), they will almost never find actual **P2Pool shares** due to the share chain difficulty.
+
+**Why CPU Miners Can't Find P2Pool Shares:**
+
+| Parameter | Value |
+|-----------|-------|
+| P2Pool share difficulty | ~63,000 |
+| CPU miner hashrate | ~1 MH/s |
+| Expected time per P2Pool share | **~9 years** |
+
+The P2Pool share difficulty is set by the network based on total pool hashrate (~14 TH/s) to achieve one share every 20 seconds for the entire pool. A 1 MH/s CPU miner has essentially zero probability of finding a P2Pool share.
+
+**Pseudoshares vs P2Pool Shares:**
+- **Pseudoshares** (diff 0.004): Used for local pool statistics and vardiff calibration only
+- **P2Pool Shares** (diff ~63,000): Required for coinbase inclusion and payout
+
+**Implication:** CPU miners mining to P2Pool will see their pseudoshares accepted but will never receive payouts because they cannot find P2Pool shares to be included in the share chain.
+
+**Recommendation:** Low-hashrate miners (< 100 GH/s) should use a traditional centralized pool that tracks shares internally, not P2Pool.
+
+---
+
+## Understanding P2Pool Share Timing
+
+### Share Period and Expected Time
+
+P2Pool is configured with `SHARE_PERIOD = 20 seconds`, meaning the **entire pool** should find one P2Pool share every 20 seconds on average.
+
+Individual miner's expected time to find a share depends on their proportion of total pool hashrate:
+
+```
+Your expected share time = SHARE_PERIOD / (your_hashrate / total_pool_hashrate)
+```
+
+**Example with current pool:**
+| Metric | Value |
+|--------|-------|
+| Pool total hashrate | 14.3 TH/s |
+| Your local hashrate | 3.6 TH/s |
+| Your share of pool | 25% |
+| Pool share period | 20 seconds |
+| **Your expected share time** | 20s / 0.25 = **80 seconds (1.3 min)** |
+
+The remaining ~75% of shares are found by other miners connected to peer P2Pool nodes.
+
+### Multi-Node P2Pool Network
+
+When connected to other P2Pool nodes (peers), the share difficulty adjusts based on **total network hashrate**, not just your local miners:
+
+- More peers with miners → Higher share difficulty → Longer time between your shares
+- Shares are distributed proportionally to hashrate contribution
+- Block rewards are split based on shares in the chain
+
 
