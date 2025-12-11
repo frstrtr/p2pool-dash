@@ -248,6 +248,17 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     
     web_root.putChild('stratum_stats', WebInterface(get_stratum_stats))
     
+    # ==== Security/DDoS monitoring endpoint ====
+    def get_stratum_security():
+        """Get stratum security and DDoS detection metrics"""
+        try:
+            from p2pool.dash.stratum import pool_stats
+            return pool_stats.get_security_stats()
+        except Exception as e:
+            return {'error': str(e)}
+    
+    web_root.putChild('stratum_security', WebInterface(get_stratum_security))
+    
     web_root.putChild('peer_addresses', WebInterface(lambda: ' '.join('%s%s' % (peer.transport.getPeer().host, ':'+str(peer.transport.getPeer().port) if peer.transport.getPeer().port != node.net.P2P_PORT else '') for peer in node.p2p_node.peers.itervalues())))
     web_root.putChild('peer_txpool_sizes', WebInterface(lambda: dict(('%s:%i' % (peer.transport.getPeer().host, peer.transport.getPeer().port), peer.remembered_txs_size) for peer in node.p2p_node.peers.itervalues())))
     web_root.putChild('pings', WebInterface(defer.inlineCallbacks(lambda: defer.returnValue(

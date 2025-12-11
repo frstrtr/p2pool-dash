@@ -255,6 +255,96 @@
             margin: 0;
         }
         
+        /* Security Monitor Styles */
+        .security-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .security-card {
+            background: var(--darker);
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+        }
+        
+        .security-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+        
+        .security-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: white;
+        }
+        
+        .security-value.normal { color: var(--success); }
+        .security-value.elevated { color: var(--warning); }
+        .security-value.critical { color: var(--danger); }
+        
+        .security-unit {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            margin-top: 3px;
+        }
+        
+        .threat-badge {
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        
+        .threat-normal { background: rgba(40, 167, 69, 0.2); color: var(--success); }
+        .threat-elevated { background: rgba(255, 193, 7, 0.2); color: var(--warning); }
+        .threat-warning { background: rgba(255, 152, 0, 0.2); color: #ff9800; }
+        .threat-critical { background: rgba(220, 53, 69, 0.3); color: var(--danger); animation: pulse 1s infinite; }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+        
+        .threat-info {
+            background: var(--darker);
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+        
+        .threat-title {
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: var(--warning);
+        }
+        
+        .threat-list {
+            margin: 0;
+            padding-left: 20px;
+            color: var(--text);
+        }
+        
+        .threat-list li {
+            margin: 5px 0;
+        }
+        
+        .suspicious-workers {
+            background: rgba(220, 53, 69, 0.1);
+            border: 1px solid var(--danger);
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+        
+        .suspicious-workers .threat-title {
+            color: var(--danger);
+        }
+        
         /* Error Message */
         #error-msg {
             background: rgba(220, 53, 69, 0.15);
@@ -476,6 +566,53 @@
                 </table>
             </div>
         </div>
+        
+        <!-- Security / DDoS Monitoring -->
+        <div class="section">
+            <div class="section-header">
+                <h2>🔒 Security Monitor</h2>
+                <span id="threat-badge" class="threat-badge threat-normal">● Normal</span>
+            </div>
+            <div class="security-grid">
+                <div class="security-card">
+                    <div class="security-label">Submission Rate (10s)</div>
+                    <div class="security-value" id="rate_10s">-</div>
+                    <div class="security-unit">shares/sec</div>
+                </div>
+                <div class="security-card">
+                    <div class="security-label">Submission Rate (60s)</div>
+                    <div class="security-value" id="rate_60s">-</div>
+                    <div class="security-unit">shares/sec</div>
+                </div>
+                <div class="security-card">
+                    <div class="security-label">Burst Ratio</div>
+                    <div class="security-value" id="burst_ratio">-</div>
+                    <div class="security-unit" id="burst_status">10s/60s rate</div>
+                </div>
+                <div class="security-card">
+                    <div class="security-label">Rate Limit Usage</div>
+                    <div class="security-value" id="rate_limit_pct">-</div>
+                    <div class="security-unit">of max capacity</div>
+                </div>
+            </div>
+            <div class="threat-info" id="threat-info" style="display: none;">
+                <div class="threat-title" id="threat-title">⚠️ Warnings</div>
+                <ul class="threat-list" id="threat-list"></ul>
+            </div>
+            <div class="suspicious-workers" id="suspicious-section" style="display: none;">
+                <div class="threat-title">🚨 Suspicious Workers</div>
+                <table id="suspicious-table">
+                    <thead>
+                        <tr>
+                            <th>Worker</th>
+                            <th>Submission Rate</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
     </main>
     
     <footer>
@@ -637,6 +774,97 @@
                 }
                 
                 d3.select('#last-refresh').text('Last update: ' + new Date().toLocaleTimeString());
+            });
+            
+            // Fetch security stats
+            d3.json('../stratum_security', function(secData) {
+                if (!secData || secData.error) {
+                    console.log('Security stats not available:', secData ? secData.error : 'no data');
+                    return;
+                }
+                
+                // Update rate displays
+                d3.select('#rate_10s').text(d3.format('.1f')(secData.rate_10s || 0));
+                d3.select('#rate_60s').text(d3.format('.1f')(secData.rate_60s || 0));
+                
+                // Burst ratio with color coding
+                var burstRatio = secData.burst_ratio || 0;
+                var burstEl = d3.select('#burst_ratio');
+                burstEl.text(d3.format('.1f')(burstRatio) + 'x');
+                
+                var burstStatus = d3.select('#burst_status');
+                if (burstRatio > 5) {
+                    burstEl.attr('class', 'security-value critical');
+                    burstStatus.text('⚠ spike detected!');
+                } else if (burstRatio > 3) {
+                    burstEl.attr('class', 'security-value elevated');
+                    burstStatus.text('elevated burst');
+                } else {
+                    burstEl.attr('class', 'security-value normal');
+                    burstStatus.text('normal variance');
+                }
+                
+                // Rate limit usage
+                var maxRate = secData.limits ? secData.limits.max_submissions_per_sec : 1000;
+                var ratePct = (secData.rate_10s / maxRate) * 100;
+                var rateEl = d3.select('#rate_limit_pct');
+                rateEl.text(d3.format('.1f')(ratePct) + '%');
+                
+                if (ratePct > 80) {
+                    rateEl.attr('class', 'security-value critical');
+                } else if (ratePct > 50) {
+                    rateEl.attr('class', 'security-value elevated');
+                } else {
+                    rateEl.attr('class', 'security-value normal');
+                }
+                
+                // Threat level badge
+                var threatBadge = d3.select('#threat-badge');
+                var threatLevel = secData.threat_level || 0;
+                var threatLabels = ['● Normal', '● Elevated', '● Warning', '● CRITICAL'];
+                var threatClasses = ['threat-normal', 'threat-elevated', 'threat-warning', 'threat-critical'];
+                
+                threatBadge.text(threatLabels[threatLevel]);
+                threatBadge.attr('class', 'threat-badge ' + threatClasses[threatLevel]);
+                
+                // Threat reasons
+                var threatInfo = d3.select('#threat-info');
+                var threatList = d3.select('#threat-list');
+                var reasons = secData.threat_reasons || [];
+                
+                if (reasons.length > 0) {
+                    threatInfo.style('display', 'block');
+                    threatList.selectAll('li').remove();
+                    reasons.forEach(function(reason) {
+                        threatList.append('li').text(reason);
+                    });
+                    
+                    // Update title color based on threat level
+                    var titleColors = ['var(--success)', 'var(--warning)', '#ff9800', 'var(--danger)'];
+                    d3.select('#threat-title').style('color', titleColors[threatLevel]);
+                } else {
+                    threatInfo.style('display', 'none');
+                }
+                
+                // Suspicious workers
+                var suspiciousSection = d3.select('#suspicious-section');
+                var suspicious = secData.suspicious_workers || [];
+                
+                if (suspicious.length > 0) {
+                    suspiciousSection.style('display', 'block');
+                    var tbody = d3.select('#suspicious-table tbody');
+                    tbody.selectAll('tr').remove();
+                    
+                    suspicious.forEach(function(w) {
+                        var tr = tbody.append('tr');
+                        tr.append('td').text(w.name.length > 30 ? w.name.substr(0, 15) + '...' + w.name.substr(-10) : w.name)
+                            .attr('title', w.name);
+                        tr.append('td').attr('class', 'bad').text(d3.format('.1f')(w.rate) + ' shares/sec');
+                        tr.append('td').attr('class', 'bad').text('⚠ High Rate');
+                    });
+                } else {
+                    suspiciousSection.style('display', 'none');
+                }
             });
         }
         

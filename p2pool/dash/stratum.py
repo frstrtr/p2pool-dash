@@ -219,6 +219,94 @@ class PoolStatistics(object):
             'submission_rate': self.get_global_submission_rate(),
             'uptime': now - self.startup_time,
         }
+    
+    def get_security_stats(self):
+        """Get security and DDoS detection metrics"""
+        now = time.time()
+        
+        # Calculate submission rate burst (last 10 seconds vs last 60 seconds)
+        recent_10s = [(t, d) for t, d in self.global_submissions if t > now - 10]
+        recent_60s = [(t, d) for t, d in self.global_submissions if t > now - 60]
+        
+        rate_10s = len(recent_10s) / 10.0 if recent_10s else 0
+        rate_60s = len(recent_60s) / 60.0 if recent_60s else 0
+        
+        # Burst ratio: sudden spike detection (>3x normal is suspicious)
+        burst_ratio = rate_10s / rate_60s if rate_60s > 0 else 0
+        
+        # Connection to worker anomaly
+        conn_worker_ratio = self.connection_count / float(len(self.worker_stats)) if self.worker_stats else 0
+        
+        # Reject rate (high reject = possible invalid share flood)
+        total_shares = self.total_shares_accepted + self.total_shares_rejected
+        reject_rate = self.total_shares_rejected / float(total_shares) if total_shares > 0 else 0
+        
+        # Workers with suspiciously high submission rates
+        suspicious_workers = []
+        for worker_name, stats in self.worker_stats.items():
+            if len(stats.get('difficulties', [])) >= 2:
+                diffs = stats['difficulties']
+                worker_time_span = diffs[-1][0] - diffs[0][0]
+                if worker_time_span > 0:
+                    worker_rate = len(diffs) / worker_time_span
+                    # More than 10 shares/sec from single worker is suspicious
+                    if worker_rate > 10:
+                        suspicious_workers.append({
+                            'name': worker_name,
+                            'rate': worker_rate,
+                        })
+        
+        # Calculate threat level
+        threat_level = 0  # 0=normal, 1=elevated, 2=warning, 3=critical
+        threat_reasons = []
+        
+        if burst_ratio > 5:
+            threat_level = max(threat_level, 2)
+            threat_reasons.append('Submission burst detected (%.1fx normal)' % burst_ratio)
+        elif burst_ratio > 3:
+            threat_level = max(threat_level, 1)
+            threat_reasons.append('Elevated submission burst (%.1fx normal)' % burst_ratio)
+        
+        if conn_worker_ratio > 5:
+            threat_level = max(threat_level, 2)
+            threat_reasons.append('High connection/worker ratio (%.1f)' % conn_worker_ratio)
+        elif conn_worker_ratio > 3:
+            threat_level = max(threat_level, 1)
+            threat_reasons.append('Elevated connection/worker ratio (%.1f)' % conn_worker_ratio)
+        
+        if reject_rate > 0.5:
+            threat_level = max(threat_level, 2)
+            threat_reasons.append('High reject rate (%.1f%%)' % (reject_rate * 100))
+        elif reject_rate > 0.2:
+            threat_level = max(threat_level, 1)
+            threat_reasons.append('Elevated reject rate (%.1f%%)' % (reject_rate * 100))
+        
+        if rate_10s > self.MAX_SUBMISSIONS_PER_SECOND * 0.8:
+            threat_level = max(threat_level, 3)
+            threat_reasons.append('Near rate limit (%.0f/s of %d max)' % (rate_10s, self.MAX_SUBMISSIONS_PER_SECOND))
+        elif rate_10s > self.MAX_SUBMISSIONS_PER_SECOND * 0.5:
+            threat_level = max(threat_level, 2)
+            threat_reasons.append('High submission rate (%.0f/s)' % rate_10s)
+        
+        if len(suspicious_workers) > 0:
+            threat_level = max(threat_level, 1)
+            threat_reasons.append('%d worker(s) with high submission rate' % len(suspicious_workers))
+        
+        return {
+            'rate_10s': rate_10s,
+            'rate_60s': rate_60s,
+            'burst_ratio': burst_ratio,
+            'conn_worker_ratio': conn_worker_ratio,
+            'reject_rate': reject_rate,
+            'suspicious_workers': suspicious_workers,
+            'threat_level': threat_level,  # 0=normal, 1=elevated, 2=warning, 3=critical
+            'threat_reasons': threat_reasons,
+            'limits': {
+                'max_submissions_per_sec': self.MAX_SUBMISSIONS_PER_SECOND,
+                'max_connections': self.MAX_CONNECTIONS,
+                'min_difficulty': self.MIN_DIFFICULTY_FLOOR,
+            }
+        }
 
 
 # Global pool statistics instance
