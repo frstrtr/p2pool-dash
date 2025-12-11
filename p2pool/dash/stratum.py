@@ -360,6 +360,7 @@ class PoolStatistics(object):
             'total_rejected': self.total_shares_rejected,
             'submission_rate': rate,
             'uptime': now - self.startup_time,
+            'ip_connections': dict(self.ip_connections),
         }
     
     def get_security_stats(self):
