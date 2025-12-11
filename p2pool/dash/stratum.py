@@ -211,13 +211,19 @@ class PoolStatistics(object):
     def get_pool_stats(self):
         """Get overall pool statistics"""
         now = time.time()
+        # Calculate rate directly here for debugging
+        cutoff = now - self.global_submission_window
+        recent = [(t, d) for t, d in self.global_submissions if t > cutoff]
+        rate = len(recent) / float(self.global_submission_window) if recent else 0.0
         return {
             'connections': self.connection_count,
             'workers': len(self.worker_stats),
             'total_accepted': self.total_shares_accepted,
             'total_rejected': self.total_shares_rejected,
-            'submission_rate': self.get_global_submission_rate(),
+            'submission_rate': rate,
             'uptime': now - self.startup_time,
+            '_debug_submissions_count': len(self.global_submissions),
+            '_debug_recent_count': len(recent),
         }
     
     def get_security_stats(self):
