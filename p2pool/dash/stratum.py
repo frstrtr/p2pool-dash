@@ -823,7 +823,7 @@ class StratumRPCMiningProvider(object):
                 new_diff = max(new_diff, pool_stats.get_safe_minimum_difficulty(new_diff))
                 if new_diff < current_diff:
                     self.target = dash_data.difficulty_to_target(new_diff)
-                    print 'Vardiff timeout %s: %.2f -> %.2f (no shares for %.1fs, target %.1fs)' % (
+                    print 'Vardiff timeout %s: %.4f -> %.4f (no shares for %.1fs, target %.1fs)' % (
                         self.username or self.worker_ip, current_diff, new_diff, 
                         time_since_last_share, effective_share_rate)
                     # Reset the timer so we don't immediately reduce again
@@ -1000,7 +1000,7 @@ class StratumRPCMiningProvider(object):
                     new_diff = safe_min
                 
                 if abs(new_diff - old_diff) / max(old_diff, 0.001) > 0.1:  # Only log significant changes
-                    print 'Vardiff %s: %.2f -> %.2f (%.1f shares in %.1fs, target %.1fs)' % (
+                    print 'Vardiff %s: %.4f -> %.4f (%.1f shares in %.1fs, target %.1fs)' % (
                         worker_name, old_diff, new_diff, num_shares, time_elapsed, target_time)
                 
                 # Reset and send new work
