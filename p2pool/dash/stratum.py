@@ -976,10 +976,13 @@ class StratumRPCMiningProvider(object):
                 old_diff = dash_data.target_to_difficulty(self.target)
                 self.target = int(self.target * adjustment + 0.5)
                 
-                # Clip to SANE_TARGET_RANGE only - don't cap at min_share_target
+                # Clip target to valid range for stratum vardiff
                 # SANE_TARGET_RANGE[0] = hardest (lowest target, e.g. diff 10000)
-                # SANE_TARGET_RANGE[1] = easiest (highest target, e.g. diff 1)
-                newtarget = clip(self.target, self.wb.net.SANE_TARGET_RANGE[0], self.wb.net.SANE_TARGET_RANGE[1])
+                # For easiest, we allow much lower than SANE_TARGET_RANGE[1] to support slow miners
+                # Calculate max target for MIN_DIFFICULTY_FLOOR (0.001)
+                max_stratum_target = dash_data.difficulty_to_target(pool_stats.MIN_DIFFICULTY_FLOOR)
+                min_stratum_target = self.wb.net.SANE_TARGET_RANGE[0]  # Hardest allowed
+                newtarget = clip(self.target, min_stratum_target, max_stratum_target)
                 if newtarget != self.target:
                     self.target = newtarget
                 
