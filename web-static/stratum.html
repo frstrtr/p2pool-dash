@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html;charset=UTF-8">
+        <title>P2Pool - Stratum Statistics</title>
+        <link rel="shortcut icon" type="image/x-icon" href="favicon.ico" />
+        <script type="text/javascript" src="d3.v2.min.js"></script>
+        <style type="text/css">
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            h1, h2 { color: #333; }
+            .stats-box { 
+                background: #f5f5f5; 
+                border: 1px solid #ddd; 
+                padding: 15px; 
+                margin: 10px 0;
+                border-radius: 5px;
+            }
+            .stats-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                gap: 15px;
+            }
+            .stat-item {
+                background: white;
+                padding: 10px;
+                border-radius: 3px;
+                border: 1px solid #e0e0e0;
+            }
+            .stat-label { font-size: 12px; color: #666; }
+            .stat-value { font-size: 24px; font-weight: bold; color: #333; }
+            .stat-unit { font-size: 12px; color: #999; }
+            table { border-collapse: collapse; width: 100%; margin-top: 10px; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            th { background-color: #4a90d9; color: white; }
+            tr:nth-child(even) { background-color: #f9f9f9; }
+            tr:hover { background-color: #f1f1f1; }
+            .hash-rate { font-family: monospace; }
+            .good { color: #28a745; }
+            .bad { color: #dc3545; }
+            .refresh-info { font-size: 12px; color: #666; margin-top: 5px; }
+            #error-msg { color: #dc3545; padding: 10px; background: #ffe6e6; border-radius: 5px; display: none; }
+        </style>
+        <script type="text/javascript">
+            function format_dt(dt) {
+                var pairs = [
+                    [365.2425*60*60*24, 'years'],
+                    [60*60*24, 'days'],
+                    [60*60, 'hours'],
+                    [60, 'minutes'],
+                    [1, 'seconds'],
+                ];
+                for(var i in pairs) {
+                    var value = pairs[i][0];
+                    var name = pairs[i][1];
+                    if(dt > value) break;
+                }
+                return d3.format('.1f')(dt/value) + ' ' + name;
+            }
+            
+            function format_hashrate(h) {
+                if (h >= 1e15) return d3.format('.2f')(h/1e15) + ' PH/s';
+                if (h >= 1e12) return d3.format('.2f')(h/1e12) + ' TH/s';
+                if (h >= 1e9) return d3.format('.2f')(h/1e9) + ' GH/s';
+                if (h >= 1e6) return d3.format('.2f')(h/1e6) + ' MH/s';
+                if (h >= 1e3) return d3.format('.2f')(h/1e3) + ' KH/s';
+                return d3.format('.0f')(h) + ' H/s';
+            }
+            
+            function format_time_ago(timestamp) {
+                if (!timestamp) return 'never';
+                var now = Date.now() / 1000;
+                var diff = now - timestamp;
+                if (diff < 60) return Math.floor(diff) + 's ago';
+                if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+                if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+                return Math.floor(diff/86400) + 'd ago';
+            }
+            
+            function update_stats() {
+                d3.json('../stratum_stats', function(error, data) {
+                    if (error || data.error) {
+                        d3.select('#error-msg').style('display', 'block')
+                            .text('Error loading stratum stats: ' + (data ? data.error : error));
+                        return;
+                    }
+                    d3.select('#error-msg').style('display', 'none');
+                    
+                    var pool = data.pool;
+                    var workers = data.workers;
+                    
+                    // Update pool stats
+                    d3.select('#connections').text(pool.connections || 0);
+                    d3.select('#workers').text(pool.workers || 0);
+                    d3.select('#total_accepted').text(d3.format(',')(pool.total_accepted || 0));
+                    d3.select('#total_rejected').text(d3.format(',')(pool.total_rejected || 0));
+                    d3.select('#submission_rate').text(d3.format('.1f')(pool.submission_rate || 0));
+                    d3.select('#uptime').text(format_dt(pool.uptime || 0));
+                    
+                    // Calculate reject rate
+                    var total = (pool.total_accepted || 0) + (pool.total_rejected || 0);
+                    var reject_pct = total > 0 ? ((pool.total_rejected || 0) / total * 100) : 0;
+                    d3.select('#reject_rate').text(d3.format('.2f')(reject_pct) + '%')
+                        .attr('class', reject_pct > 5 ? 'stat-value bad' : 'stat-value good');
+                    
+                    // Update workers table
+                    var workerTable = d3.select('#workers-table');
+                    workerTable.selectAll('tr.worker-row').remove();
+                    
+                    // Sort workers by hash rate (descending)
+                    var workerList = [];
+                    for (var name in workers) {
+                        workerList.push({name: name, stats: workers[name]});
+                    }
+                    workerList.sort(function(a, b) { return (b.stats.hash_rate || 0) - (a.stats.hash_rate || 0); });
+                    
+                    workerList.forEach(function(w) {
+                        var s = w.stats;
+                        var wr = (s.accepted || 0) + (s.rejected || 0);
+                        var wRejectPct = wr > 0 ? (s.rejected || 0) / wr * 100 : 0;
+                        
+                        var tr = workerTable.append('tr').attr('class', 'worker-row');
+                        tr.append('td').text(w.name.length > 20 ? w.name.substr(0, 10) + '...' + w.name.substr(-8) : w.name)
+                            .attr('title', w.name);
+                        tr.append('td').attr('class', 'hash-rate').text(format_hashrate(s.hash_rate || 0));
+                        tr.append('td').text(d3.format(',')(s.shares || 0));
+                        tr.append('td').attr('class', 'good').text(d3.format(',')(s.accepted || 0));
+                        tr.append('td').attr('class', wRejectPct > 5 ? 'bad' : '')
+                            .text(d3.format(',')(s.rejected || 0) + ' (' + d3.format('.1f')(wRejectPct) + '%)');
+                        tr.append('td').text(format_time_ago(s.last_seen));
+                        tr.append('td').text(format_dt(s.last_seen - s.first_seen));
+                    });
+                    
+                    if (workerList.length === 0) {
+                        workerTable.append('tr').attr('class', 'worker-row')
+                            .append('td').attr('colspan', '7')
+                            .style('text-align', 'center')
+                            .style('color', '#666')
+                            .text('No workers connected');
+                    }
+                    
+                    // Update last refresh time
+                    d3.select('#last-refresh').text('Last updated: ' + new Date().toLocaleTimeString());
+                });
+            }
+            
+            // Initial load
+            update_stats();
+            
+            // Auto-refresh every 10 seconds
+            setInterval(update_stats, 10000);
+        </script>
+    </head>
+    <body>
+        <h1>P2Pool Stratum Statistics</h1>
+        <p><a href="index.html">← Back to Main</a> | <a href="graphs.html">Graphs</a></p>
+        
+        <div id="error-msg"></div>
+        
+        <h2>Pool Overview</h2>
+        <div class="stats-box">
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div class="stat-label">Active Connections</div>
+                    <div class="stat-value" id="connections">-</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Unique Workers</div>
+                    <div class="stat-value" id="workers">-</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Total Accepted</div>
+                    <div class="stat-value good" id="total_accepted">-</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Total Rejected</div>
+                    <div class="stat-value" id="total_rejected">-</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Reject Rate</div>
+                    <div class="stat-value" id="reject_rate">-</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Submission Rate</div>
+                    <div class="stat-value" id="submission_rate">-</div>
+                    <div class="stat-unit">shares/sec</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Stratum Uptime</div>
+                    <div class="stat-value" id="uptime">-</div>
+                </div>
+            </div>
+        </div>
+        
+        <h2>Connected Workers</h2>
+        <div class="stats-box">
+            <table id="workers-table">
+                <tr>
+                    <th>Worker</th>
+                    <th>Hash Rate</th>
+                    <th>Shares</th>
+                    <th>Accepted</th>
+                    <th>Rejected</th>
+                    <th>Last Seen</th>
+                    <th>Connected</th>
+                </tr>
+            </table>
+            <p class="refresh-info" id="last-refresh">Loading...</p>
+        </div>
+        
+        <h2>Stratum Protocol Extensions</h2>
+        <div class="stats-box">
+            <table>
+                <tr><th>Extension</th><th>BIP</th><th>Status</th><th>Description</th></tr>
+                <tr><td>version-rolling</td><td>BIP320</td><td class="good">✓ Enabled</td><td>ASICBoost support for version bit rolling</td></tr>
+                <tr><td>minimum-difficulty</td><td>BIP310</td><td class="good">✓ Enabled</td><td>Miner-negotiated minimum difficulty floor</td></tr>
+                <tr><td>subscribe-extranonce</td><td>NiceHash</td><td class="good">✓ Enabled</td><td>Dynamic extranonce updates for ASICs</td></tr>
+                <tr><td>mining.suggest_difficulty</td><td>Standard</td><td class="good">✓ Enabled</td><td>Miner-suggested starting difficulty</td></tr>
+            </table>
+        </div>
+        
+        <h2>Pool Safeguards</h2>
+        <div class="stats-box">
+            <table>
+                <tr><th>Safeguard</th><th>Value</th><th>Description</th></tr>
+                <tr><td>MIN_DIFFICULTY_FLOOR</td><td>0.001</td><td>Absolute minimum difficulty to prevent share flooding</td></tr>
+                <tr><td>MAX_DIFFICULTY_CEILING</td><td>1,000,000</td><td>Maximum difficulty to prevent miner timeout</td></tr>
+                <tr><td>MAX_SUBMISSIONS_PER_SEC</td><td>1000</td><td>Global rate limit for share submissions</td></tr>
+                <tr><td>Per-Connection Rate Limit</td><td>100/sec</td><td>Per-miner rate limiting</td></tr>
+                <tr><td>Session Storage</td><td>10,000 max, 1hr TTL</td><td>Session resumption limits</td></tr>
+            </table>
+        </div>
+    </body>
+</html>
