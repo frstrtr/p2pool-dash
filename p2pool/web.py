@@ -234,12 +234,30 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     web_root.putChild('payout_addr', WebInterface(lambda: getattr(wb, 'address', None)))
     web_root.putChild('payout_addrs', WebInterface(
         lambda: [bitcoin_data.pubkey_hash_to_address(pubkey_hash, node.net.PARENT) for pubkey_hash in wb.pubkeys.keys]))
-    web_root.putChild('recent_blocks', WebInterface(lambda: [dict(
-        ts=s.timestamp,
-        hash='%064x' % s.header_hash,
-        number=p2pool_data.parse_bip0034(s.share_data['coinbase'])[0],
-        share='%064x' % s.hash,
-    ) for s in node.tracker.get_chain(node.best_share_var.value, min(node.tracker.get_height(node.best_share_var.value), node.net.CHAIN_LENGTH)) if s.pow_hash <= s.header['bits'].target]))
+    
+    def get_recent_blocks():
+        if node.best_share_var.value is None:
+            return []
+        
+        blocks = []
+        try:
+            height = node.tracker.get_height(node.best_share_var.value)
+            for s in node.tracker.get_chain(node.best_share_var.value, min(height, node.net.CHAIN_LENGTH)):
+                if s.pow_hash <= s.header['bits'].target:
+                    block_hash = '%064x' % s.header_hash
+                    block_number = p2pool_data.parse_bip0034(s.share_data['coinbase'])[0]
+                    blocks.append(dict(
+                        ts=s.timestamp,
+                        hash=block_hash,
+                        number=block_number,
+                        share='%064x' % s.hash,
+                        explorer_url=node.net.PARENT.BLOCK_EXPLORER_URL_PREFIX + block_hash,
+                    ))
+        except Exception as e:
+            log.err(e, 'Error getting recent blocks:')
+        return blocks
+    
+    web_root.putChild('recent_blocks', WebInterface(get_recent_blocks))
     web_root.putChild('uptime', WebInterface(lambda: time.time() - start_time))
     web_root.putChild('stale_rates', WebInterface(lambda: p2pool_data.get_stale_counts(node.tracker, node.best_share_var.value, decent_height(), rates=True)))
     

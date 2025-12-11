@@ -427,14 +427,6 @@ class WorkerBridge(worker_interface.WorkerBridge):
             # This is needed for vardiff - stratum adjusts target after get_work() returns
             effective_target = submitted_target if submitted_target is not None else target
             
-            # Debug: trace target values for share validation
-            print 'DEBUG SHARE: user=%s submitted_target=%s effective_target=%x target=%x' % (
-                user,
-                '%x' % submitted_target if submitted_target is not None else 'None',
-                effective_target,
-                target
-            )
-            
             assert len(coinbase_nonce) == self.COINBASE_NONCE_LENGTH
             new_packed_gentx = packed_gentx[:-coinbase_payload_data_size-self.COINBASE_NONCE_LENGTH-4] + coinbase_nonce + packed_gentx[-coinbase_payload_data_size-4:] if coinbase_nonce != '\0'*self.COINBASE_NONCE_LENGTH else packed_gentx
             new_gentx = dash_data.tx_type.unpack(new_packed_gentx) if coinbase_nonce != '\0'*self.COINBASE_NONCE_LENGTH else gentx
@@ -531,7 +523,6 @@ class WorkerBridge(worker_interface.WorkerBridge):
                 received_header_hashes.add(header_hash)
 
                 work_value = dash_data.target_to_average_attempts(effective_target)
-                print 'DEBUG: Pseudoshare work=%d target=%x diff=%.2f' % (work_value, effective_target, dash_data.target_to_difficulty(effective_target))
                 self.pseudoshare_received.happened(work_value, not on_time, user)
                 self.recent_shares_ts_work.append((time.time(), work_value))
                 while len(self.recent_shares_ts_work) > 50:

@@ -42,7 +42,7 @@ class StratumRPCMiningProvider(object):
         reactor.callLater(0, self._send_work)
         
         return [
-            ["mining.notify", "ae6812eb4cd7735a302a8a9dd95cf71f"], # subscription details
+            [["mining.set_difficulty", "ae6812eb4cd7735a302a8a9dd95cf71f1"], ["mining.notify", "ae6812eb4cd7735a302a8a9dd95cf71f2"]], # subscription details
             "", # extranonce1
             self.wb.COINBASE_NONCE_LENGTH, # extranonce2_size
         ]
@@ -161,10 +161,6 @@ class StratumRPCMiningProvider(object):
             True, # clean_jobs
         ).addErrback(lambda err: None)
         self.handler_map[jobid] = x, got_response, job_target  # Store job_target with the job
-        
-        # Debug: log the job creation with its target
-        print 'DEBUG JOB: created job_id=%s target=%x (diff=%.2f)' % (
-            jobid, job_target, dash_data.target_to_difficulty(job_target))
     
     def rpc_submit(self, worker_name, job_id, extranonce2, ntime, nonce, version_bits=None, *args):
         # ASICBOOST: version_bits is the version mask that the miner used
@@ -194,10 +190,6 @@ class StratumRPCMiningProvider(object):
             raise ValueError('Stale job: %s' % job_id[:16])
         
         x, got_response, job_target = self.handler_map[job_id]  # Retrieve job_target
-        
-        # Debug: log the job_target being used for validation
-        print 'DEBUG SUBMIT: job_id=%s worker=%s job_target=%x (diff=%.2f)' % (
-            job_id, worker_name, job_target, dash_data.target_to_difficulty(job_target))
         
         try:
             coinb_nonce = extranonce2.decode('hex')

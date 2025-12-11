@@ -84,10 +84,18 @@ result = got_response(header, worker_name, coinb_nonce, job_target)
 - Added specific handling for `TimeoutError` and `ConnectionRefusedError` from dashd RPC calls.
 - Retry silently on temporary errors instead of crashing.
 
-### 8. Web Interface Fix
-**Files:** `p2pool/web.py`
+### 8. Web Interface Improvements
+**Files:** `p2pool/web.py`, `p2pool/data.py`
 
 - Fixed `best_share_hash` endpoint to handle `None` value during bootstrap (returns 64 zeros instead of crashing).
+- **Added `parse_bip0034()` function** (from jtoomim's fork) to extract block height from coinbase transaction (BIP 34 standard).
+- **Enhanced `recent_blocks` endpoint** to include:
+  - Block number (height) extracted from coinbase
+  - Direct block explorer URL for each found block
+  - Graceful error handling when no blocks found yet
+- **Added `currency_info` endpoint** providing SYMBOL, BLOCK_EXPLORER_URL_PREFIX, ADDRESS_EXPLORER_URL_PREFIX, and TX_EXPLORER_URL_PREFIX for web interface.
+
+The web interface now properly displays found blocks with their height and provides clickable links to the Dash blockchain explorer (chainz.cryptoid.info).
 
 ## Testing Results
 

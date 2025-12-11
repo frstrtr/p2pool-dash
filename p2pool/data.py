@@ -12,6 +12,17 @@ import p2pool
 from p2pool.dash import data as dash_data, script, sha256
 from p2pool.util import math, forest, pack
 
+def parse_bip0034(coinbase):
+    """Extract block height from coinbase transaction (BIP 34)"""
+    try:
+        _, opdata = script.parse(coinbase).next()
+        bignum = pack.IntType(len(opdata)*8).unpack(opdata)
+        if opdata and ord(opdata[-1]) & 0x80:
+            bignum = -bignum
+        return (bignum,)
+    except Exception:
+        return (None,)
+
 # hashlink
 
 hash_link_type = pack.ComposedType([
