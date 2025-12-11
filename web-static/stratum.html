@@ -154,13 +154,32 @@
             // Initial load
             update_stats();
             
-            // Auto-refresh every 10 seconds
-            setInterval(update_stats, 10000);
+            // Manual refresh - auto-refresh disabled by default to reduce backend load
+            var autoRefreshInterval = null;
+            
+            function toggleAutoRefresh() {
+                var btn = document.getElementById('auto-refresh-btn');
+                if (autoRefreshInterval) {
+                    clearInterval(autoRefreshInterval);
+                    autoRefreshInterval = null;
+                    btn.textContent = '⏸ Auto: OFF';
+                    btn.style.background = '#f5f5f5';
+                } else {
+                    autoRefreshInterval = setInterval(update_stats, 10000);
+                    btn.textContent = '▶ Auto: ON (10s)';
+                    btn.style.background = '#28a745';
+                    btn.style.color = 'white';
+                }
+            }
+            
+            function manualRefresh() {
+                update_stats();
+            }
         </script>
     </head>
     <body>
         <h1>P2Pool Stratum Statistics</h1>
-        <p><a href="index.html">← Back to Main</a> | <a href="graphs.html">Graphs</a></p>
+        <p><a href="index.html">← Back to Main</a> | <a href="dashboard.html">Dashboard</a> | <a href="graphs.html">Graphs</a> | <button onclick="manualRefresh()" style="padding: 5px 10px; cursor: pointer;">🔄 Refresh</button> <button id="auto-refresh-btn" onclick="toggleAutoRefresh()" style="padding: 5px 10px; cursor: pointer;">⏸ Auto: OFF</button></p>
         
         <div id="error-msg"></div>
         
