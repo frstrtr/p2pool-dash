@@ -487,4 +487,81 @@ Current bootstrap nodes in `p2pool/networks/dash.py`:
    - If other Dash P2Pool nodes exist, add them as peers
    - Use `--p2pool-node` argument to specify known nodes
 
+---
+
+## v1.2.2 - Vardiff Improvements & Multi-Connection Support (December 12, 2025)
+
+Improved vardiff algorithm and better support for ASICs with multiple connections.
+
+### 24. Fixed SANE_TARGET_RANGE Clipping for Low-Difficulty Miners (FIX)
+**Files:** `p2pool/dash/stratum.py`
+
+- **Problem:** `SANE_TARGET_RANGE[1]` (diff 1.0) was clamping vardiff adjustments, preventing miners from getting difficulty below 1.0. CPU miners (like cpuminer at ~1 MH/s) would have vardiff jump from 0.01 to 1.0 on first share, then repeatedly timeout.
+- **Solution:** For stratum vardiff, use `MIN_DIFFICULTY_FLOOR` (0.001) as the lower bound instead of `SANE_TARGET_RANGE[1]`.
+- **Result:** CPU miners can now maintain appropriate low difficulties (0.001-0.1) without oscillation.
+
+### 25. Timeout-Based Vardiff Reduction (NEW)
+**Files:** `p2pool/dash/stratum.py`
+
+Added safety mechanism to reduce difficulty when no shares are received for too long:
+
+- If no shares received for 3× the target share time, reduce difficulty by 50%
+- Respects minimum_difficulty floor (BIP310) and pool-wide minimum
+- Prevents miners from being stuck at impossibly high difficulty after aggressive vardiff jumps
+- Helps slow miners (CPU, older GPUs) stabilize at appropriate difficulty
+
+### 26. Improved Vardiff Logging Precision (IMPROVEMENT)
+**Files:** `p2pool/dash/stratum.py`
+
+Changed vardiff log formatting from `%.2f` to `%.4f` to show precise difficulty values for low-difficulty miners:
+```
+# Before: Vardiff worker: 0.00 -> 0.00 (misleading)
+# After:  Vardiff worker: 0.0100 -> 0.0200 (precise)
+```
+
+### 27. Multi-Connection Worker Support (NEW)
+**Files:** `p2pool/dash/stratum.py`, `p2pool/web.py`
+
+ASICs often create multiple stratum connections per worker (for redundancy, per-hashboard isolation, or failover). Added three features to handle this properly:
+
+**Option A - Aggregate Worker Stats:**
+- `get_worker_connections()` - Get all connections for a worker name
+- `get_worker_aggregate_stats()` - Aggregate stats across all connections
+- API returns connection breakdown: total, active (submitted shares), backup (idle)
+
+**Option B - Suppress Idle Connection Logs:**
+- Vardiff timeout logs only appear for connections that have actually submitted shares
+- Reduces log noise from idle backup/redundant connections
+- Difficulty still adjusts silently for idle connections
+
+**Option C - Session Linkage:**
+- `update_worker_last_share_time()` - When any connection submits a share, updates `last_share_time` for ALL connections of that worker
+- Prevents false timeout vardiff on backup connections when primary is active
+- Works correctly for multi-hashboard ASICs where all boards submit shares
+
+**API Enhancement:**
+```json
+{
+  "workers": {
+    "XworkerAddress.D1": {
+      "shares": 1500,
+      "hash_rate": 1700000000000,
+      "connections": 2,
+      "active_connections": 1,
+      "backup_connections": 1,
+      "connection_difficulties": [10000.0, 100.0]
+    }
+  }
+}
+```
+
+### Multi-Connection Scenarios Supported
+
+| Scenario | Behavior |
+|----------|----------|
+| All hashboards active | Each connection adjusts vardiff independently; session linkage prevents false timeouts |
+| Some hashboards idle | Active boards' shares keep all timers fresh via session linkage |
+| Pure backup connections | Silent vardiff adjustments, no log spam |
+| Failover activation | Backup connection immediately usable at reduced difficulty |
+
 
