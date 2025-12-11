@@ -108,10 +108,16 @@ def getwork(dashd, net, use_getblocktemplate=True):
 
 @deferral.retry('Error submitting primary block: (will retry)', 10, 10)
 def submit_block_p2p(block, factory, net):
+    """Submit found block via Dash P2P network for fast propagation."""
+    block_hash = dash_data.hash256(dash_data.block_header_type.pack(block['header']))
+    
     if factory.conn.value is None:
-        print >>sys.stderr, 'No dashd connection when block submittal attempted! %s%064x' % (net.PARENT.BLOCK_EXPLORER_URL_PREFIX, dash_data.hash256(dash_data.block_header_type.pack(block['header'])))
+        print >>sys.stderr, 'No dashd P2P connection when block submittal attempted! %s%064x' % (net.PARENT.BLOCK_EXPLORER_URL_PREFIX, block_hash)
         raise deferral.RetrySilentlyException()
+    
+    print 'P2P: Sending block %064x to dashd via P2P protocol...' % block_hash
     factory.conn.value.send_block(block=block)
+    print 'P2P: Block sent successfully to dashd for network propagation'
 
 @deferral.retry('Error submitting block: (will retry)', 10, 10)
 @defer.inlineCallbacks

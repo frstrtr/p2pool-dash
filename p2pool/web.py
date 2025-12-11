@@ -635,13 +635,14 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             log.err(e, 'Error getting recent blocks:')
             defer.returnValue([])
         
-        # Calculate luck for each block
+        # Calculate luck for each block using AVERAGE hashrate between blocks
         # Luck = expected_time / actual_time * 100%
-        # Use historical hashrate from block_history if available, otherwise use current (approximate)
+        # For accurate luck: use average of (prev_block_hashrate + current_block_hashrate) / 2
         if len(blocks) >= 1:
             # Get current pool hashrate as fallback for blocks without historical data
             current_pool_hashrate = None
             current_expected_time = None
+            current_network_diff = None
             try:
                 lookbehind = min(height, 3600 // node.net.SHARE_PERIOD)
                 if lookbehind >= 2:
@@ -653,10 +654,10 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                     
                     # Get current network difficulty for expected time calculation
                     if wb.current_work.value and 'bits' in wb.current_work.value:
-                        block_difficulty = bitcoin_data.target_to_difficulty(
+                        current_network_diff = bitcoin_data.target_to_difficulty(
                             wb.current_work.value['bits'].target)
                         if current_pool_hashrate > 0:
-                            current_expected_time = (block_difficulty * 2**32) / current_pool_hashrate
+                            current_expected_time = (current_network_diff * 2**32) / current_pool_hashrate
             except Exception as e:
                 log.err(e, 'Error calculating pool hashrate for luck:')
             
@@ -664,23 +665,30 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             blocks_sorted = sorted(blocks, key=lambda x: x['ts'])
             
             for i, block in enumerate(blocks_sorted):
-                # Check if we have historical data for this block
+                # Get historical data for this block and previous block
                 hist_data = get_block_history_data(block['hash'])
+                prev_hist_data = get_block_history_data(blocks_sorted[i-1]['hash']) if i > 0 else None
                 
-                if hist_data and hist_data.get('expected_time'):
-                    # Use accurate historical data!
-                    block['expected_time'] = hist_data['expected_time']
-                    block['pool_hashrate_at_find'] = hist_data.get('pool_hashrate')
-                    block['luck_approximate'] = False  # Accurate!
+                # Determine hashrate to use for this block's luck calculation
+                block_hashrate = None
+                block_network_diff = None
+                
+                if hist_data and hist_data.get('pool_hashrate'):
+                    block_hashrate = hist_data['pool_hashrate']
+                    block_network_diff = hist_data.get('network_diff', current_network_diff)
+                    block['luck_approximate'] = False
                 else:
-                    # Fall back to current hashrate (approximate)
-                    block['expected_time'] = current_expected_time
-                    block['pool_hashrate_at_find'] = None
+                    block_hashrate = current_pool_hashrate
+                    block_network_diff = current_network_diff
                     block['luck_approximate'] = True
+                
+                block['pool_hashrate_at_find'] = block_hashrate
                 
                 # Initialize luck fields
                 block['luck'] = None
                 block['time_to_find'] = None
+                block['expected_time'] = None
+                block['avg_hashrate_used'] = None
                 
                 if i == 0:
                     # First block: can't calculate time_to_find without previous reference
@@ -695,9 +703,29 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                     
                 block['time_to_find'] = actual_time
                 
-                # Calculate luck using expected_time (historical if available, else current)
-                if block['expected_time'] and block['expected_time'] > 0:
-                    block['luck'] = (block['expected_time'] / actual_time) * 100
+                # Calculate AVERAGE hashrate between prev block and this block
+                prev_hashrate = None
+                if prev_hist_data and prev_hist_data.get('pool_hashrate'):
+                    prev_hashrate = prev_hist_data['pool_hashrate']
+                elif block['luck_approximate']:
+                    prev_hashrate = current_pool_hashrate  # Fallback
+                else:
+                    prev_hashrate = block_hashrate  # Use current block's hashrate if we don't have prev
+                
+                if prev_hashrate and block_hashrate:
+                    avg_hashrate = (prev_hashrate + block_hashrate) / 2
+                    block['avg_hashrate_used'] = avg_hashrate
+                    
+                    # Calculate expected time using average hashrate
+                    if block_network_diff and avg_hashrate > 0:
+                        expected_time = (block_network_diff * 2**32) / avg_hashrate
+                        block['expected_time'] = expected_time
+                        block['luck'] = (expected_time / actual_time) * 100
+                elif block_hashrate and block_network_diff:
+                    # Fallback to single hashrate
+                    expected_time = (block_network_diff * 2**32) / block_hashrate
+                    block['expected_time'] = expected_time
+                    block['luck'] = (expected_time / actual_time) * 100
             
             # Restore original order (newest first)
             blocks = sorted(blocks_sorted, key=lambda x: x['ts'], reverse=True)
@@ -716,7 +744,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                     blocks[0]['accurate_luck_count'] = accurate_count
                     blocks[0]['approximate_luck_count'] = approximate_count
                     if accurate_count == len(valid_luck):
-                        blocks[0]['luck_note'] = "All luck values are accurate (using historical hashrate)"
+                        blocks[0]['luck_note'] = "All luck values are accurate (using avg hashrate between blocks)"
                     elif accurate_count > 0:
                         blocks[0]['luck_note'] = "%d accurate, %d approximate (using current hashrate)" % (accurate_count, approximate_count)
                     else:

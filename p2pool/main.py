@@ -22,6 +22,7 @@ from nattraverso import portmapper, ipdiscover
 import dash.p2p as dash_p2p, dash.data as dash_data
 from dash import stratum, worker_interface, helper
 from util import fixargparse, jsonrpc, variable, deferral, math, logging, switchprotocol
+from util.telegram import TelegramNotifier
 from . import networks, web, work
 import p2pool, p2pool.data as p2pool_data, p2pool.node as p2pool_node
 
@@ -342,9 +343,13 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint):
         print '    ...success!'
         print
         
-        # Hook block recording for accurate luck calculation
+        # Initialize Telegram notifier for block announcements
+        telegram_notifier = TelegramNotifier(datadir_path, net.NAME)
+        
+        # Hook block recording for accurate luck calculation and Telegram notifications
+        @defer.inlineCallbacks
         def on_verified_share(share):
-            """Record block finds with hashrate data for accurate luck calculation."""
+            """Record block finds with hashrate data and send Telegram notification."""
             if share.pow_hash <= share.header['bits'].target:
                 # This is a block! Record it with current hashrate
                 block_hash = '%064x' % share.header_hash
@@ -354,8 +359,39 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint):
                     block_height = 0
                 share_hash = '%064x' % share.hash
                 miner_address = dash_data.script2_to_address(share.new_script, net.PARENT)
+                explorer_url = net.PARENT.BLOCK_EXPLORER_URL_PREFIX + block_hash
                 
+                # Record block for luck calculation
                 record_block_found(block_hash, block_height, share_hash, miner_address, share.timestamp)
+                
+                # Get pool hashrate for Telegram message
+                pool_hashrate = None
+                try:
+                    height = node.tracker.get_height(node.best_share_var.value)
+                    if height >= 2:
+                        lookbehind = min(height, 3600 // net.SHARE_PERIOD)
+                        if lookbehind >= 2:
+                            raw_hashrate = p2pool_data.get_pool_attempts_per_second(
+                                node.tracker, node.best_share_var.value, lookbehind)
+                            stale_prop = p2pool_data.get_average_stale_prop(
+                                node.tracker, node.best_share_var.value, lookbehind)
+                            pool_hashrate = raw_hashrate / (1 - stale_prop) if stale_prop < 1 else raw_hashrate
+                except Exception:
+                    pass
+                
+                # Send Telegram notification (don't block on this)
+                if telegram_notifier.is_configured():
+                    try:
+                        yield telegram_notifier.announce_block_found(
+                            net_name=net.NAME,
+                            block_height=block_height,
+                            block_hash=block_hash,
+                            miner_address=miner_address,
+                            explorer_url=explorer_url,
+                            pool_hashrate=pool_hashrate
+                        )
+                    except Exception as e:
+                        print 'Telegram notification error: %s' % str(e)
         
         node.tracker.verified.added.watch(on_verified_share)
         print 'Block recording for luck calculation enabled'
@@ -380,7 +416,10 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint):
             signal.siginterrupt(signal.SIGALRM, False)
             deferral.RobustLoopingCall(signal.alarm, 30).start(1)
         
+        # DEPRECATED: IRC announcements - use Telegram instead (telegram_config.json)
+        # Kept for backwards compatibility but Freenode is largely defunct
         if args.irc_announce:
+            print 'WARNING: IRC announcements are deprecated. Use Telegram instead (configure telegram_config.json)'
             from twisted.words.protocols import irc
             class IRCClient(irc.IRCClient):
                 nickname = 'p2pool%02i' % (random.randrange(100),)
