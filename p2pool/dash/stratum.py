@@ -1020,24 +1020,24 @@ class StratumRPCMiningProvider(object):
             # ==== ENHANCED: Use worker-specific or default share rate ====
             effective_share_rate = self.worker_share_rate if self.worker_share_rate else self.share_rate
             
-            # Aggressive adjustment: trigger on fewer shares and allow larger jumps
-            # Trigger if we have 3+ shares OR time exceeded (faster trigger than standard 12)
+            # ASIC-optimized vardiff: more conservative for stable hashrates
+            # Trigger after 8+ shares OR significant timeout (jtoomim uses 12, we use 8 for balance)
             num_shares = len(self.recent_shares)
             time_elapsed = now - self.recent_shares[0] if num_shares > 0 else 0
             target_time = num_shares * effective_share_rate
             
-            # Adjust if: 3+ shares collected, OR time significantly exceeds/undershoots target
-            should_adjust = (num_shares >= 3 or 
-                            (num_shares >= 1 and time_elapsed > 2 * target_time) or
-                            (num_shares >= 1 and time_elapsed < target_time / 4))
+            # Adjust if: 8+ shares collected, OR time exceeds 5x target (more patient than 2x)
+            should_adjust = (num_shares >= 8 or 
+                            (num_shares >= 1 and time_elapsed > 5 * target_time) or
+                            (num_shares >= 2 and time_elapsed < target_time / 3))
             
             if should_adjust and num_shares > 0:
                 # Calculate actual share rate vs target
                 actual_rate = time_elapsed / num_shares if num_shares > 0 else effective_share_rate
                 adjustment = actual_rate / effective_share_rate
                 
-                # Allow larger adjustments (0.25x to 4x) for faster response
-                adjustment = clip(adjustment, 0.25, 4.0)
+                # Conservative adjustment range (0.5x to 2x) - more stable for ASICs
+                adjustment = clip(adjustment, 0.5, 2.0)
                 
                 old_diff = dash_data.target_to_difficulty(self.target)
                 self.target = int(self.target * adjustment + 0.5)
