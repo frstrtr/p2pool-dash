@@ -547,6 +547,33 @@
             font-weight: 600;
             color: var(--primary);
         }
+        
+        .graph-legend {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 10px;
+            font-size: 0.85rem;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--text-muted);
+        }
+        
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+        }
+        
+        .graph-line-doa {
+            fill: none;
+            stroke: #ff6b6b;
+            stroke-width: 2;
+            stroke-dasharray: 5,3;
+        }
     </style>
 </head>
 <body>
@@ -671,6 +698,16 @@
                     <button class="time-btn" data-period="year" onclick="selectGraphPeriod('year')">1 Year</button>
                 </div>
             </div>
+            <div class="graph-legend">
+                <div class="legend-item">
+                    <span class="legend-color" style="background: #008de4;"></span>
+                    <span>Hashrate (Good)</span>
+                </div>
+                <div class="legend-item">
+                    <span class="legend-color" style="background: #ff6b6b;"></span>
+                    <span>DOA/Orphan Rate</span>
+                </div>
+            </div>
             <div class="graph-container" id="hashrate-graph">
                 <div class="graph-tooltip" id="graph-tooltip"></div>
             </div>
@@ -688,8 +725,8 @@
                     <div class="graph-stat-value" id="graph-peak">-</div>
                 </div>
                 <div class="graph-stat">
-                    <div class="graph-stat-label">Low</div>
-                    <div class="graph-stat-value" id="graph-low">-</div>
+                    <div class="graph-stat-label">DOA Avg</div>
+                    <div class="graph-stat-value" id="graph-doa">-</div>
                 </div>
             </div>
         </div>
@@ -1028,13 +1065,21 @@
                 // Return the 'good' hashrate (non-orphan, non-null shares)
                 return d[1].good || 0;
             };
+            var parseDoaValue = function(d) {
+                if (!d[1]) return 0;
+                // Return DOA/orphan rate (dead + orphan shares)
+                return (d[1].orphan || 0) + (d[1]['null'] || 0);
+            };
             
             // Filter out null/zero values for cleaner display
             var validData = data.filter(function(d) { return d[1] && d[1].good > 0; });
             if (validData.length === 0) validData = data;
             
             var xExtent = d3.extent(validData, parseTime);
-            var yMax = d3.max(validData, parseValue) * 1.1;
+            // Include DOA values in y scale calculation
+            var yMaxGood = d3.max(validData, parseValue) || 0;
+            var yMaxDoa = d3.max(validData, parseDoaValue) || 0;
+            var yMax = Math.max(yMaxGood, yMaxDoa) * 1.1;
             var yMin = d3.min(validData, parseValue) * 0.9;
             
             var x = d3.time.scale().domain(xExtent).range([0, width]);
@@ -1062,7 +1107,7 @@
                 .attr('d', area)
                 .style('fill', 'url(#graph-gradient)');
             
-            // Line
+            // Line (good hashrate)
             var line = d3.svg.line()
                 .x(function(d) { return x(parseTime(d)); })
                 .y(function(d) { return y(parseValue(d)); });
@@ -1071,6 +1116,17 @@
                 .datum(validData)
                 .attr('class', 'graph-line')
                 .attr('d', line);
+            
+            // DOA/Orphan Line
+            var lineDoa = d3.svg.line()
+                .x(function(d) { return x(parseTime(d)); })
+                .y(function(d) { return y(parseDoaValue(d)); })
+                .defined(function(d) { return parseDoaValue(d) > 0; });
+            
+            svg.append('path')
+                .datum(validData)
+                .attr('class', 'graph-line-doa')
+                .attr('d', lineDoa);
             
             // X axis
             var xAxis = d3.svg.axis().scale(x).orient('bottom').ticks(6);
@@ -1100,6 +1156,7 @@
             // Tooltip overlay
             var focus = svg.append('g').style('display', 'none');
             focus.append('circle').attr('r', 5).style('fill', '#008de4');
+            focus.append('circle').attr('class', 'doa-dot').attr('r', 4).style('fill', '#ff6b6b');
             focus.append('line').attr('class', 'x-hover-line')
                 .attr('y1', 0).attr('y2', height)
                 .style('stroke', '#008de4').style('stroke-width', 1).style('stroke-dasharray', '3,3');
@@ -1114,30 +1171,41 @@
                     var bisect = d3.bisector(function(d) { return d[0] * 1000; }).left;
                     var i = bisect(data, x0, 1);
                     if (i >= data.length) i = data.length - 1;
+                    if (i < 1) i = 1;
                     var d0 = data[i - 1], d1 = data[i];
                     var d = x0 - d0[0]*1000 > d1[0]*1000 - x0 ? d1 : d0;
                     
-                    focus.attr('transform', 'translate(' + x(d[0]*1000) + ',' + y(d[1]) + ')');
-                    focus.select('.x-hover-line').attr('y1', -y(d[1]));
+                    var goodVal = parseValue(d);
+                    var doaVal = parseDoaValue(d);
+                    
+                    focus.select('circle:first-of-type').attr('transform', 'translate(' + x(d[0]*1000) + ',' + y(goodVal) + ')');
+                    focus.select('.doa-dot').attr('transform', 'translate(' + x(d[0]*1000) + ',' + y(doaVal) + ')');
+                    focus.select('.x-hover-line')
+                        .attr('x1', x(d[0]*1000)).attr('x2', x(d[0]*1000))
+                        .attr('y1', 0).attr('y2', height);
                     
                     var date = new Date(d[0] * 1000);
-                    tooltip.innerHTML = '<strong>' + format_hashrate(d[1]) + '</strong><br>' + 
-                        date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+                    var doaPercent = goodVal > 0 ? ((doaVal / (goodVal + doaVal)) * 100).toFixed(2) : '0.00';
+                    tooltip.innerHTML = '<strong style="color:#008de4">' + format_hashrate(goodVal) + '</strong> Good<br>' + 
+                        '<strong style="color:#ff6b6b">' + format_hashrate(doaVal) + '</strong> DOA (' + doaPercent + '%)<br>' +
+                        '<small>' + date.toLocaleDateString() + ' ' + date.toLocaleTimeString() + '</small>';
                     tooltip.style.left = (d3.mouse(container)[0] + 10) + 'px';
-                    tooltip.style.top = (d3.mouse(container)[1] - 40) + 'px';
+                    tooltip.style.top = (d3.mouse(container)[1] - 50) + 'px';
                 });
             
             // Update stats
             var values = data.map(parseValue);
+            var doaValues = data.map(parseDoaValue);
             var current = values[values.length - 1];
             var avg = d3.mean(values);
             var peak = d3.max(values);
-            var low = d3.min(values);
+            var doaAvg = d3.mean(doaValues);
+            var doaPercent = avg > 0 ? ((doaAvg / (avg + doaAvg)) * 100).toFixed(2) : '0.00';
             
             document.getElementById('graph-current').textContent = format_hashrate(current || 0);
             document.getElementById('graph-average').textContent = format_hashrate(avg || 0);
             document.getElementById('graph-peak').textContent = format_hashrate(peak || 0);
-            document.getElementById('graph-low').textContent = format_hashrate(low || 0);
+            document.getElementById('graph-doa').textContent = format_hashrate(doaAvg || 0) + ' (' + doaPercent + '%)';
         }
         
         // Resize handler
