@@ -218,6 +218,36 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     web_root.putChild('patron_sendmany', WebInterface(get_patron_sendmany, 'text/plain'))
     web_root.putChild('global_stats', WebInterface(get_global_stats))
     web_root.putChild('local_stats', WebInterface(get_local_stats))
+    
+    # ==== NEW: Stratum statistics endpoint ====
+    def get_stratum_stats():
+        """Get stratum pool statistics including per-worker data"""
+        try:
+            from p2pool.dash.stratum import pool_stats
+            stats = pool_stats.get_pool_stats()
+            worker_stats = pool_stats.get_worker_stats()
+            
+            # Format worker stats for JSON
+            formatted_workers = {}
+            for worker_name, wstats in worker_stats.items():
+                formatted_workers[worker_name] = {
+                    'shares': wstats.get('shares', 0),
+                    'accepted': wstats.get('accepted', 0),
+                    'rejected': wstats.get('rejected', 0),
+                    'hash_rate': wstats.get('hash_rate', 0),
+                    'last_seen': wstats.get('last_seen', 0),
+                    'first_seen': wstats.get('first_seen', 0),
+                }
+            
+            return {
+                'pool': stats,
+                'workers': formatted_workers,
+            }
+        except Exception as e:
+            return {'error': str(e)}
+    
+    web_root.putChild('stratum_stats', WebInterface(get_stratum_stats))
+    
     web_root.putChild('peer_addresses', WebInterface(lambda: ' '.join('%s%s' % (peer.transport.getPeer().host, ':'+str(peer.transport.getPeer().port) if peer.transport.getPeer().port != node.net.P2P_PORT else '') for peer in node.p2p_node.peers.itervalues())))
     web_root.putChild('peer_txpool_sizes', WebInterface(lambda: dict(('%s:%i' % (peer.transport.getPeer().host, peer.transport.getPeer().port), peer.remembered_txs_size) for peer in node.p2p_node.peers.itervalues())))
     web_root.putChild('pings', WebInterface(defer.inlineCallbacks(lambda: defer.returnValue(

@@ -185,3 +185,159 @@ Already implemented:
 --debug              # Enable debug mode
 --share-rate SECS    # Target seconds per pseudoshare (default: 10)
 ```
+
+---
+
+## v1.2.0 - Enhanced Stratum Protocol (December 11, 2025)
+
+Major Stratum protocol enhancements with careful attention to pool performance protection.
+
+### 13. `mining.suggest_difficulty` Support (NEW)
+**Files:** `p2pool/dash/stratum.py`
+
+Miners can now suggest their preferred starting difficulty using the standard `mining.suggest_difficulty` method.
+
+**PERFORMANCE SAFEGUARDS:**
+- Pool-wide minimum difficulty floor (0.001 by default)
+- Dynamic adjustment based on pool load - when submission rate is high, minimum difficulty is automatically raised
+- Vardiff still operates after initial difficulty is set
+- Suggested difficulty is validated against pool safety limits
+
+```python
+# Miner request:
+{"method": "mining.suggest_difficulty", "params": [1024]}
+
+# Pool accepts or adjusts to safe minimum
+```
+
+### 14. `minimum-difficulty` BIP310 Extension (NEW)
+**Files:** `p2pool/dash/stratum.py`
+
+Full support for BIP310 minimum-difficulty extension, allowing miners to set a difficulty floor for their connection.
+
+**PERFORMANCE SAFEGUARDS:**
+- Pool-wide minimum difficulty enforcement
+- Dynamic minimum based on current pool load
+- Vardiff cannot go below the negotiated minimum
+
+```python
+# Miner negotiates via mining.configure:
+{"method": "mining.configure", "params": [["minimum-difficulty"], {"minimum-difficulty.value": 100}]}
+
+# Pool response includes actual minimum (may be higher than requested if pool is under load)
+```
+
+### 15. Global Pool Statistics Tracking (NEW)
+**Files:** `p2pool/dash/stratum.py`
+
+New `PoolStatistics` singleton class providing:
+- Total connected workers count
+- Per-worker hash rates and share counts
+- Global share submission rate monitoring
+- Connection history for session resumption
+- Pool performance metrics
+
+**Available via web API:**
+```bash
+curl http://localhost:7903/stratum_stats
+```
+
+Returns:
+```json
+{
+  "pool": {
+    "connections": 6,
+    "workers": 3,
+    "total_accepted": 15234,
+    "total_rejected": 12,
+    "submission_rate": 45.2,
+    "uptime": 86400
+  },
+  "workers": {
+    "miner1": {"shares": 5000, "accepted": 4998, "rejected": 2, "hash_rate": 1700000000000},
+    ...
+  }
+}
+```
+
+### 16. Per-Worker Statistics (NEW)
+**Files:** `p2pool/dash/stratum.py`
+
+Track per-worker metrics:
+- Share count (submitted/accepted/rejected)
+- Estimated hash rate
+- First/last seen timestamps
+- Current difficulty
+- Connection duration
+
+### 17. Dynamic Share Rate Configuration (NEW)
+**Files:** `p2pool/dash/stratum.py`
+
+Workers can specify custom share rate via username suffix:
+```
+address+s5    # 5 seconds per share
+address+100+s3  # difficulty 100, 3 seconds per share
+```
+
+Clamped to reasonable range (1-60 seconds).
+
+### 18. Session Resumption (NEW)
+**Files:** `p2pool/dash/stratum.py`
+
+When miners reconnect with their session ID, the pool can restore:
+- Previous difficulty setting
+- Suggested difficulty
+- Minimum difficulty floor
+- Custom share rate
+
+Reduces initial difficulty negotiation time after reconnects.
+
+### 19. `client.reconnect` Support (NEW)
+**Files:** `p2pool/dash/stratum.py`
+
+Pool can request miners to reconnect (for load balancing):
+```python
+# Pool to miner:
+{"method": "client.reconnect", "params": ["hostname", 3333, 0]}
+```
+
+Session state is preserved for seamless resumption.
+
+### 20. Structured Connection Logging (NEW)
+**Files:** `p2pool/dash/stratum.py`
+
+Enhanced logging with:
+- Connection/disconnection events with session IDs
+- Per-session statistics (duration, shares)
+- Worker identification
+- Difficulty change tracking
+
+### Performance Protection Summary
+
+The new difficulty-related features include multiple safeguards to prevent pool overload:
+
+| Safeguard | Description |
+|-----------|-------------|
+| MIN_DIFFICULTY_FLOOR | Absolute minimum difficulty (0.001 by default) |
+| MAX_SUBMISSIONS_PER_SECOND | Global rate limit (1000/sec default) |
+| Dynamic minimum adjustment | When submission rate > 50% of max, minimum difficulty increases |
+| Per-connection rate limiting | Drop shares if > 100/sec from single connection |
+| Vardiff continues operating | Even with suggest_difficulty, vardiff adjusts based on actual performance |
+
+### Web API Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `/stratum_stats` | Pool and worker statistics |
+| `/global_stats` | General pool stats (existing) |
+| `/local_stats` | Local node stats (existing) |
+
+### Stratum Protocol Extensions Supported
+
+| Extension | BIP | Status |
+|-----------|-----|--------|
+| `version-rolling` | BIP320 | ✅ Full support |
+| `minimum-difficulty` | BIP310 | ✅ NEW |
+| `subscribe-extranonce` | NiceHash | ✅ Full support |
+| `mining.suggest_difficulty` | Standard | ✅ NEW |
+
