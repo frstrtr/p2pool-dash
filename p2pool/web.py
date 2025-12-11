@@ -1,5 +1,6 @@
 from __future__ import division
 
+import base64
 import errno
 import json
 import os
@@ -13,7 +14,7 @@ from twisted.web import resource, static
 
 import p2pool
 from dash import data as bitcoin_data
-from . import data as p2pool_data, p2p
+from . import data as p2pool_data, p2p, security_config
 from util import deferral, deferred_resource, graph, math, memory, pack, variable
 
 
@@ -270,17 +271,48 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             fee=wb.worker_fee,
         )
     
+    # Initialize security config with datadir
+    sec_config = security_config.security_config
+    sec_config.set_datadir(datadir_path)
+    
     class WebInterface(deferred_resource.DeferredResource):
-        def __init__(self, func, mime_type='application/json', args=(), rate_limit=True):
+        def __init__(self, func, mime_type='application/json', args=(), rate_limit=True, require_auth=False):
             deferred_resource.DeferredResource.__init__(self)
             self.func, self.mime_type, self.args = func, mime_type, args
             self.rate_limit = rate_limit
+            self.require_auth = require_auth
         
         def getChild(self, child, request):
-            return WebInterface(self.func, self.mime_type, self.args + (child,), self.rate_limit)
+            return WebInterface(self.func, self.mime_type, self.args + (child,), self.rate_limit, self.require_auth)
+        
+        def _check_auth(self, request):
+            """Check HTTP Basic Authentication"""
+            if not sec_config.get('web_auth_enabled', False):
+                return True
+            
+            auth_header = request.getHeader('Authorization')
+            username, password = sec_config.parse_basic_auth(auth_header)
+            
+            if username is None:
+                return False
+            
+            return sec_config.check_web_auth(username, password)
+        
+        def _send_auth_required(self, request):
+            """Send 401 Unauthorized response"""
+            request.setResponseCode(401)
+            request.setHeader('WWW-Authenticate', 'Basic realm="P2Pool Web Interface"')
+            request.setHeader('Content-Type', 'application/json')
+            return json.dumps({'error': 'Authentication required'})
         
         @defer.inlineCallbacks
         def render_GET(self, request):
+            # Check authentication if required or if globally enabled
+            if self.require_auth or sec_config.get('web_auth_enabled', False):
+                if not self._check_auth(request):
+                    defer.returnValue(self._send_auth_required(request))
+                    return
+            
             # Apply rate limiting
             if self.rate_limit:
                 client_ip = request.getClientIP()
@@ -299,6 +331,48 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             request.setHeader('Access-Control-Allow-Origin', '*')
             res = yield self.func(*self.args)
             defer.returnValue(json.dumps(res) if self.mime_type == 'application/json' else res)
+    
+    # Protected static files wrapper for authentication
+    class ProtectedFile(resource.Resource):
+        """Wrapper for static.File that adds authentication"""
+        def __init__(self, path):
+            resource.Resource.__init__(self)
+            self.static_resource = static.File(path)
+        
+        def _check_auth(self, request):
+            """Check HTTP Basic Authentication"""
+            if not sec_config.get('web_auth_enabled', False):
+                return True
+            
+            auth_header = request.getHeader('Authorization')
+            username, password = sec_config.parse_basic_auth(auth_header)
+            
+            if username is None:
+                return False
+            
+            return sec_config.check_web_auth(username, password)
+        
+        def getChild(self, path, request):
+            # Check auth for all static file requests
+            if not self._check_auth(request):
+                return AuthRequiredResource()
+            return self.static_resource.getChild(path, request)
+        
+        def render_GET(self, request):
+            if not self._check_auth(request):
+                request.setResponseCode(401)
+                request.setHeader('WWW-Authenticate', 'Basic realm="P2Pool Web Interface"')
+                request.setHeader('Content-Type', 'text/html')
+                return '<html><body><h1>401 Unauthorized</h1><p>Authentication required.</p></body></html>'
+            return self.static_resource.render_GET(request)
+    
+    class AuthRequiredResource(resource.Resource):
+        """Resource that always returns 401"""
+        def render_GET(self, request):
+            request.setResponseCode(401)
+            request.setHeader('WWW-Authenticate', 'Basic realm="P2Pool Web Interface"')
+            request.setHeader('Content-Type', 'text/html')
+            return '<html><body><h1>401 Unauthorized</h1><p>Authentication required.</p></body></html>'
     
     def decent_height():
         return min(node.tracker.get_height(node.best_share_var.value), 720)
@@ -713,6 +787,11 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     
     if static_dir is None:
         static_dir = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), 'web-static')
-    web_root.putChild('static', static.File(static_dir))
+    
+    # Use ProtectedFile wrapper if authentication is enabled, otherwise use regular static.File
+    web_root.putChild('static', ProtectedFile(static_dir))
+    
+    # Add security config endpoint
+    web_root.putChild('security_config', WebInterface(lambda: sec_config.get_config_summary(), require_auth=True))
     
     return web_root

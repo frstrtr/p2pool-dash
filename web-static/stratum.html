@@ -345,6 +345,68 @@
             color: var(--danger);
         }
         
+        /* Ban Tabs */
+        .ban-tabs {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 15px;
+        }
+        
+        .ban-tab {
+            padding: 8px 16px;
+            background: var(--darker);
+            border: none;
+            color: var(--text-muted);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .ban-tab:hover {
+            color: var(--text);
+        }
+        
+        .ban-tab.active {
+            background: var(--primary);
+            color: white;
+        }
+        
+        .ban-count {
+            background: var(--danger);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+        }
+        
+        .no-bans, .no-data {
+            text-align: center;
+            padding: 30px;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+        
+        .ban-tab-content table {
+            width: 100%;
+        }
+        
+        .time-remaining {
+            font-family: 'Monaco', 'Consolas', monospace;
+            color: var(--warning);
+        }
+        
+        .ip-status-ok {
+            color: var(--success);
+        }
+        
+        .ip-status-warning {
+            color: var(--warning);
+        }
+        
+        .ip-status-danger {
+            color: var(--danger);
+        }
+        
         /* Error Message */
         #error-msg {
             background: rgba(220, 53, 69, 0.15);
@@ -634,6 +696,63 @@
                     <tbody></tbody>
                 </table>
             </div>
+        </div>
+        
+        <!-- Banned Nodes List -->
+        <div class="section" id="banned-section" style="display: none;">
+            <div class="section-header">
+                <h2>🚫 Banned Nodes</h2>
+                <span class="ban-count" id="ban-total-count">0 active</span>
+            </div>
+            <div class="ban-tabs">
+                <button class="ban-tab active" onclick="showBanTab('ips')">Banned IPs</button>
+                <button class="ban-tab" onclick="showBanTab('workers')">Banned Workers</button>
+            </div>
+            <div id="banned-ips-tab" class="ban-tab-content">
+                <table id="banned-ips-table">
+                    <thead>
+                        <tr>
+                            <th>IP Address</th>
+                            <th>Connections</th>
+                            <th>Ban Expires</th>
+                            <th>Time Remaining</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+                <div class="no-bans" id="no-banned-ips">No banned IPs</div>
+            </div>
+            <div id="banned-workers-tab" class="ban-tab-content" style="display: none;">
+                <table id="banned-workers-table">
+                    <thead>
+                        <tr>
+                            <th>Worker Name</th>
+                            <th>Ban Expires</th>
+                            <th>Time Remaining</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+                <div class="no-bans" id="no-banned-workers">No banned workers</div>
+            </div>
+        </div>
+        
+        <!-- Per-IP Connection Stats -->
+        <div class="section" id="ip-connections-section">
+            <div class="section-header">
+                <h2>📡 Connections by IP</h2>
+            </div>
+            <table id="ip-connections-table">
+                <thead>
+                    <tr>
+                        <th>IP Address</th>
+                        <th>Active Connections</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+            <div class="no-data" id="no-ip-connections">No connections</div>
         </div>
     </main>
     
@@ -938,7 +1057,102 @@
         
         function manualRefresh() {
             update_stats();
+            loadBanData();
         }
+        
+        // Load and display ban data
+        function loadBanData() {
+            d3.json('/ban_stats', function(error, data) {
+                if (error || !data) {
+                    console.log('Ban stats not available');
+                    return;
+                }
+                
+                // Update ban counts
+                d3.select('#banned-ips-count').text(data.banned_ips_count || 0);
+                d3.select('#banned-workers-count').text(data.banned_workers_count || 0);
+                
+                // Populate banned IPs table
+                var ipsTbody = d3.select('#banned-ips-table tbody');
+                ipsTbody.selectAll('tr').remove();
+                
+                var bannedIps = data.banned_ips || [];
+                if (bannedIps.length > 0) {
+                    bannedIps.forEach(function(ban) {
+                        var tr = ipsTbody.append('tr');
+                        tr.append('td').attr('class', 'mono').text(ban.ip);
+                        tr.append('td').text(formatTimestamp(ban.banned_at));
+                        tr.append('td').text(formatTimestamp(ban.expires_at));
+                        tr.append('td').text(formatDuration(ban.remaining_seconds));
+                        tr.append('td').text(ban.reason || 'Policy violation');
+                    });
+                } else {
+                    var tr = ipsTbody.append('tr');
+                    tr.append('td').attr('colspan', '5').attr('class', 'empty-msg').text('No banned IPs');
+                }
+                
+                // Populate banned workers table
+                var workersTbody = d3.select('#banned-workers-table tbody');
+                workersTbody.selectAll('tr').remove();
+                
+                var bannedWorkers = data.banned_workers || [];
+                if (bannedWorkers.length > 0) {
+                    bannedWorkers.forEach(function(ban) {
+                        var tr = workersTbody.append('tr');
+                        var workerName = ban.worker;
+                        if (workerName.length > 30) {
+                            workerName = workerName.substr(0, 15) + '...' + workerName.substr(-10);
+                        }
+                        tr.append('td').attr('class', 'mono').attr('title', ban.worker).text(workerName);
+                        tr.append('td').text(formatTimestamp(ban.banned_at));
+                        tr.append('td').text(formatTimestamp(ban.expires_at));
+                        tr.append('td').text(formatDuration(ban.remaining_seconds));
+                        tr.append('td').text(ban.reason || 'Policy violation');
+                    });
+                } else {
+                    var tr = workersTbody.append('tr');
+                    tr.append('td').attr('colspan', '5').attr('class', 'empty-msg').text('No banned workers');
+                }
+                
+                // Display violation tracking info
+                var violations = data.ip_violations || [];
+                if (violations.length > 0) {
+                    var violationsInfo = violations.slice(0, 5).map(function(v) {
+                        return v.ip + ': ' + v.violations + ' violations';
+                    }).join(', ');
+                    if (violations.length > 5) {
+                        violationsInfo += ' (+' + (violations.length - 5) + ' more)';
+                    }
+                    // Could add a violations section here if desired
+                }
+            });
+        }
+        
+        function formatTimestamp(ts) {
+            if (!ts) return '-';
+            var date = new Date(ts * 1000);
+            var now = new Date();
+            var diff = (now - date) / 1000;
+            
+            if (diff < 60) return 'Just now';
+            if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+            if (diff < 86400 && date.getDate() === now.getDate()) {
+                return date.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+            }
+            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+        }
+        
+        function formatDuration(seconds) {
+            if (!seconds || seconds <= 0) return 'Expired';
+            if (seconds < 60) return seconds + 's';
+            if (seconds < 3600) return Math.floor(seconds / 60) + 'm ' + (seconds % 60) + 's';
+            var hours = Math.floor(seconds / 3600);
+            var mins = Math.floor((seconds % 3600) / 60);
+            return hours + 'h ' + mins + 'm';
+        }
+        
+        // Load ban data on page load
+        loadBanData();
     </script>
 </body>
 </html>

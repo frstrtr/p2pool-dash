@@ -516,6 +516,9 @@ def run():
     parser.add_argument('--web-static',
         help='use an alternative web frontend in this directory (otherwise use the built-in frontend)',
         type=str, action='store', default=None, dest='web_static')
+    parser.add_argument('--web-password', metavar='USERNAME:PASSWORD',
+        help='enable HTTP Basic Authentication for web interface (format: username:password)',
+        type=str, action='store', default=None, dest='web_password')
     parser.add_argument('--merged',
         help='call getauxblock on this url to get work for merged mining (example: http://ncuser:ncpass@127.0.0.1:10332/)',
         type=str, action='append', default=[], dest='merged_urls')
@@ -606,6 +609,18 @@ def run():
     datadir_path = os.path.join((os.path.join(os.path.dirname(sys.argv[0]), 'data') if args.datadir is None else args.datadir), net_name)
     if not os.path.exists(datadir_path):
         os.makedirs(datadir_path)
+    
+    # Initialize security config and handle web password
+    from p2pool import security_config
+    sec_config = security_config.security_config
+    sec_config.set_datadir(datadir_path)
+    
+    if args.web_password:
+        if ':' not in args.web_password:
+            parser.error('--web-password must be in format username:password')
+        username, password = args.web_password.split(':', 1)
+        sec_config.set_web_password(username, password)
+        print 'Web interface password protection enabled for user: %s' % username
     
     if len(args.dashd_rpc_userpass) > 2:
         parser.error('a maximum of two arguments are allowed')
