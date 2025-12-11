@@ -1021,13 +1021,21 @@
             gradient.append('stop').attr('offset', '0%').attr('stop-color', '#008de4').attr('stop-opacity', 0.4);
             gradient.append('stop').attr('offset', '100%').attr('stop-color', '#008de4').attr('stop-opacity', 0.05);
             
-            // Parse data
+            // Parse data - d[1] is an object {good: x, orphan: y, null: z} or null
             var parseTime = function(d) { return d[0] * 1000; };
-            var parseValue = function(d) { return d[1]; };
+            var parseValue = function(d) { 
+                if (!d[1]) return 0;
+                // Return the 'good' hashrate (non-orphan, non-null shares)
+                return d[1].good || 0;
+            };
             
-            var xExtent = d3.extent(data, parseTime);
-            var yMax = d3.max(data, parseValue) * 1.1;
-            var yMin = d3.min(data, parseValue) * 0.9;
+            // Filter out null/zero values for cleaner display
+            var validData = data.filter(function(d) { return d[1] && d[1].good > 0; });
+            if (validData.length === 0) validData = data;
+            
+            var xExtent = d3.extent(validData, parseTime);
+            var yMax = d3.max(validData, parseValue) * 1.1;
+            var yMin = d3.min(validData, parseValue) * 0.9;
             
             var x = d3.time.scale().domain(xExtent).range([0, width]);
             var y = d3.scale.linear().domain([Math.max(0, yMin), yMax]).range([height, 0]);
@@ -1049,7 +1057,7 @@
                 .y1(function(d) { return y(parseValue(d)); });
             
             svg.append('path')
-                .datum(data)
+                .datum(validData)
                 .attr('class', 'graph-area')
                 .attr('d', area)
                 .style('fill', 'url(#graph-gradient)');
@@ -1060,7 +1068,7 @@
                 .y(function(d) { return y(parseValue(d)); });
             
             svg.append('path')
-                .datum(data)
+                .datum(validData)
                 .attr('class', 'graph-line')
                 .attr('d', line);
             
