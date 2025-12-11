@@ -20,4 +20,20 @@ WORKER_PORT = 7903
 BOOTSTRAP_ADDRS = 'dash01.p2poolmining.us dash02.p2poolmining.us dash03.p2poolmining.us crypto.office-on-the.net dash04.p2poolmining.us'.split(' ')
 ANNOUNCE_CHANNEL = '#p2pool-dash'
 VERSION_CHECK = lambda v: v >= 200000
+
+# ==== Stratum Vardiff Configuration ====
+# These parameters are tuned for ASIC miners with stable hashrates
+# Based on jtoomim's p2pool vardiff algorithm
+
 STRATUM_SHARE_RATE = 10  # Target seconds per pseudoshare for stratum vardiff
+
+# Vardiff trigger thresholds (jtoomim uses 12 shares, 10x timeout)
+VARDIFF_SHARES_TRIGGER = 8      # Adjust after this many shares collected
+VARDIFF_TIMEOUT_MULT = 5        # Adjust if no shares for (timeout_mult * target_time)
+VARDIFF_QUICKUP_SHARES = 2      # Minimum shares for quick upward adjustment
+VARDIFF_QUICKUP_DIVISOR = 3     # Adjust up if time < target_time / divisor
+
+# Vardiff adjustment limits (jtoomim uses 0.5-2.0)
+VARDIFF_MIN_ADJUST = 0.5        # Minimum adjustment multiplier (halve difficulty)
+VARDIFF_MAX_ADJUST = 2.0        # Maximum adjustment multiplier (double difficulty)
+

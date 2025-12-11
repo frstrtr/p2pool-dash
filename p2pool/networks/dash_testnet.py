@@ -17,3 +17,18 @@ WORKER_PORT = 17903
 BOOTSTRAP_ADDRS = 'p2pool.dashninja.pl test.p2pool.masternode.io test.p2pool.dash.siampm.com'.split(' ')
 ANNOUNCE_CHANNEL = ''
 VERSION_CHECK = lambda v: v >= 200000
+
+# ==== Stratum Vardiff Configuration ====
+# Testnet can use more aggressive settings for faster testing
+STRATUM_SHARE_RATE = 10  # Target seconds per pseudoshare
+
+# Vardiff trigger thresholds (more aggressive for testnet)
+VARDIFF_SHARES_TRIGGER = 5      # Adjust after this many shares
+VARDIFF_TIMEOUT_MULT = 3        # Adjust if no shares for (timeout_mult * target_time)
+VARDIFF_QUICKUP_SHARES = 2      # Minimum shares for quick upward adjustment
+VARDIFF_QUICKUP_DIVISOR = 4     # Adjust up if time < target_time / divisor
+
+# Vardiff adjustment limits (wider range for testnet)
+VARDIFF_MIN_ADJUST = 0.25       # Minimum adjustment multiplier
+VARDIFF_MAX_ADJUST = 4.0        # Maximum adjustment multiplier
+
