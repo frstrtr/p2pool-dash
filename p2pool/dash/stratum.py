@@ -1160,17 +1160,20 @@ class StratumRPCMiningProvider(object):
         - Store session for potential resumption
         - Update pool statistics
         """
-        self.wb.new_work_event.unwatch(self.watch_id)
+        # Only unwatch if watch_id was set (connection may have been rejected early)
+        if hasattr(self, 'watch_id') and self.watch_id is not None:
+            self.wb.new_work_event.unwatch(self.watch_id)
         
-        # Store session for potential resumption
-        pool_stats.store_session(self.session_id, {
-            'target': self.target,
-            'suggested_difficulty': self.suggested_difficulty,
-            'minimum_difficulty': self.minimum_difficulty,
-            'share_rate': self.worker_share_rate,
-            'username': self.username,
-            'worker_ip': self.worker_ip,
-        })
+        # Store session for potential resumption (only if session was established)
+        if hasattr(self, 'session_id') and self.session_id:
+            pool_stats.store_session(self.session_id, {
+                'target': getattr(self, 'target', None),
+                'suggested_difficulty': getattr(self, 'suggested_difficulty', None),
+                'minimum_difficulty': getattr(self, 'minimum_difficulty', None),
+                'share_rate': getattr(self, 'worker_share_rate', None),
+                'username': getattr(self, 'username', None),
+                'worker_ip': getattr(self, 'worker_ip', None),
+            })
         
         # Unregister connection (with IP for per-IP tracking)
         pool_stats.unregister_connection(self.conn_id, self.worker_ip)
