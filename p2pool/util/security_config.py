@@ -86,8 +86,12 @@ class SecurityConfig(object):
         self.config_file = os.path.join(datadir_path, 'security_config.json')
         self.load_config()
     
-    def load_config(self):
-        """Load configuration from JSON file"""
+    def load_config(self, silent=False):
+        """Load configuration from JSON file
+        
+        Args:
+            silent: If True, don't print log messages (used for periodic reloads)
+        """
         if not self.config_file:
             return
         
@@ -100,7 +104,8 @@ class SecurityConfig(object):
                         if key in self.config:
                             self.config[key] = value
                 self._last_load_time = time.time()
-                print '[SecurityConfig] Loaded configuration from %s' % self.config_file
+                if not silent:
+                    print '[SecurityConfig] Loaded configuration from %s' % self.config_file
             else:
                 # Create default config file
                 self.save_config()
@@ -126,9 +131,9 @@ class SecurityConfig(object):
             print '[SecurityConfig] Error saving config: %s' % e
     
     def maybe_reload(self):
-        """Reload config if reload interval has passed"""
+        """Reload config if reload interval has passed (silent reload)"""
         if time.time() - self._last_load_time > self._reload_interval:
-            self.load_config()
+            self.load_config(silent=True)
     
     def get(self, key, default=None):
         """Get a configuration value"""
