@@ -792,12 +792,42 @@ class StratumRPCMiningProvider(object):
                 
                 diff1_target = 0xFFFF * 2**208  # Standard bdiff difficulty 1 target
                 self.target = diff1_target // int(initial_diff)
+                
+                # Initialize last_share_time for timeout-based vardiff reduction
+                # This allows difficulty to be lowered even if no shares have been submitted yet
+                if self.last_share_time is None:
+                    self.last_share_time = time.time()
         
         # ==== ENHANCED: Enforce minimum difficulty floor ====
         if self.minimum_difficulty is not None and self.target is not None:
             current_diff = dash_data.target_to_difficulty(self.target)
             if current_diff < self.minimum_difficulty:
                 self.target = dash_data.difficulty_to_target(self.minimum_difficulty)
+        
+        # ==== NEW: Timeout-based difficulty reduction ====
+        # If no shares received for too long, reduce difficulty
+        # This handles the case where vardiff jumped too aggressively
+        if not self.fixed_target and self.target is not None and self.last_share_time is not None:
+            time_since_last_share = time.time() - self.last_share_time
+            effective_share_rate = self.worker_share_rate if self.worker_share_rate else self.share_rate
+            # If we've waited 3x the expected time without a share, reduce difficulty
+            expected_time = effective_share_rate * 3  # 3x target time = too long
+            if time_since_last_share > expected_time:
+                current_diff = dash_data.target_to_difficulty(self.target)
+                # Reduce by 50% each time we exceed the timeout
+                new_diff = current_diff * 0.5
+                # Respect minimum difficulty floor
+                if self.minimum_difficulty is not None:
+                    new_diff = max(new_diff, self.minimum_difficulty)
+                # Respect pool-wide minimum
+                new_diff = max(new_diff, pool_stats.get_safe_minimum_difficulty(new_diff))
+                if new_diff < current_diff:
+                    self.target = dash_data.difficulty_to_target(new_diff)
+                    print 'Vardiff timeout %s: %.2f -> %.2f (no shares for %.1fs, target %.1fs)' % (
+                        self.username or self.worker_ip, current_diff, new_diff, 
+                        time_since_last_share, effective_share_rate)
+                    # Reset the timer so we don't immediately reduce again
+                    self.last_share_time = time.time()
         
         # For ASIC compatibility: periodically send extranonce updates
         # Even with empty extranonce, this helps ASICs reset their state
