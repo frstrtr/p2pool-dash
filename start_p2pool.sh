@@ -48,6 +48,28 @@ for arg in "$@"; do
             DAEMON_MODE=true
             shift
             ;;
+        --restart|-r|restart)
+            # Restart in daemon mode
+            kill_existing
+            rotate_log
+            echo "Starting P2Pool in daemon mode (logging to $LOG_FILE)..."
+            nohup bash -c "cd '$SCRIPT_DIR' && pypy run_p2pool.py --net dash \
+                --dashd-address 127.0.0.1 \
+                --dashd-rpc-port 9998 \
+                -a XrTwUgw3ikobuXdLKvvSUjL9JpuPs9uqL7 \
+                >> '$LOG_FILE' 2>&1" > /dev/null 2>&1 &
+            disown
+            echo $! > "$PID_FILE"
+            sleep 2
+            if pgrep -f "pypy.*run_p2pool" > /dev/null; then
+                echo "P2Pool restarted successfully (PID: $(pgrep -f 'pypy.*run_p2pool' | head -1))"
+                echo "Log file: $LOG_FILE"
+            else
+                echo "ERROR: P2Pool failed to restart. Check $LOG_FILE"
+                exit 1
+            fi
+            exit 0
+            ;;
         --kill|-k)
             kill_existing
             echo "P2Pool stopped."
@@ -66,6 +88,7 @@ for arg in "$@"; do
             echo "Usage: $0 [OPTIONS]"
             echo "Options:"
             echo "  --daemon, -d    Run in background (daemon mode)"
+            echo "  --restart, -r   Restart in daemon mode"
             echo "  --kill, -k      Kill existing P2Pool instances"
             echo "  --status, -s    Check if P2Pool is running"
             echo "  --help, -h      Show this help"
