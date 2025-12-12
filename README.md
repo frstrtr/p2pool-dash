@@ -195,6 +195,7 @@ All issues and solutions are documented in **[INSTALL.md](INSTALL.md)**, includi
 - ✅ **Mainnet ready**: Full support for masternode/platform/superblock payment structures
 - ✅ **Solo mining support**: Removed peer connection requirement - works standalone with PERSIST=True
 - ✅ **Incompatible share protection**: Pre-validation prevents outdated shares from entering sharechain
+- ✅ **Smart peer connections**: Temporary bans for failing peers, counts total connections (incoming+outgoing)
 
 ## Port Forwarding
 
