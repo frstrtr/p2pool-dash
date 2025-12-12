@@ -494,8 +494,13 @@ class OkayTracker(forest.Tracker):
         self.get_cumulative_weights = WeightsSkipList(self)
     
     def attempt_verify(self, share):
+        """
+        Returns: (verified: bool, blame_peer: bool)
+        - verified: True if share was verified successfully
+        - blame_peer: True if the peer should be penalized for this failure
+        """
         if share.hash in self.verified.items:
-            return True
+            return True, False
         height, last = self.get_height_and_last(share.hash)
         if height < self.net.CHAIN_LENGTH + 1 and last is not None:
             raise AssertionError()
@@ -504,26 +509,20 @@ class OkayTracker(forest.Tracker):
         except ValueError as e:
             error_msg = str(e)
             if 'gentx doesn\'t match hash_link' in error_msg:
+                # This usually means sharechain mismatch - don't ban peer, just reject share
+                # Could be due to different code versions or different sharechain histories
                 peer_info = (' from peer %s:%d' % share.peer_addr) if share.peer_addr else ''
-                print >>sys.stderr, '\n' + '='*80
-                print >>sys.stderr, 'INCOMPATIBLE SHARE RECEIVED%s' % peer_info
-                print >>sys.stderr, 'Share hash: %064x' % share.hash
-                print >>sys.stderr, 'This peer is running OUTDATED P2Pool code!'
-                print >>sys.stderr, 'They need to:'
-                print >>sys.stderr, '  1. git pull (get latest code with _script field fix)'
-                print >>sys.stderr, '  2. rm -f data/dash/shares.* data/dash/graph_db'
-                print >>sys.stderr, '  3. Restart P2Pool with fresh sharechain'
-                print >>sys.stderr, 'Rejecting incompatible share and continuing...'
-                print >>sys.stderr, '='*80 + '\n'
+                print '> INCOMPATIBLE SHARE RECEIVED%s - share %s (gentx mismatch, not banning peer)' % (peer_info, format_hash(share.hash))
+                return False, False  # Don't blame peer for gentx mismatch
             else:
                 log.err(None, 'Share check failed: %064x -> %064x: %s' % (share.hash, share.previous_hash if share.previous_hash is not None else 0, error_msg))
-            return False
+            return False, True  # Blame peer for other validation failures
         except:
             log.err(None, 'Share check failed: %064x -> %064x' % (share.hash, share.previous_hash if share.previous_hash is not None else 0))
-            return False
+            return False, True  # Blame peer for unexpected errors
         else:
             self.verified.add(share)
-            return True
+            return True, False
     
     def think(self, block_rel_height_func, previous_block, bits, known_txs):
         desired = set()
@@ -535,13 +534,17 @@ class OkayTracker(forest.Tracker):
         # if it fails, attempt on parent, and repeat
         # if no successful verification because of lack of parents, request parent
         bads = []
+        bads_to_blame = []  # Only blame peers for these
         for head in set(self.heads) - set(self.verified.heads):
             head_height, last = self.get_height_and_last(head)
             
             for share in self.get_chain(head, head_height if last is None else min(5, max(0, head_height - self.net.CHAIN_LENGTH))):
-                if self.attempt_verify(share):
+                verified, blame_peer = self.attempt_verify(share)
+                if verified:
                     break
                 bads.append(share.hash)
+                if blame_peer:
+                    bads_to_blame.append(share.hash)
             else:
                 if last is not None:
                     desired.add((
@@ -554,7 +557,8 @@ class OkayTracker(forest.Tracker):
             assert bad not in self.verified.items
             #assert bad in self.heads
             bad_share = self.items[bad]
-            if bad_share.peer_addr is not None:
+            # Only blame peer if this share is in the blame list
+            if bad_share.peer_addr is not None and bad in bads_to_blame:
                 bad_peer_addresses.add(bad_share.peer_addr)
             if p2pool.DEBUG:
                 print "BAD", bad
@@ -573,7 +577,8 @@ class OkayTracker(forest.Tracker):
             get = min(want, can)
             #print 'Z', head_height, last_hash is None, last_height, last_last_hash is None, want, can, get
             for share in self.get_chain(last_hash, get):
-                if not self.attempt_verify(share):
+                verified, _ = self.attempt_verify(share)
+                if not verified:
                     break
             if head_height < self.net.CHAIN_LENGTH and last_last_hash is not None:
                 desired.add((
