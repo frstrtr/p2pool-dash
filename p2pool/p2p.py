@@ -565,7 +565,14 @@ class ClientFactory(protocol.ClientFactory):
         self.attempts.add(ident)
     
     def clientConnectionFailed(self, connector, reason):
-        self.attempts.remove(self._host_to_ident(connector.getDestination().host))
+        host = connector.getDestination().host
+        self.attempts.remove(self._host_to_ident(host))
+        
+        # Temporarily ban hosts that fail to connect (60 second cooldown)
+        if host not in self.node.bans or self.node.bans[host] < time.time():
+            self.node.bans[host] = time.time() + 60
+            if p2pool.DEBUG:
+                print 'Connection to %s failed, temporary ban for 60s: %s' % (host, reason.getErrorMessage())
     
     def clientConnectionLost(self, connector, reason):
         self.attempts.remove(self._host_to_ident(connector.getDestination().host))
@@ -593,7 +600,11 @@ class ClientFactory(protocol.ClientFactory):
     
     def _think(self):
         try:
-            if len(self.conns) < self.desired_conns and len(self.attempts) < self.max_attempts and self.node.addr_store:
+            # Count both incoming and outgoing connections
+            total_peers = len(self.node.peers)
+            
+            # Only try new connections if we're below desired count
+            if total_peers < self.desired_conns and len(self.conns) < self.desired_conns and len(self.attempts) < self.max_attempts and self.node.addr_store:
                 (host, port), = self.node.get_good_peers(1)
                 
                 if self._host_to_ident(host) in self.attempts:
@@ -601,7 +612,8 @@ class ClientFactory(protocol.ClientFactory):
                 elif host in self.node.bans and self.node.bans[host] > time.time():
                     pass
                 else:
-                    print 'Trying to connect to', host, port
+                    if p2pool.DEBUG:
+                        print 'Trying to connect to', host, port, '(have %d/%d peers)' % (total_peers, self.desired_conns)
                     reactor.connectTCP(host, port, self, timeout=5)
         except:
             log.err()
