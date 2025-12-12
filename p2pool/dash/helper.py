@@ -84,7 +84,7 @@ def getwork(dashd, net, use_getblocktemplate=True):
             # the packed_payments serialization format which only expects 'payee' and 'amount'
             if 'script' in obj and obj['script']:
                 g['_script'] = obj['script'].decode('hex')
-                g['payee'] = ''  # Empty payee, script will be used in coinbase generation
+                g['payee'] = None  # None payee (will be packed as none_value), script will be used in coinbase generation
                 packed_payments.append(g)
             elif 'payee' in obj and obj['payee']:
                 g['payee'] = str(obj['payee'])

@@ -277,15 +277,23 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint):
                 addr = yield addr_df
                 if addr not in addrs:
                     addrs[addr] = (0, time.time(), time.time())
-            except:
-                log.err()
+            except Exception as e:
+                # DNS lookup failures for bootstrap nodes are expected - just log briefly
+                if 'DNS' in str(type(e).__name__) or 'DNS' in str(e):
+                    pass  # Silently skip DNS failures for bootstrap nodes
+                else:
+                    log.err()
         
         connect_addrs = set()
         for addr_df in map(parse, args.p2pool_nodes):
             try:
                 connect_addrs.add((yield addr_df))
-            except:
-                log.err()
+            except Exception as e:
+                # DNS lookup failures should be logged but not as full tracebacks
+                if 'DNS' in str(type(e).__name__) or 'DNS' in str(e):
+                    print 'Warning: DNS lookup failed for p2pool node'
+                else:
+                    log.err()
         
         node.p2p_node = p2pool_node.P2PNode(node,
             port=args.p2pool_port,
@@ -796,10 +804,10 @@ def run():
     if not args.no_bugreport:
         log.addObserver(ErrorReporter().emit)
     
-    # Filter out benign OpenSSL import errors from Twisted's HTTP client
+    # Filter out benign OpenSSL import errors and DNS lookup failures from Twisted
     original_observer = log.theLogPublisher.observers[0] if log.theLogPublisher.observers else None
     def filter_openssl_errors(eventDict):
-        # Check for OpenSSL ImportError in failure or isError events
+        # Check for OpenSSL ImportError or DNS failures in failure or isError events
         if eventDict.get('isError'):
             msg = eventDict.get('message', '')
             why = eventDict.get('why', '')
@@ -810,9 +818,13 @@ def run():
             if failure:
                 check_text += failure.getTraceback()
             
-            # Suppress OpenSSL import errors from twisted.web
+            # Suppress OpenSSL import errors from twisted.web (HTTPS redirect issue)
             if 'No module named OpenSSL' in check_text:
                 return  # Suppress this error
+            
+            # Suppress DNS lookup failures for bootstrap nodes (expected when nodes are down)
+            if 'DNSLookupError' in check_text or 'DNS lookup failed' in check_text:
+                return  # Suppress DNS failures
         
         if original_observer:
             original_observer(eventDict)
