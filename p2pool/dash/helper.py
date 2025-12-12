@@ -168,8 +168,8 @@ def submit_block_rpc(block, ignore_failure, dashd, dashd_work, net):
     if (not success and success_expected and not ignore_failure) or (success and not success_expected):
         print >>sys.stderr, 'Block submittal result: %s (%r) Expected: %s' % (success, result, success_expected)
     
-    # Check chainlock status after submission
-    if success:
+    # Check chainlock status after submission (but skip if P2P already submitted it)
+    if success and not p2p_won_race:
         yield check_block_chainlock(dashd, block_hash, net)
 
 @defer.inlineCallbacks
