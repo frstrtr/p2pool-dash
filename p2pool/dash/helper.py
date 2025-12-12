@@ -140,14 +140,22 @@ def submit_block_rpc(block, ignore_failure, dashd, dashd_work, net):
             result = yield dashd.rpc_submitblock(dash_data.block_type.pack(block).encode('hex'))
         except jsonrpc.Error_for_code(-32601): # Method not found, for older litecoin versions
             result = yield dashd.rpc_getblocktemplate(dict(mode='submit', data=dash_data.block_type.pack(block).encode('hex')))
-        success = result is None
+        # submitblock returns None on success, "duplicate" if block already known (P2P won the race!)
+        success = result is None or result == 'duplicate'
+        p2p_won_race = result == 'duplicate'
     else:
         result = yield dashd.rpc_getmemorypool(dash_data.block_type.pack(block).encode('hex'))
         success = result
+        p2p_won_race = False
     success_expected = pow_hash <= block['header']['bits'].target
     
-    print 'BLOCK SUBMISSION RESULT:'
-    print '  Success: %s (result: %r)' % (success, result)
+    print 'BLOCK SUBMISSION RESULT (RPC):'
+    if p2p_won_race:
+        print '  *** P2P WON THE RACE! Block already propagated via P2P network ***'
+        print '  RPC result: %r (this is expected when P2P submits first)' % result
+        print '  SUCCESS: Block was accepted!'
+    else:
+        print '  RPC accepted: %s (result: %r)' % (result is None, result)
     print '  Expected success: %s' % success_expected
     
     if (not success and success_expected and not ignore_failure) or (success and not success_expected):
