@@ -187,6 +187,17 @@ def check_block_chainlock(dashd, block_hash, net):
     """Check and log the chainlock status of a submitted block."""
     from twisted.internet import reactor
     
+    # Skip chainlock check for regtest - no masternodes/chainlocks
+    parent_name = getattr(net.PARENT, 'NAME', '') if hasattr(net, 'PARENT') else ''
+    if 'regtest' in parent_name.lower():
+        print 'CHAINLOCK CHECK: Skipped (regtest mode has no chainlocks)'
+        defer.returnValue(None)
+    
+    # Also skip if network doesn't have chainlocks explicitly disabled
+    if hasattr(net, 'CHAINLOCK_ENABLED') and not net.CHAINLOCK_ENABLED:
+        print 'CHAINLOCK CHECK: Skipped (chainlocks disabled for this network)'
+        defer.returnValue(None)
+    
     # Wait a few seconds for block to propagate
     for delay in [2, 5, 10, 30, 60]:
         yield deferral.sleep(delay)
