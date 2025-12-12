@@ -21,6 +21,9 @@ VERSION_CHECK = lambda v: v >= 200000
 # ==== Stratum Vardiff Configuration ====
 STRATUM_SHARE_RATE = 5  # Target seconds per pseudoshare - faster for testing
 
+# Default stratum difficulty - very low for CPU testing
+STRATUM_DEFAULT_DIFFICULTY = 0.001  # Low difficulty for CPU miners
+
 # Vardiff settings - aggressive for regtest
 VARDIFF_SHARES_TRIGGER = 3
 VARDIFF_TIMEOUT_MULT = 3
