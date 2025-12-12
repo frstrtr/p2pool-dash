@@ -21,7 +21,7 @@ echo "Log file: $LOG_FILE"
 # - p2pool P2P: 18999 (defined in networks/dash_testnet.py)
 # - p2pool stratum: 17903 (defined in networks/dash_testnet.py)
 
-pypy run_p2pool.py --net dash_testnet \
+pypy run_p2pool.py --net dash --testnet \
     --dashd-address 127.0.0.1 \
     --dashd-rpc-port 19998 \
     --dashd-p2p-port 19999 \
