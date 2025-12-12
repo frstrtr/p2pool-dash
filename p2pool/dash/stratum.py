@@ -815,8 +815,9 @@ class StratumRPCMiningProvider(object):
             error_msg = str(e)
             if 'lost contact' in error_msg or 'not connected' in error_msg:
                 # Temporary error - don't spam logs, just skip
-                pass
+                print 'STRATUM: _send_work skipped - %s' % error_msg
             else:
+                print 'STRATUM: _send_work error - %s' % error_msg
                 log.err(None, 'Error getting work for stratum:')
             return
         
