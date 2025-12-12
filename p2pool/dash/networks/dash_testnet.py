@@ -21,8 +21,8 @@ POW_FUNC = lambda data: pack.IntType(256).unpack(__import__('dash_hash').getPoWH
 BLOCK_PERIOD = 150 # s
 SYMBOL = 'tDASH'
 CONF_FILE_FUNC = lambda: os.path.join(os.path.join(os.environ['APPDATA'], 'DashCore') if platform.system() == 'Windows' else os.path.expanduser('~/Library/Application Support/DashCore/') if platform.system() == 'Darwin' else os.path.expanduser('~/.dashcore'), 'dash.conf')
-BLOCK_EXPLORER_URL_PREFIX = 'https://testnet-insight.dashevo.org/insight/block/'
-ADDRESS_EXPLORER_URL_PREFIX = 'https://testnet-insight.dashevo.org/insight/address/'
-TX_EXPLORER_URL_PREFIX = 'https://testnet-insight.dashevo.org/insight/tx/'
+BLOCK_EXPLORER_URL_PREFIX = 'https://blockexplorer.one/dash/testnet/blockHash/'
+ADDRESS_EXPLORER_URL_PREFIX = 'https://blockexplorer.one/dash/testnet/address/'
+TX_EXPLORER_URL_PREFIX = 'https://blockexplorer.one/dash/testnet/tx/'
 SANE_TARGET_RANGE = (2**256//2**32//1000000 - 1, 2**256//2**20 - 1)
 DUST_THRESHOLD = 0.001e8
