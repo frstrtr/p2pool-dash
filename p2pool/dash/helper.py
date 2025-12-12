@@ -78,16 +78,17 @@ def getwork(dashd, net, use_getblocktemplate=True):
         if 'amount' in obj and obj['amount'] > 0:
             payment_amount += obj['amount']
             g['amount'] = obj['amount']
-            # Use 'script' field if available (preferred - handles all payment types including platform)
-            # Fall back to 'payee' field for backwards compatibility
-            # Note: We store script in '_script' (underscore prefix) to avoid conflict with 
-            # the packed_payments serialization format which only expects 'payee' and 'amount'
-            if 'script' in obj and obj['script']:
-                g['_script'] = obj['script'].decode('hex')
-                g['payee'] = None  # None payee (will be packed as none_value), script will be used in coinbase generation
-                packed_payments.append(g)
-            elif 'payee' in obj and obj['payee']:
+            # Use 'payee' if available (regular masternode address)
+            # For script-only payments (like platform OP_RETURN), encode the script
+            # with prefix "script:" so it survives serialization
+            if 'payee' in obj and obj['payee']:
+                # Regular payment with address
                 g['payee'] = str(obj['payee'])
+                packed_payments.append(g)
+            elif 'script' in obj and obj['script']:
+                # Script-only payment (e.g., platform OP_RETURN with empty payee)
+                # Encode script as "script:<hex>" so it can be decoded on receiving end
+                g['payee'] = 'script:' + obj['script']
                 packed_payments.append(g)
 
     coinbase_payload = None

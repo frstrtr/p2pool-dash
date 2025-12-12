@@ -190,16 +190,18 @@ class Share(object):
         payments_tx = []
         if payments is not None:
             for obj in payments:
-                # Use _script directly if available (preferred method for all payment types)
-                # This field is set by helper.py when getblocktemplate provides a 'script' field
-                # Fall back to converting payee address for backwards compatibility
-                # Note: obj is a dictionary, so use dict access not attribute access
-                if obj.get('_script'):
-                    pm_script = obj['_script']
-                elif obj.get('payee'):
-                    pm_script = dash_data.address_to_script2(obj['payee'], net.PARENT)
+                # Determine script from payee field
+                # Format 1: "script:<hex>" - direct script encoding (for platform OP_RETURN etc)
+                # Format 2: Regular address string - convert to script
+                payee = obj.get('payee')
+                if payee and payee.startswith('script:'):
+                    # Direct script encoded as hex after "script:" prefix
+                    pm_script = payee[7:].decode('hex')
+                elif payee:
+                    # Regular address - convert to script
+                    pm_script = dash_data.address_to_script2(payee, net.PARENT)
                 else:
-                    continue  # Skip payments without valid script or payee
+                    continue  # Skip payments without valid payee
                 pm_payout = obj.get('amount', 0)
                 if pm_payout > 0:
                     payments_tx += [dict(value=pm_payout, script=pm_script)]
