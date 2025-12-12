@@ -6,6 +6,8 @@
     <title>P2Pool Dashboard</title>
     <link rel="shortcut icon" type="image/x-icon" href="favicon.ico" />
     <script src="d3.v2.min.js"></script>
+    <script src="https://code.highcharts.com/highcharts.js"></script>
+    <script src="https://code.highcharts.com/modules/exporting.js"></script>
     <style>
         :root {
             --primary: #008de4;
@@ -500,9 +502,9 @@
             position: relative;
         }
         
-        .graph-container svg {
-            width: 100%;
-            height: 100%;
+        .graph-container .highcharts-container {
+            width: 100% !important;
+            height: 100% !important;
         }
         
         .graph-line {
@@ -584,6 +586,22 @@
             align-items: center;
             gap: 6px;
             color: var(--text-muted);
+            cursor: pointer;
+            user-select: none;
+            transition: opacity 0.2s;
+        }
+        
+        .legend-item:hover {
+            opacity: 0.8;
+        }
+        
+        .legend-item.disabled {
+            opacity: 0.4;
+            text-decoration: line-through;
+        }
+        
+        .legend-item.disabled .legend-color {
+            background: #666 !important;
         }
         
         .legend-color {
@@ -637,14 +655,14 @@
         }
         
         .graph-container.compact {
-            height: 140px;
+            height: 220px;
             flex: 1;
-            min-height: 120px;
+            min-height: 200px;
         }
         
         .graph-stats.compact {
             gap: 15px;
-            margin-top: 8px;
+            margin-top: 5px;
         }
         
         .graph-stats.compact .graph-stat-label {
@@ -653,6 +671,91 @@
         
         .graph-stats.compact .graph-stat-value {
             font-size: 0.85rem;
+        }
+        
+        /* Fullscreen button */
+        .fullscreen-btn {
+            margin-left: 10px !important;
+            font-size: 14px !important;
+        }
+        
+        /* Fullscreen overlay */
+        .graph-fullscreen-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: var(--darker);
+            z-index: 10000;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        
+        .graph-fullscreen-overlay.active {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .graph-fullscreen-overlay .fullscreen-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .graph-fullscreen-overlay .fullscreen-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--primary);
+        }
+        
+        .graph-fullscreen-overlay .fullscreen-close {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+        
+        .graph-fullscreen-overlay .fullscreen-close:hover {
+            background: var(--primary);
+            color: white;
+        }
+        
+        .graph-fullscreen-overlay .fullscreen-graph {
+            flex: 1;
+            min-height: 0;
+        }
+        
+        .graph-fullscreen-overlay .fullscreen-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .graph-fullscreen-overlay .fullscreen-stats {
+            display: flex;
+            gap: 40px;
+            margin-top: 15px;
+        }
+        
+        .graph-fullscreen-overlay .fullscreen-stat {
+            text-align: center;
+        }
+        
+        .graph-fullscreen-overlay .fullscreen-stat-label {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+        
+        .graph-fullscreen-overlay .fullscreen-stat-value {
+            color: var(--primary);
+            font-size: 1.3rem;
+            font-weight: 600;
         }
     </style>
 </head>
@@ -740,21 +843,45 @@
                         <button class="time-btn" data-period="week" onclick="selectGraphPeriod('week')">1W</button>
                         <button class="time-btn" data-period="month" onclick="selectGraphPeriod('month')">1M</button>
                         <button class="time-btn" data-period="year" onclick="selectGraphPeriod('year')">1Y</button>
+                        <button class="time-btn fullscreen-btn" onclick="toggleGraphFullscreen()" title="Fullscreen">⛶</button>
                     </div>
                 </div>
                 <div class="graph-legend compact">
-                    <div class="legend-item"><span class="legend-color" style="background: #008de4;"></span><span>Good</span></div>
-                    <div class="legend-item"><span class="legend-color" style="background: #ff6b6b;"></span><span>DOA</span></div>
+                    <div class="legend-item" data-series="good" onclick="toggleSeries('good', this)" title="Click to toggle Good hashrate"><span class="legend-color" style="background: #008de4;"></span><span>Good</span></div>
+                    <div class="legend-item" data-series="doa" onclick="toggleSeries('doa', this)" title="Click to toggle DOA hashrate"><span class="legend-color" style="background: #ff6b6b;"></span><span>DOA</span></div>
                 </div>
-                <div class="graph-container compact" id="hashrate-graph">
-                    <div class="graph-tooltip" id="graph-tooltip"></div>
-                </div>
+                <div class="graph-container compact" id="hashrate-graph"></div>
                 <div class="graph-stats compact">
                     <div class="graph-stat"><div class="graph-stat-label">Current</div><div class="graph-stat-value" id="graph-current">-</div></div>
                     <div class="graph-stat"><div class="graph-stat-label">Average</div><div class="graph-stat-value" id="graph-average">-</div></div>
                     <div class="graph-stat"><div class="graph-stat-label">Peak</div><div class="graph-stat-value" id="graph-peak">-</div></div>
                     <div class="graph-stat"><div class="graph-stat-label">DOA</div><div class="graph-stat-value" id="graph-doa">-</div></div>
                 </div>
+            </div>
+        </div>
+        
+        <!-- Fullscreen Graph Overlay -->
+        <div class="graph-fullscreen-overlay" id="graph-fullscreen-overlay">
+            <div class="fullscreen-header">
+                <span class="fullscreen-title">📊 Pool Hashrate</span>
+                <div class="fullscreen-controls">
+                    <button class="time-btn" data-period="hour" onclick="selectGraphPeriod('hour')">1H</button>
+                    <button class="time-btn" data-period="day" onclick="selectGraphPeriod('day')">1D</button>
+                    <button class="time-btn" data-period="week" onclick="selectGraphPeriod('week')">1W</button>
+                    <button class="time-btn" data-period="month" onclick="selectGraphPeriod('month')">1M</button>
+                    <button class="time-btn" data-period="year" onclick="selectGraphPeriod('year')">1Y</button>
+                    <span style="margin-left: 20px; color: var(--text-muted);">|</span>
+                    <div class="legend-item" data-series="good" onclick="toggleSeries('good', this)" title="Click to toggle Good hashrate" style="margin-left: 15px;"><span class="legend-color" style="background: #008de4;"></span><span>Good</span></div>
+                    <div class="legend-item" data-series="doa" onclick="toggleSeries('doa', this)" title="Click to toggle DOA hashrate"><span class="legend-color" style="background: #ff6b6b;"></span><span>DOA</span></div>
+                </div>
+                <button class="fullscreen-close" onclick="toggleGraphFullscreen()">✕ Close</button>
+            </div>
+            <div class="fullscreen-graph" id="fullscreen-graph"></div>
+            <div class="fullscreen-stats">
+                <div class="fullscreen-stat"><div class="fullscreen-stat-label">Current</div><div class="fullscreen-stat-value" id="fs-graph-current">-</div></div>
+                <div class="fullscreen-stat"><div class="fullscreen-stat-label">Average</div><div class="fullscreen-stat-value" id="fs-graph-average">-</div></div>
+                <div class="fullscreen-stat"><div class="fullscreen-stat-label">Peak</div><div class="fullscreen-stat-value" id="fs-graph-peak">-</div></div>
+                <div class="fullscreen-stat"><div class="fullscreen-stat-label">DOA</div><div class="fullscreen-stat-value" id="fs-graph-doa">-</div></div>
             </div>
         </div>
         
@@ -1098,16 +1225,81 @@
         // =============================================
         var currentGraphPeriod = 'hour';
         var graphData = [];
+        var isFullscreen = false;
+        var fullscreenChart = null;
+        var seriesVisibility = { good: true, doa: true };
         
-        function selectGraphPeriod(period) {
-            currentGraphPeriod = period;
-            // Update button states
-            document.querySelectorAll('.time-btn').forEach(function(btn) {
+        function toggleSeries(seriesName, element) {
+            seriesVisibility[seriesName] = !seriesVisibility[seriesName];
+            
+            // Update UI for all matching legend items (compact and fullscreen)
+            document.querySelectorAll('.legend-item[data-series="' + seriesName + '"]').forEach(function(el) {
+                if (seriesVisibility[seriesName]) {
+                    el.classList.remove('disabled');
+                } else {
+                    el.classList.add('disabled');
+                }
+            });
+            
+            // Update chart series visibility
+            var seriesIndex = seriesName === 'good' ? 0 : 1;
+            
+            if (hashrateChart) {
+                var series = hashrateChart.series[seriesIndex];
+                if (series) {
+                    if (seriesVisibility[seriesName]) {
+                        series.show();
+                    } else {
+                        series.hide();
+                    }
+                }
+            }
+            
+            if (fullscreenChart) {
+                var series = fullscreenChart.series[seriesIndex];
+                if (series) {
+                    if (seriesVisibility[seriesName]) {
+                        series.show();
+                    } else {
+                        series.hide();
+                    }
+                }
+            }
+        }
+        
+        function toggleGraphFullscreen() {
+            var overlay = document.getElementById('graph-fullscreen-overlay');
+            isFullscreen = !isFullscreen;
+            
+            if (isFullscreen) {
+                overlay.classList.add('active');
+                document.body.style.overflow = 'hidden';
+                // Render fullscreen chart
+                renderFullscreenGraph(graphData);
+                // Update button states
+                updatePeriodButtons();
+            } else {
+                overlay.classList.remove('active');
+                document.body.style.overflow = '';
+                if (fullscreenChart) {
+                    fullscreenChart.destroy();
+                    fullscreenChart = null;
+                }
+            }
+        }
+        
+        function updatePeriodButtons() {
+            document.querySelectorAll('.time-btn[data-period]').forEach(function(btn) {
                 btn.classList.remove('active');
-                if (btn.dataset.period === period) {
+                if (btn.dataset.period === currentGraphPeriod) {
                     btn.classList.add('active');
                 }
             });
+        }
+        
+        function selectGraphPeriod(period) {
+            currentGraphPeriod = period;
+            updatePeriodButtons();
             loadHashrateGraph();
         }
         
@@ -1132,193 +1324,323 @@
             });
         }
         
+        // Configure Highcharts global options
+        Highcharts.setOptions({
+            global: { useUTC: false },
+            lang: { thousandsSep: ',' }
+        });
+
+        var hashrateChart = null;
+
         function renderHashrateGraph(data) {
             var container = document.getElementById('hashrate-graph');
-            var tooltip = document.getElementById('graph-tooltip');
             
             // Clear previous
-            d3.select('#hashrate-graph svg').remove();
-            
-            // Check if compact mode
-            var isCompact = container.classList.contains('compact');
-            var margin = isCompact 
-                ? {top: 10, right: 20, bottom: 25, left: 50}
-                : {top: 20, right: 30, bottom: 40, left: 70};
-            var width = container.offsetWidth - margin.left - margin.right;
-            var height = (isCompact ? container.offsetHeight : 260) - margin.top - margin.bottom;
-            
-            if (width < 100 || height < 50) return; // Container not ready
-            
-            var svg = d3.select('#hashrate-graph')
-                .append('svg')
-                .attr('width', width + margin.left + margin.right)
-                .attr('height', height + margin.top + margin.bottom)
-                .append('g')
-                .attr('transform', 'translate(' + margin.left + ',' + margin.top + ')');
-            
-            // Create gradient
-            var defs = svg.append('defs');
-            var gradient = defs.append('linearGradient')
-                .attr('id', 'graph-gradient')
-                .attr('x1', '0%').attr('y1', '0%')
-                .attr('x2', '0%').attr('y2', '100%');
-            gradient.append('stop').attr('offset', '0%').attr('stop-color', '#008de4').attr('stop-opacity', 0.4);
-            gradient.append('stop').attr('offset', '100%').attr('stop-color', '#008de4').attr('stop-opacity', 0.05);
-            
-            // Parse data - d[1] is an object {good: x, orphan: y, null: z} or null
-            var parseTime = function(d) { return d[0] * 1000; };
-            var parseValue = function(d) { 
-                if (!d[1]) return 0;
-                // Return the 'good' hashrate (non-orphan, non-null shares)
-                return d[1].good || 0;
-            };
-            var parseDoaValue = function(d) {
-                if (!d[1]) return 0;
-                // Return DOA/orphan rate (dead + orphan shares)
-                return (d[1].orphan || 0) + (d[1]['null'] || 0);
-            };
-            
-            // Filter out null/zero values for cleaner display
-            var validData = data.filter(function(d) { return d[1] && d[1].good > 0; });
-            if (validData.length === 0) validData = data;
-            
-            var xExtent = d3.extent(validData, parseTime);
-            // Include DOA values in y scale calculation
-            var yMaxGood = d3.max(validData, parseValue) || 0;
-            var yMaxDoa = d3.max(validData, parseDoaValue) || 0;
-            var yMax = Math.max(yMaxGood, yMaxDoa) * 1.1;
-            var yMin = d3.min(validData, parseValue) * 0.9;
-            
-            var x = d3.time.scale().domain(xExtent).range([0, width]);
-            var y = d3.scale.linear().domain([Math.max(0, yMin), yMax]).range([height, 0]);
-            
-            // Grid lines
-            svg.append('g')
-                .attr('class', 'graph-grid')
-                .attr('transform', 'translate(0,' + height + ')')
-                .call(d3.svg.axis().scale(x).orient('bottom').tickSize(-height).tickFormat(''));
-            
-            svg.append('g')
-                .attr('class', 'graph-grid')
-                .call(d3.svg.axis().scale(y).orient('left').ticks(5).tickSize(-width).tickFormat(''));
-            
-            // Area
-            var area = d3.svg.area()
-                .x(function(d) { return x(parseTime(d)); })
-                .y0(height)
-                .y1(function(d) { return y(parseValue(d)); });
-            
-            svg.append('path')
-                .datum(validData)
-                .attr('class', 'graph-area')
-                .attr('d', area)
-                .style('fill', 'url(#graph-gradient)');
-            
-            // Line (good hashrate)
-            var line = d3.svg.line()
-                .x(function(d) { return x(parseTime(d)); })
-                .y(function(d) { return y(parseValue(d)); });
-            
-            svg.append('path')
-                .datum(validData)
-                .attr('class', 'graph-line')
-                .attr('d', line);
-            
-            // DOA/Orphan Line
-            var lineDoa = d3.svg.line()
-                .x(function(d) { return x(parseTime(d)); })
-                .y(function(d) { return y(parseDoaValue(d)); })
-                .defined(function(d) { return parseDoaValue(d) > 0; });
-            
-            svg.append('path')
-                .datum(validData)
-                .attr('class', 'graph-line-doa')
-                .attr('d', lineDoa);
-            
-            // X axis
-            var xAxis = d3.svg.axis().scale(x).orient('bottom').ticks(6);
-            if (currentGraphPeriod === 'hour') {
-                xAxis.tickFormat(d3.time.format('%H:%M'));
-            } else if (currentGraphPeriod === 'day') {
-                xAxis.tickFormat(d3.time.format('%H:%M'));
-            } else if (currentGraphPeriod === 'week') {
-                xAxis.tickFormat(d3.time.format('%a %d'));
-            } else {
-                xAxis.tickFormat(d3.time.format('%b %d'));
+            if (hashrateChart) {
+                hashrateChart.destroy();
+                hashrateChart = null;
             }
             
-            svg.append('g')
-                .attr('class', 'graph-axis')
-                .attr('transform', 'translate(0,' + height + ')')
-                .call(xAxis);
+            if (!data || data.length === 0) return;
             
-            // Y axis
-            var yAxis = d3.svg.axis().scale(y).orient('left').ticks(5)
-                .tickFormat(function(d) { return format_hashrate(d).replace(' ', ''); });
+            // Parse data - d[1] is an object {good: x, orphan: y, null: z} or null
+            var hashrate = [];
+            var doarate = [];
+            var values = [];
+            var doaValues = [];
             
-            svg.append('g')
-                .attr('class', 'graph-axis')
-                .call(yAxis);
-            
-            // Tooltip overlay
-            var focus = svg.append('g').style('display', 'none');
-            focus.append('circle').attr('r', 5).style('fill', '#008de4');
-            focus.append('circle').attr('class', 'doa-dot').attr('r', 4).style('fill', '#ff6b6b');
-            focus.append('line').attr('class', 'x-hover-line')
-                .attr('y1', 0).attr('y2', height)
-                .style('stroke', '#008de4').style('stroke-width', 1).style('stroke-dasharray', '3,3');
-            
-            svg.append('rect')
-                .attr('width', width).attr('height', height)
-                .style('fill', 'none').style('pointer-events', 'all')
-                .on('mouseover', function() { focus.style('display', null); tooltip.classList.add('visible'); })
-                .on('mouseout', function() { focus.style('display', 'none'); tooltip.classList.remove('visible'); })
-                .on('mousemove', function() {
-                    var x0 = x.invert(d3.mouse(this)[0]);
-                    var bisect = d3.bisector(function(d) { return d[0] * 1000; }).left;
-                    var i = bisect(data, x0, 1);
-                    if (i >= data.length) i = data.length - 1;
-                    if (i < 1) i = 1;
-                    var d0 = data[i - 1], d1 = data[i];
-                    var d = x0 - d0[0]*1000 > d1[0]*1000 - x0 ? d1 : d0;
-                    
-                    var goodVal = parseValue(d);
-                    var doaVal = parseDoaValue(d);
-                    
-                    focus.select('circle:first-of-type').attr('transform', 'translate(' + x(d[0]*1000) + ',' + y(goodVal) + ')');
-                    focus.select('.doa-dot').attr('transform', 'translate(' + x(d[0]*1000) + ',' + y(doaVal) + ')');
-                    focus.select('.x-hover-line')
-                        .attr('x1', x(d[0]*1000)).attr('x2', x(d[0]*1000))
-                        .attr('y1', 0).attr('y2', height);
-                    
-                    var date = new Date(d[0] * 1000);
-                    var doaPercent = goodVal > 0 ? ((doaVal / (goodVal + doaVal)) * 100).toFixed(2) : '0.00';
-                    tooltip.innerHTML = '<strong style="color:#008de4">' + format_hashrate(goodVal) + '</strong> Good<br>' + 
-                        '<strong style="color:#ff6b6b">' + format_hashrate(doaVal) + '</strong> DOA (' + doaPercent + '%)<br>' +
-                        '<small>' + date.toLocaleDateString() + ' ' + date.toLocaleTimeString() + '</small>';
-                    tooltip.style.left = (d3.mouse(container)[0] + 10) + 'px';
-                    tooltip.style.top = (d3.mouse(container)[1] - 50) + 'px';
-                });
+            data.forEach(function(d) {
+                var timestamp = d[0] * 1000;
+                var goodVal = (d[1] && d[1].good) ? d[1].good : 0;
+                var doaVal = d[1] ? ((d[1].orphan || 0) + (d[1]['null'] || 0)) : 0;
+                
+                hashrate.push([timestamp, goodVal]);
+                doarate.push([timestamp, doaVal]);
+                values.push(goodVal);
+                doaValues.push(doaVal);
+            });
             
             // Update stats
-            var values = data.map(parseValue);
-            var doaValues = data.map(parseDoaValue);
-            var current = values[values.length - 1];
-            var avg = d3.mean(values);
-            var peak = d3.max(values);
-            var doaAvg = d3.mean(doaValues);
+            var current = values[values.length - 1] || 0;
+            var sum = values.reduce(function(a, b) { return a + b; }, 0);
+            var avg = values.length > 0 ? sum / values.length : 0;
+            var peak = Math.max.apply(null, values) || 0;
+            var doaSum = doaValues.reduce(function(a, b) { return a + b; }, 0);
+            var doaAvg = doaValues.length > 0 ? doaSum / doaValues.length : 0;
             var doaPercent = avg > 0 ? ((doaAvg / (avg + doaAvg)) * 100).toFixed(2) : '0.00';
             
-            document.getElementById('graph-current').textContent = format_hashrate(current || 0);
-            document.getElementById('graph-average').textContent = format_hashrate(avg || 0);
-            document.getElementById('graph-peak').textContent = format_hashrate(peak || 0);
-            document.getElementById('graph-doa').textContent = format_hashrate(doaAvg || 0) + ' (' + doaPercent + '%)';
+            document.getElementById('graph-current').textContent = format_hashrate(current);
+            document.getElementById('graph-average').textContent = format_hashrate(avg);
+            document.getElementById('graph-peak').textContent = format_hashrate(peak);
+            document.getElementById('graph-doa').textContent = format_hashrate(doaAvg) + ' (' + doaPercent + '%)';
+            
+            // Create Highcharts chart (regular chart for better pan support)
+            var isCompact = container.classList.contains('compact');
+            var chartHeight = isCompact ? 220 : 300;
+            
+            hashrateChart = Highcharts.chart('hashrate-graph', {
+                chart: {
+                    type: 'area',
+                    height: chartHeight,
+                    backgroundColor: 'transparent',
+                    style: { fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif' },
+                    spacingTop: 0,
+                    spacingRight: 0,
+                    spacingBottom: 0,
+                    spacingLeft: 0,
+                    marginTop: 2,
+                    marginRight: 2,
+                    marginBottom: 28,
+                    marginLeft: 80,
+                    panning: { enabled: true, type: 'x' },
+                    panKey: 'shift',
+                    zoomType: 'x'
+                },
+                credits: { enabled: false },
+                title: { text: null },
+                xAxis: {
+                    type: 'datetime',
+                    lineColor: '#3a3a5a',
+                    tickColor: '#3a3a5a',
+                    labels: { 
+                        style: { color: '#e0e0e0', fontSize: '10px' }
+                    },
+                    gridLineColor: '#2a2a4a',
+                    gridLineWidth: 1
+                },
+                yAxis: {
+                    title: { text: null },
+                    min: 0,
+                    lineColor: '#3a3a5a',
+                    tickColor: '#3a3a5a',
+                    labels: {
+                        style: { color: '#e0e0e0', fontSize: '10px', width: '50px' },
+                        align: 'right',
+                        overflow: 'justify',
+                        formatter: function() { return format_hashrate(this.value); }
+                    },
+                    gridLineColor: '#2a2a4a',
+                    opposite: false
+                },
+                tooltip: {
+                    shared: true,
+                    backgroundColor: 'rgba(22, 22, 42, 0.95)',
+                    borderColor: '#008de4',
+                    borderColor: '#3a3a5a',
+                    style: { color: '#e0e0e0' },
+                    formatter: function() {
+                        var s = '<b>' + Highcharts.dateFormat('%b %e, %H:%M:%S', this.x) + '</b>';
+                        var goodVal = 0, doaVal = 0;
+                        this.points.forEach(function(point) {
+                            if (point.series.name === 'Hashrate') goodVal = point.y;
+                            if (point.series.name === 'Dead on arrival') doaVal = point.y;
+                            s += '<br/><span style="color:' + point.color + '">●</span> ' + 
+                                 point.series.name + ': <b>' + format_hashrate(point.y) + '</b>';
+                        });
+                        if (goodVal > 0) {
+                            var percent = ((doaVal / (goodVal + doaVal)) * 100).toFixed(2);
+                            s += '<br/><span style="color:#8888a0">DOA Rate: ' + percent + '%</span>';
+                        }
+                        return s;
+                    }
+                },
+                legend: { enabled: false },
+                plotOptions: {
+                    area: {
+                        fillColor: {
+                            linearGradient: { x1: 0, y1: 0, x2: 0, y2: 1 },
+                            stops: [
+                                [0, 'rgba(0, 141, 228, 0.6)'],
+                                [1, 'rgba(0, 141, 228, 0.1)']
+                            ]
+                        },
+                        marker: { enabled: false, radius: 2 },
+                        lineWidth: 2,
+                        lineColor: '#008de4',
+                        states: { hover: { lineWidth: 3 } },
+                        threshold: null
+                    },
+                    spline: {
+                        marker: { enabled: false, radius: 2 },
+                        lineWidth: 2,
+                        states: { hover: { lineWidth: 3 } },
+                        threshold: null
+                    }
+                },
+                series: [{
+                    type: 'area',
+                    name: 'Hashrate',
+                    data: hashrate,
+                    color: '#008de4',
+                    visible: seriesVisibility.good
+                }, {
+                    type: 'spline',
+                    name: 'Dead on arrival',
+                    data: doarate,
+                    color: '#ff6b6b',
+                    lineWidth: 2,
+                    visible: seriesVisibility.doa
+                }]
+            });
+            
+            // Also update fullscreen if open
+            if (isFullscreen) {
+                renderFullscreenGraph(data);
+            }
+        }
+        
+        function renderFullscreenGraph(data) {
+            var container = document.getElementById('fullscreen-graph');
+            
+            if (fullscreenChart) {
+                fullscreenChart.destroy();
+                fullscreenChart = null;
+            }
+            
+            if (!data || data.length === 0) {
+                container.innerHTML = '<div style="text-align:center; color: var(--text-muted); padding: 100px 0;">No data available</div>';
+                return;
+            }
+            
+            // Parse data
+            var hashrate = [];
+            var doarate = [];
+            var values = [];
+            var doaValues = [];
+            
+            data.forEach(function(d) {
+                var timestamp = d[0] * 1000;
+                var goodVal = (d[1] && d[1].good) ? d[1].good : 0;
+                var doaVal = d[1] ? ((d[1].orphan || 0) + (d[1]['null'] || 0)) : 0;
+                
+                hashrate.push([timestamp, goodVal]);
+                doarate.push([timestamp, doaVal]);
+                values.push(goodVal);
+                doaValues.push(doaVal);
+            });
+            
+            // Update fullscreen stats
+            var current = values[values.length - 1] || 0;
+            var sum = values.reduce(function(a, b) { return a + b; }, 0);
+            var avg = values.length > 0 ? sum / values.length : 0;
+            var peak = Math.max.apply(null, values) || 0;
+            var doaSum = doaValues.reduce(function(a, b) { return a + b; }, 0);
+            var doaAvg = doaValues.length > 0 ? doaSum / doaValues.length : 0;
+            var doaPercent = avg > 0 ? ((doaAvg / (avg + doaAvg)) * 100).toFixed(2) : '0.00';
+            
+            document.getElementById('fs-graph-current').textContent = format_hashrate(current);
+            document.getElementById('fs-graph-average').textContent = format_hashrate(avg);
+            document.getElementById('fs-graph-peak').textContent = format_hashrate(peak);
+            document.getElementById('fs-graph-doa').textContent = format_hashrate(doaAvg) + ' (' + doaPercent + '%)';
+            
+            fullscreenChart = Highcharts.chart('fullscreen-graph', {
+                chart: {
+                    type: 'area',
+                    backgroundColor: 'transparent',
+                    style: { fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif' },
+                    panning: { enabled: true, type: 'x' },
+                    panKey: 'shift',
+                    zoomType: 'x'
+                },
+                credits: { enabled: false },
+                title: { text: null },
+                xAxis: {
+                    type: 'datetime',
+                    lineColor: '#3a3a5a',
+                    tickColor: '#3a3a5a',
+                    labels: { style: { color: '#e0e0e0', fontSize: '11px' } },
+                    gridLineColor: '#2a2a4a',
+                    gridLineWidth: 1
+                },
+                yAxis: {
+                    title: { text: null },
+                    min: 0,
+                    lineColor: '#3a3a5a',
+                    tickColor: '#3a3a5a',
+                    labels: {
+                        style: { color: '#e0e0e0', fontSize: '11px' },
+                        formatter: function() { return format_hashrate(this.value); }
+                    },
+                    gridLineColor: '#2a2a4a',
+                    opposite: false
+                },
+                tooltip: {
+                    shared: true,
+                    backgroundColor: 'rgba(22, 22, 42, 0.95)',
+                    borderColor: '#008de4',
+                    style: { color: '#e0e0e0', fontSize: '12px' },
+                    formatter: function() {
+                        var s = '<b>' + Highcharts.dateFormat('%b %e, %H:%M:%S', this.x) + '</b>';
+                        var goodVal = 0, doaVal = 0;
+                        this.points.forEach(function(point) {
+                            if (point.series.name === 'Hashrate') goodVal = point.y;
+                            if (point.series.name === 'Dead on arrival') doaVal = point.y;
+                            s += '<br/><span style="color:' + point.color + '">●</span> ' + 
+                                 point.series.name + ': <b>' + format_hashrate(point.y) + '</b>';
+                        });
+                        if (goodVal > 0) {
+                            var percent = ((doaVal / (goodVal + doaVal)) * 100).toFixed(2);
+                            s += '<br/><span style="color:#8888a0">DOA Rate: ' + percent + '%</span>';
+                        }
+                        return s;
+                    }
+                },
+                legend: { 
+                    enabled: true,
+                    itemStyle: { color: '#e0e0e0', fontSize: '12px' },
+                    itemHoverStyle: { color: '#008de4' }
+                },
+                plotOptions: {
+                    area: {
+                        fillColor: {
+                            linearGradient: { x1: 0, y1: 0, x2: 0, y2: 1 },
+                            stops: [
+                                [0, 'rgba(0, 141, 228, 0.6)'],
+                                [1, 'rgba(0, 141, 228, 0.1)']
+                            ]
+                        },
+                        marker: { enabled: false },
+                        lineWidth: 2,
+                        lineColor: '#008de4',
+                        states: { hover: { lineWidth: 3 } },
+                        threshold: null
+                    },
+                    spline: {
+                        marker: { enabled: false },
+                        lineWidth: 2,
+                        states: { hover: { lineWidth: 3 } }
+                    }
+                },
+                series: [{
+                    type: 'area',
+                    name: 'Hashrate',
+                    data: hashrate,
+                    color: '#008de4',
+                    visible: seriesVisibility.good
+                }, {
+                    type: 'spline',
+                    name: 'Dead on arrival',
+                    data: doarate,
+                    color: '#ff6b6b',
+                    visible: seriesVisibility.doa
+                }]
+            });
         }
         
         // Resize handler
         window.addEventListener('resize', function() {
-            if (graphData.length > 0) {
-                renderHashrateGraph(graphData);
+            if (hashrateChart) {
+                hashrateChart.reflow();
+            }
+            if (fullscreenChart) {
+                fullscreenChart.reflow();
+            }
+        });
+        
+        // Close fullscreen on Escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && isFullscreen) {
+                toggleGraphFullscreen();
             }
         });
         
@@ -1345,7 +1667,7 @@
                 btn.classList.add('active');
             }
         }
-        
+
         function manualRefresh() {
             loadStats();
             loadBlocks();
