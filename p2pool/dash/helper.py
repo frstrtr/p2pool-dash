@@ -74,11 +74,16 @@ def getwork(dashd, net, use_getblocktemplate=True):
 
     for obj in payment_objects:
         g={}
-        # Always count the amount towards payment_amount, even if payee is empty
+        # Always count the amount towards payment_amount, even if payee/script is missing
         if 'amount' in obj and obj['amount'] > 0:
             payment_amount += obj['amount']
-            # Only add to packed_payments if there's a valid payee address
-            if 'payee' in obj and obj['payee']:
+            # Use 'script' field if available (preferred - handles all payment types including platform)
+            # Fall back to 'payee' field for backwards compatibility
+            if 'script' in obj and obj['script']:
+                g['script'] = obj['script'].decode('hex')
+                g['amount'] = obj['amount']
+                packed_payments.append(g)
+            elif 'payee' in obj and obj['payee']:
                 g['payee'] = str(obj['payee'])
                 g['amount'] = obj['amount']
                 packed_payments.append(g)
