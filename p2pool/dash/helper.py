@@ -247,10 +247,14 @@ def check_block_chainlock(dashd, block_hash, net):
         except jsonrpc.Error_for_code(-5):
             # Block not found in local node - possibly orphaned
             if delay == 2:  # Only log once on first check
-                print 'CHAINLOCK CHECK: Block %s not found in local node' % block_hash_str
+                print 'CHAINLOCK CHECK: Block %064x not found in local node' % block_hash
             defer.returnValue(False)
         except Exception as e:
-            print 'CHAINLOCK CHECK: Error checking block: %s' % e
+            # Suppress SSL import errors (expected when OpenSSL not installed)
+            if 'OpenSSL' in str(e) or 'SSL' in str(type(e).__name__):
+                pass  # Silently skip SSL errors
+            else:
+                print 'CHAINLOCK CHECK: Error checking block: %s' % e
     
     print ''
     print '*** WARNING: Block not chainlocked after 60 seconds ***'
