@@ -725,7 +725,8 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     
     # Cache for block status to avoid repeated RPC calls
     block_status_cache = {}  # {block_hash: {'status': 'confirmed'|'orphaned'|'pending', 'checked': timestamp}}
-    BLOCK_CACHE_TTL = 300  # 5 minutes cache for block status
+    BLOCK_CACHE_TTL = 60  # 1 minute cache for pending/orphaned status
+    BLOCK_ORPHAN_RECHECK_TTL = 300  # 5 minutes before re-checking orphaned blocks
     
     @defer.inlineCallbacks
     def get_block_status(block_hash):
@@ -735,9 +736,14 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         # Check cache first
         if block_hash in block_status_cache:
             cached = block_status_cache[block_hash]
-            # If confirmed/orphaned, cache forever; if pending, cache for TTL
-            if cached['status'] in ('confirmed', 'orphaned'):
+            # Confirmed blocks are cached forever
+            if cached['status'] == 'confirmed':
                 defer.returnValue(cached['status'])
+            # Orphaned blocks get rechecked periodically (in case of false positive)
+            elif cached['status'] == 'orphaned':
+                if now - cached['checked'] < BLOCK_ORPHAN_RECHECK_TTL:
+                    defer.returnValue(cached['status'])
+            # Pending blocks get rechecked frequently
             elif now - cached['checked'] < BLOCK_CACHE_TTL:
                 defer.returnValue(cached['status'])
         
@@ -755,10 +761,15 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             
             block_status_cache[block_hash] = {'status': status, 'checked': now}
             defer.returnValue(status)
-        except Exception:
-            # Block not found in node = orphaned
-            block_status_cache[block_hash] = {'status': 'orphaned', 'checked': now}
-            defer.returnValue('orphaned')
+        except Exception as e:
+            # RPC error - don't mark as orphaned, keep as pending or use cached status
+            if block_hash in block_status_cache:
+                # Keep existing status on RPC error
+                defer.returnValue(block_status_cache[block_hash]['status'])
+            else:
+                # New block with RPC error - mark as pending, not orphaned
+                block_status_cache[block_hash] = {'status': 'pending', 'checked': now}
+                defer.returnValue('pending')
     
     @defer.inlineCallbacks
     def get_recent_blocks():

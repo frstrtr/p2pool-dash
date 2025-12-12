@@ -450,7 +450,12 @@ class WorkerBridge(worker_interface.WorkerBridge):
                         print 'Explorer:    %s%064x' % (self.node.net.PARENT.BLOCK_EXPLORER_URL_PREFIX, header_hash)
                         print '#' * 70
                         print
-                    helper.submit_block(dict(header=header, txs=[new_gentx] + other_transactions), False, self.node.factory, self.node.dashd, self.node.dashd_work, self.node.net)
+                    # Submit block and add error callback to catch any failures
+                    block_submission = helper.submit_block(dict(header=header, txs=[new_gentx] + other_transactions), False, self.node.factory, self.node.dashd, self.node.dashd_work, self.node.net)
+                    @block_submission.addErrback
+                    def block_submit_error(err):
+                        print >>sys.stderr, '*** CRITICAL: Block submission failed! ***'
+                        log.err(err, 'Block submission error:')
                     if pow_hash <= header['bits'].target:
                         # New block found
                         self.node.factory.new_block.happened(header_hash)

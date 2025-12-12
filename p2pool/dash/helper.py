@@ -122,9 +122,16 @@ def submit_block_p2p(block, factory, net):
         print >>sys.stderr, 'No dashd P2P connection when block submittal attempted! %s%064x' % (net.PARENT.BLOCK_EXPLORER_URL_PREFIX, block_hash)
         raise deferral.RetrySilentlyException()
     
-    print 'P2P: Sending block %064x to dashd via P2P protocol...' % block_hash
-    factory.conn.value.send_block(block=block)
-    print 'P2P: Block sent successfully to dashd for network propagation'
+    # Serialize and send block
+    try:
+        print 'P2P: Sending block %064x to dashd via P2P protocol...' % block_hash
+        print 'P2P: Block header version: %d, prev: %064x' % (block['header']['version'], block['header']['previous_block'])
+        print 'P2P: Block has %d transactions' % len(block.get('txs', []))
+        factory.conn.value.send_block(block=block)
+        print 'P2P: Block sent successfully to dashd for network propagation'
+    except Exception as e:
+        print >>sys.stderr, 'P2P: ERROR sending block: %s' % e
+        raise
 
 @deferral.retry('Error submitting block: (will retry)', 10, 10)
 @defer.inlineCallbacks
@@ -139,17 +146,41 @@ def submit_block_rpc(block, ignore_failure, dashd, dashd_work, net):
     print '  Block hash:   %064x' % block_hash
     print '  POW hash:     %064x' % pow_hash
     print '  Target:       %064x' % block['header']['bits'].target
+    print '  Prev block:   %064x' % block['header']['previous_block']
     print '  Transactions: %d' % len(block.get('txs', []))
     print '=' * 70
     
+    result = None
+    success = False
+    p2p_won_race = False
+    
     if dashd_work.value['use_getblocktemplate']:
         try:
-            result = yield dashd.rpc_submitblock(dash_data.block_type.pack(block).encode('hex'))
+            block_data = dash_data.block_type.pack(block).encode('hex')
+            print 'RPC: Calling submitblock with %d bytes of data...' % len(block_data)
+            result = yield dashd.rpc_submitblock(block_data)
+            print 'RPC: submitblock returned: %r' % result
         except jsonrpc.Error_for_code(-32601): # Method not found, for older litecoin versions
             result = yield dashd.rpc_getblocktemplate(dict(mode='submit', data=dash_data.block_type.pack(block).encode('hex')))
+        except Exception as e:
+            print >>sys.stderr, 'RPC: submitblock ERROR: %s' % e
+            raise
         # submitblock returns None on success, "duplicate" if block already known (P2P won the race!)
+        # Other return values indicate errors: "inconclusive", "rejected", etc.
         success = result is None or result == 'duplicate'
         p2p_won_race = result == 'duplicate'
+        
+        # Check for specific error conditions
+        if result is not None and result != 'duplicate':
+            print >>sys.stderr, '*** WARNING: submitblock returned error: %r ***' % result
+            if 'inconclusive' in str(result).lower():
+                print >>sys.stderr, '    Block submission was inconclusive - may or may not be accepted'
+            elif 'rejected' in str(result).lower():
+                print >>sys.stderr, '    Block was REJECTED by the network!'
+            elif 'bad-prevblk' in str(result).lower():
+                print >>sys.stderr, '    Block has invalid previous block - chain may have moved!'
+            elif 'stale' in str(result).lower():
+                print >>sys.stderr, '    Block is STALE - another block was found first!'
     else:
         result = yield dashd.rpc_getmemorypool(dash_data.block_type.pack(block).encode('hex'))
         success = result
@@ -162,7 +193,7 @@ def submit_block_rpc(block, ignore_failure, dashd, dashd_work, net):
         print '  RPC result: %r (this is expected when P2P submits first)' % result
         print '  SUCCESS: Block was accepted!'
     else:
-        print '  RPC accepted: %s (result: %r)' % (result is None, result)
+        print '  RPC accepted: %s (result: %r)' % (success, result)
     print '  Expected success: %s' % success_expected
     
     if (not success and success_expected and not ignore_failure) or (success and not success_expected):
