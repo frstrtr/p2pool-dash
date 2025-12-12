@@ -392,16 +392,16 @@ cd ~/p2pool-dash
 git pull
 ```
 
-#### 6. "p2pool is not connected to any peers" (when PERSIST=True)
+#### 6. "p2pool is not connected to any peers" (FIXED - no longer blocks work)
+
+**Fixed in latest version**: P2Pool no longer requires peer connections to generate work.
+
 ```bash
-# Check if bootstrap nodes are reachable
-telnet dash01.p2poolmining.us 8999
+# Old behavior (before fix): Work was blocked when PERSIST=True and no peers
+# New behavior (after fix): P2Pool works standalone even with PERSIST=True
 
-# Wait 5-10 minutes for peer discovery
-# Check logs for peer connections
-
-# If still failing, switch to standalone mode:
-# Edit p2pool/networks/dash.py and set PERSIST = False
+# You can now mine solo while still accepting incoming peer connections
+# No need to set PERSIST=False anymore
 ```
 
 #### 7. PyPy Cache Issues

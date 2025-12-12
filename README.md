@@ -162,7 +162,7 @@ All issues and solutions are documented in **[INSTALL.md](INSTALL.md)**, includi
 - ❌ `ValueError: Block not found` → Update to commit e9b5f57+
 - ❌ `ImportError: No module named bitcoin` → Update to latest version
 - ❌ `ImportError: No module named OpenSSL` → Non-fatal, can ignore or see INSTALL.md
-- ❌ `p2pool is not connected to any peers` → Set PERSIST=False or wait for peer discovery
+- ✅ `p2pool is not connected to any peers` → Fixed! No longer blocks work generation
 - ❌ High CPU usage → Limit miner threads with `-t` flag
 
 **See [INSTALL.md](INSTALL.md) for complete troubleshooting guide.**
@@ -191,6 +191,7 @@ All issues and solutions are documented in **[INSTALL.md](INSTALL.md)**, includi
 - ✅ **Dash Platform support** (v20+): Handles OP_RETURN platform payments (22.5% block subsidy)
 - ✅ **Packed object compatibility**: Fixed share verification for _script field handling
 - ✅ **Mainnet ready**: Full support for masternode/platform/superblock payment structures
+- ✅ **Solo mining support**: Removed peer connection requirement - works standalone with PERSIST=True
 
 ## Port Forwarding
 

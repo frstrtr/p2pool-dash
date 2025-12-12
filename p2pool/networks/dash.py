@@ -15,7 +15,7 @@ MIN_TARGET = 0
 # Use standard bdiff difficulty 1 target (0x00000000FFFF00...) for ~1.0 minimum difficulty
 # Old value 2**256//2**20 - 1 gave difficulty ~0.000244 which is way too easy
 MAX_TARGET = 0xFFFF * 2**208  # Standard bdiff difficulty 1 target
-PERSIST = True
+PERSIST = True  # Enable peer connections (works in solo mode too)
 WORKER_PORT = 7903
 BOOTSTRAP_ADDRS = 'rov.p2p-spb.xyz'.split(' ')
 ANNOUNCE_CHANNEL = '#p2pool-dash'
