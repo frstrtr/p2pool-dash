@@ -190,7 +190,12 @@ class Share(object):
         payments_tx = []
         if payments is not None:
             for obj in payments:
-                pm_script = dash_data.address_to_script2(obj['payee'],net.PARENT)
+                # Use script directly if available (preferred method for all payment types)
+                # Fall back to converting payee address for backwards compatibility
+                if 'script' in obj:
+                    pm_script = obj['script']
+                else:
+                    pm_script = dash_data.address_to_script2(obj['payee'],net.PARENT)
                 pm_payout = obj['amount']
                 if pm_payout > 0:
                     payments_tx += [dict(value=pm_payout, script=pm_script)]
