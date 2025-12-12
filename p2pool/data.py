@@ -193,13 +193,14 @@ class Share(object):
                 # Use _script directly if available (preferred method for all payment types)
                 # This field is set by helper.py when getblocktemplate provides a 'script' field
                 # Fall back to converting payee address for backwards compatibility
-                if hasattr(obj, '_script') and obj._script:
-                    pm_script = obj._script
-                elif hasattr(obj, 'payee') and obj.payee:
-                    pm_script = dash_data.address_to_script2(obj.payee, net.PARENT)
+                # Note: obj is a dictionary, so use dict access not attribute access
+                if obj.get('_script'):
+                    pm_script = obj['_script']
+                elif obj.get('payee'):
+                    pm_script = dash_data.address_to_script2(obj['payee'], net.PARENT)
                 else:
                     continue  # Skip payments without valid script or payee
-                pm_payout = obj.amount
+                pm_payout = obj.get('amount', 0)
                 if pm_payout > 0:
                     payments_tx += [dict(value=pm_payout, script=pm_script)]
                     worker_payout -= pm_payout
