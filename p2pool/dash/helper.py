@@ -159,11 +159,11 @@ def submit_block_rpc(block, ignore_failure, dashd, dashd_work, net):
 
 @defer.inlineCallbacks
 def submit_block(block, ignore_failure, factory, dashd, dashd_work, net):
-    """Submit block via both RPC and P2P for redundant propagation."""
-    # Submit via RPC first (this goes through submitblock RPC call)
-    yield submit_block_rpc(block, ignore_failure, dashd, dashd_work, net)
-    # Also submit via P2P for direct network propagation
+    """Submit block via both P2P and RPC for redundant propagation."""
+    # Submit via P2P first for fastest network propagation (synchronous)
     submit_block_p2p(block, factory, net)
+    # Also submit via RPC (submitblock call) and wait for result
+    yield submit_block_rpc(block, ignore_failure, dashd, dashd_work, net)
 
 @defer.inlineCallbacks
 def check_block_header(bitcoind, block_hash):
