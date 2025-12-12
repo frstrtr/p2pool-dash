@@ -6,6 +6,7 @@ import weakref
 from twisted.internet import protocol, reactor
 from twisted.python import log
 
+import p2pool
 from p2pool.dash import data as dash_data, getwork
 from p2pool.util import expiring_dict, jsonrpc, pack
 from p2pool.util import security_config
@@ -593,8 +594,9 @@ class StratumRPCMiningProvider(object):
         Returns:
             [subscription_details, extranonce1, extranonce2_size]
         """
-        print 'STRATUM: mining.subscribe from %s - miner: %s, session: %s' % (
-            self.worker_ip, miner_version, session_id[:16] if session_id else 'new')
+        if p2pool.DEBUG:
+            print 'STRATUM: mining.subscribe from %s - miner: %s, session: %s' % (
+                self.worker_ip, miner_version, session_id[:16] if session_id else 'new')
         
         # ==== NEW: Session resumption support ====
         if session_id:
@@ -606,7 +608,8 @@ class StratumRPCMiningProvider(object):
                 self.suggested_difficulty = stored_session.get('suggested_difficulty')
                 self.minimum_difficulty = stored_session.get('minimum_difficulty')
                 self.worker_share_rate = stored_session.get('share_rate')
-                print 'STRATUM: Resumed session %s for %s' % (session_id[:16], self.worker_ip)
+                if p2pool.DEBUG:
+                    print 'STRATUM: Resumed session %s for %s' % (session_id[:16], self.worker_ip)
         
         reactor.callLater(0, self._send_work)
         
@@ -621,7 +624,8 @@ class StratumRPCMiningProvider(object):
         if not hasattr(self, 'authorized'):  # authorize can be called many times in one connection
             self.authorized = username
         self.username = username.strip()
-        print 'STRATUM: mining.authorize from %s - worker: %s' % (self.worker_ip, self.username)
+        if p2pool.DEBUG:
+            print 'STRATUM: mining.authorize from %s - worker: %s' % (self.worker_ip, self.username)
         
         # ==== ENHANCED: Parse username with extended format support ====
         # Username formats supported:
@@ -677,6 +681,7 @@ class StratumRPCMiningProvider(object):
         try:
             requested_diff = float(difficulty)
         except (ValueError, TypeError):
+            # Keep invalid requests as warnings (not DEBUG) - indicates miner bug
             print 'STRATUM: Invalid suggest_difficulty from %s: %s' % (self.worker_ip, difficulty)
             return False
         
@@ -691,11 +696,12 @@ class StratumRPCMiningProvider(object):
         self.target = dash_data.difficulty_to_target(safe_diff)
         
         # Log if we had to adjust the difficulty
-        if safe_diff != requested_diff:
-            print 'STRATUM: suggest_difficulty from %s: requested %.4f, using %.4f (pool safeguard)' % (
-                self.worker_ip, requested_diff, safe_diff)
-        else:
-            print 'STRATUM: suggest_difficulty from %s: accepted %.4f' % (self.worker_ip, safe_diff)
+        if p2pool.DEBUG:
+            if safe_diff != requested_diff:
+                print 'STRATUM: suggest_difficulty from %s: requested %.4f, using %.4f (pool safeguard)' % (
+                    self.worker_ip, requested_diff, safe_diff)
+            else:
+                print 'STRATUM: suggest_difficulty from %s: accepted %.4f' % (self.worker_ip, safe_diff)
         
         # Send immediate difficulty update to miner
         self.other.svc_mining.rpc_set_difficulty(safe_diff).addErrback(lambda err: None)
@@ -724,7 +730,8 @@ class StratumRPCMiningProvider(object):
         Returns:
             Dict of negotiated extension results
         """
-        print 'STRATUM: mining.configure from %s - extensions: %s' % (self.worker_ip, extensions)
+        if p2pool.DEBUG:
+            print 'STRATUM: mining.configure from %s - extensions: %s' % (self.worker_ip, extensions)
         
         result = {}
         
@@ -740,7 +747,8 @@ class StratumRPCMiningProvider(object):
             negotiated_mask = self.pool_version_mask & int(miner_mask, 16)
             result["version-rolling"] = True
             result["version-rolling.mask"] = '{:08x}'.format(negotiated_mask)
-            print 'STRATUM: ASICBoost enabled for %s - mask: %08x' % (self.worker_ip, negotiated_mask)
+            if p2pool.DEBUG:
+                print 'STRATUM: ASICBoost enabled for %s - mask: %08x' % (self.worker_ip, negotiated_mask)
         
         # ==== NEW: minimum-difficulty BIP310 extension ====
         if 'minimum-difficulty' in extensions:
@@ -761,20 +769,23 @@ class StratumRPCMiningProvider(object):
                 current_diff = dash_data.target_to_difficulty(self.target)
                 if current_diff < safe_min:
                     self.target = dash_data.difficulty_to_target(safe_min)
-                    print 'STRATUM: minimum-difficulty raised current diff from %.4f to %.4f for %s' % (
-                        current_diff, safe_min, self.worker_ip)
+                    if p2pool.DEBUG:
+                        print 'STRATUM: minimum-difficulty raised current diff from %.4f to %.4f for %s' % (
+                            current_diff, safe_min, self.worker_ip)
             
-            if safe_min != requested_min:
-                print 'STRATUM: minimum-difficulty from %s: requested %.4f, enforcing %.4f (pool safeguard)' % (
-                    self.worker_ip, requested_min, safe_min)
-            else:
-                print 'STRATUM: minimum-difficulty enabled for %s: %.4f' % (self.worker_ip, safe_min)
+            if p2pool.DEBUG:
+                if safe_min != requested_min:
+                    print 'STRATUM: minimum-difficulty from %s: requested %.4f, enforcing %.4f (pool safeguard)' % (
+                        self.worker_ip, requested_min, safe_min)
+                else:
+                    print 'STRATUM: minimum-difficulty enabled for %s: %.4f' % (self.worker_ip, safe_min)
             
         if 'subscribe-extranonce' in extensions:
             # Enable extranonce subscription for this connection (required for ASICs)
             self.extranonce_subscribe = True
             result["subscribe-extranonce"] = True
-            print 'STRATUM: Extranonce subscription enabled for %s' % self.worker_ip
+            if p2pool.DEBUG:
+                print 'STRATUM: Extranonce subscription enabled for %s' % self.worker_ip
         
         return result if result else None
     
@@ -807,17 +818,20 @@ class StratumRPCMiningProvider(object):
         return True
     
     def _send_work(self):
-        print 'STRATUM: _send_work called for %s (username=%s)' % (self.worker_ip, self.username)
+        if p2pool.DEBUG:
+            print 'STRATUM: _send_work called for %s (username=%s)' % (self.worker_ip, self.username)
         try:
             x, got_response = self.wb.get_work(*self.wb.preprocess_request('' if self.username is None else self.username))
-            print 'STRATUM: _send_work got work for %s' % self.worker_ip
+            if p2pool.DEBUG:
+                print 'STRATUM: _send_work got work for %s' % self.worker_ip
         except Exception as e:
             # Don't disconnect for temporary errors like "lost contact with dashd"
             # Just log and skip this work update - miner will keep working on old job
             error_msg = str(e)
             if 'lost contact' in error_msg or 'not connected' in error_msg:
                 # Temporary error - don't spam logs, just skip
-                print 'STRATUM: _send_work skipped - %s' % error_msg
+                if p2pool.DEBUG:
+                    print 'STRATUM: _send_work skipped - %s' % error_msg
             else:
                 print 'STRATUM: _send_work error for %s - %s' % (self.worker_ip, error_msg)
                 log.err(None, 'Error getting work for stratum:')
@@ -842,7 +856,8 @@ class StratumRPCMiningProvider(object):
                     # Check for network-specific default difficulty (e.g., regtest uses lower diff)
                     if hasattr(self.wb.net, 'STRATUM_DEFAULT_DIFFICULTY'):
                         initial_diff = self.wb.net.STRATUM_DEFAULT_DIFFICULTY
-                        print 'STRATUM: New worker starting at network default difficulty %.4f' % initial_diff
+                        if p2pool.DEBUG:
+                            print 'STRATUM: New worker starting at network default difficulty %.4f' % initial_diff
                     else:
                         # Default: start at difficulty 100
                         # This is a balance between:
@@ -851,7 +866,8 @@ class StratumRPCMiningProvider(object):
                         # At 1.7 TH/s ASIC: ~0.25 sec/share (will ramp up quickly)
                         # At 100 MH/s GPU: ~4 sec/share (reasonable)
                         initial_diff = 100
-                        print 'STRATUM: New worker starting at default difficulty %d' % initial_diff
+                        if p2pool.DEBUG:
+                            print 'STRATUM: New worker starting at default difficulty %d' % initial_diff
                 
                 # PERFORMANCE SAFEGUARD: Apply pool-wide minimum
                 initial_diff = pool_stats.get_safe_minimum_difficulty(initial_diff)
@@ -891,7 +907,7 @@ class StratumRPCMiningProvider(object):
                     self.target = dash_data.difficulty_to_target(new_diff)
                     # Only log timeout for connections that have submitted shares
                     # This suppresses noise from idle backup/redundant ASIC connections
-                    if self.shares_submitted > 0:
+                    if self.shares_submitted > 0 and p2pool.DEBUG:
                         print 'Vardiff timeout %s: %.4f -> %.4f (no shares for %.1fs, target %.1fs)' % (
                             self.username or self.worker_ip, current_diff, new_diff, 
                             time_since_last_share, effective_share_rate)
@@ -1081,7 +1097,7 @@ class StratumRPCMiningProvider(object):
                     self.target = dash_data.difficulty_to_target(safe_min)
                     new_diff = safe_min
                 
-                if abs(new_diff - old_diff) / max(old_diff, 0.001) > 0.1:  # Only log significant changes
+                if p2pool.DEBUG and abs(new_diff - old_diff) / max(old_diff, 0.001) > 0.1:  # Only log significant changes in DEBUG mode
                     print 'Vardiff %s: %.4f -> %.4f (%.1f shares in %.1fs, target %.1fs)' % (
                         worker_name, old_diff, new_diff, num_shares, time_elapsed, target_time)
                 
@@ -1092,7 +1108,6 @@ class StratumRPCMiningProvider(object):
         # Benchmarking: print timing if BENCH enabled
         t1 = time.time()
         try:
-            import p2pool
             if p2pool.BENCH and (t1-t0) > 0.01:  # Only log if > 10ms
                 print "%8.3f ms for stratum:rpc_submit(%s)" % ((t1-t0)*1000., worker_name)
         except:
