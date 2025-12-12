@@ -77,15 +77,17 @@ def getwork(dashd, net, use_getblocktemplate=True):
         # Always count the amount towards payment_amount, even if payee/script is missing
         if 'amount' in obj and obj['amount'] > 0:
             payment_amount += obj['amount']
+            g['amount'] = obj['amount']
             # Use 'script' field if available (preferred - handles all payment types including platform)
             # Fall back to 'payee' field for backwards compatibility
+            # Note: We store script in '_script' (underscore prefix) to avoid conflict with 
+            # the packed_payments serialization format which only expects 'payee' and 'amount'
             if 'script' in obj and obj['script']:
-                g['script'] = obj['script'].decode('hex')
-                g['amount'] = obj['amount']
+                g['_script'] = obj['script'].decode('hex')
+                g['payee'] = ''  # Empty payee, script will be used in coinbase generation
                 packed_payments.append(g)
             elif 'payee' in obj and obj['payee']:
                 g['payee'] = str(obj['payee'])
-                g['amount'] = obj['amount']
                 packed_payments.append(g)
 
     coinbase_payload = None
