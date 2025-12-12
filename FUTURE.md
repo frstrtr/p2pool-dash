@@ -28,9 +28,70 @@ The following features are already implemented:
 
 ---
 
+## Critical Priority Enhancements
+
+### 1. Direct Dash Network Peer Connections for Block Propagation
+**Difficulty:** Hard | **Impact:** Critical | **Competitive Advantage:** HIGH
+
+**Problem:** Currently P2Pool only sends blocks to the local dashd node, which then broadcasts to its peers. This adds latency in block propagation, which can cause orphaned blocks when competing with large mining pools that have direct connections to many network nodes.
+
+**Solution:** Implement direct P2P connections from P2Pool to multiple Dash network nodes for parallel block broadcasting:
+
+```python
+class DashNetworkBroadcaster:
+    """Broadcast blocks directly to multiple Dash network peers"""
+    def __init__(self, peer_list):
+        self.peer_connections = []  # List of direct P2P connections
+        # Connect to multiple Dash nodes (miners, exchanges, explorers)
+        for peer in peer_list:
+            conn = self.connect_to_peer(peer['host'], peer['port'])
+            self.peer_connections.append(conn)
+    
+    def broadcast_block(self, block):
+        """Send block to ALL connected peers simultaneously"""
+        for conn in self.peer_connections:
+            conn.send_block(block=block)  # Parallel broadcast
+```
+
+**Configuration:**
+```bash
+--dash-peer-list FILE      # JSON file with Dash network nodes
+                           # Format: [{"host": "1.2.3.4", "port": 9999}, ...]
+--broadcast-peers NUM      # Number of peers to broadcast to (default: 10)
+```
+
+**Benefits:**
+- ✅ **Faster block propagation** - parallel broadcast to multiple nodes
+- ✅ **Reduced orphan risk** - blocks reach miners/pools faster
+- ✅ **Competitive with large pools** - matches their network advantage
+- ✅ **Redundancy** - if local dashd fails, still broadcasts to network
+
+**Peer Strategy:**
+- Mining pools (to prevent them getting advantage)
+- Block explorers (high uptime, well-connected)
+- Exchange nodes (critical for network security)
+- Masternode network (Dash-specific advantage)
+
+**Is it Feasible to Compete?**
+YES! This would level the playing field:
+- Large pools broadcast to 50-100+ peers instantly
+- Solo miners with single dashd only reach ~8-10 peers initially
+- Adding direct broadcast makes solo mining **equally competitive**
+- Dash's ChainLock system makes this even more critical (first to quorum wins)
+
+**Files to modify:** 
+- `p2pool/dash/helper.py` (add parallel broadcast)
+- `p2pool/dash/p2p.py` (multiple peer connections)
+- `p2pool/main.py` (peer list configuration)
+- `p2pool/networks/dash.py` (default peer lists)
+
+**Estimated Impact:** Could reduce orphan rate from ~5% to <1% for solo miners
+
+---
+
 ## High Priority Enhancements
 
-### 1. Command-Line Configuration for Safeguards
+### 2. Command-Line Configuration for Safeguards
 **Difficulty:** Easy | **Impact:** High
 
 Expose pool safeguard values as command-line arguments instead of hardcoded values:
