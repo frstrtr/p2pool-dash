@@ -5,6 +5,7 @@ import time
 from twisted.internet import defer, reactor
 from twisted.python import log
 
+import p2pool
 from p2pool import data as p2pool_data, p2p
 from p2pool.dash import data as dash_data, helper, height_tracker
 from p2pool.util import deferral, variable
@@ -38,7 +39,8 @@ class P2PNode(p2p.Node):
             try:
                 share.check(self.node.tracker)
             except ValueError as e:
-                if 'gentx doesn\'t match hash_link' in str(e):
+                error_msg = str(e) if e.args else repr(e)
+                if 'gentx doesn\'t match hash_link' in error_msg:
                     peer_info = (' from peer %s:%d' % peer.addr) if peer is not None else ''
                     print >>sys.stderr, '\n' + '='*80
                     print >>sys.stderr, 'REJECTED INCOMPATIBLE SHARE%s' % peer_info
@@ -47,10 +49,13 @@ class P2PNode(p2p.Node):
                     print >>sys.stderr, 'Share NOT added to tracker.'
                     print >>sys.stderr, '='*80 + '\n'
                 else:
-                    print >>sys.stderr, 'Share validation failed: %s' % str(e)
+                    print >>sys.stderr, 'Share validation failed (ValueError): %s' % error_msg
                 continue
             except Exception as e:
-                print >>sys.stderr, 'Share validation failed with unexpected error: %s' % str(e)
+                error_msg = str(e) if e.args else repr(e)
+                # Silently reject shares with validation errors - peer may be sending old/incompatible data
+                if p2pool.DEBUG:
+                    print >>sys.stderr, 'Share validation failed: %s (hash: %064x)' % (error_msg[:100], share.hash)
                 continue
             
             new_count += 1
