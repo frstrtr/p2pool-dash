@@ -447,7 +447,8 @@ class WorkerBridge(worker_interface.WorkerBridge):
                         print 'Block hash:  %064x' % header_hash
                         print 'POW hash:    %064x' % pow_hash
                         print 'Target:      %064x' % header['bits'].target
-                        print 'Height:      %d' % share_info['height']
+                        if 'height' in share_info:
+                            print 'Height:      %d' % share_info['height']
                         print 'Txs:         %d' % (1 + len(other_transactions))
                         print 'Explorer:    %s%064x' % (self.node.net.PARENT.BLOCK_EXPLORER_URL_PREFIX, header_hash)
                         print '#' * 70
