@@ -848,7 +848,6 @@
                     </div>
                 </div>
                 
-                <!-- Pool Hashrate Graph (compact) -->
                 <div class="graph-section compact">
                     <div class="graph-header">
                         <h2>📈 Pool Hashrate</h2>
@@ -864,13 +863,14 @@
                     <div class="graph-legend compact">
                         <div class="legend-item" data-series="good" onclick="toggleSeries('good', this)" title="Click to toggle Good hashrate"><span class="legend-color" style="background: #008de4;"></span><span>Good</span></div>
                         <div class="legend-item" data-series="doa" onclick="toggleSeries('doa', this)" title="Click to toggle DOA hashrate"><span class="legend-color" style="background: #ff6b6b;"></span><span>DOA</span></div>
+                        <div class="legend-item" data-series="blocks" onclick="toggleSeries('blocks', this)" title="Click to toggle block markers"><span class="legend-color" style="background: #00ff88;"></span><span>Blocks</span></div>
                     </div>
                     <div class="graph-container compact" id="hashrate-graph"></div>
                     <div class="graph-stats compact">
                         <div class="graph-stat"><div class="graph-stat-label">Current</div><div class="graph-stat-value" id="graph-current">-</div></div>
                         <div class="graph-stat"><div class="graph-stat-label">Average</div><div class="graph-stat-value" id="graph-average">-</div></div>
                         <div class="graph-stat"><div class="graph-stat-label">Peak</div><div class="graph-stat-value" id="graph-peak">-</div></div>
-                        <div class="graph-stat"><div class="graph-stat-label">DOA</div><div class="graph-stat-value" id="graph-doa">-</div></div>
+                        <div class="graph-stat"><div class="graph-stat-label">Avg Luck</div><div class="graph-stat-value" id="graph-luck">-</div></div>
                     </div>
                 </div>
             </div>
@@ -1259,9 +1259,10 @@
         // =============================================
         var currentGraphPeriod = 'hour';
         var graphData = [];
+        var graphBlocks = [];
         var isFullscreen = false;
         var fullscreenChart = null;
-        var seriesVisibility = { good: true, doa: true };
+        var seriesVisibility = { good: true, doa: true, blocks: true };
         
         function toggleSeries(seriesName, element) {
             seriesVisibility[seriesName] = !seriesVisibility[seriesName];
@@ -1276,7 +1277,7 @@
             });
             
             // Update chart series visibility
-            var seriesIndex = seriesName === 'good' ? 0 : 1;
+            var seriesIndex = seriesName === 'good' ? 0 : (seriesName === 'doa' ? 1 : 2);
             
             if (hashrateChart) {
                 var series = hashrateChart.series[seriesIndex];
@@ -1346,15 +1347,33 @@
                 'year': '../web/graph_data/pool_rates/last_year'
             };
             
+            // Load both hashrate data and blocks in parallel
+            var loadCount = 0;
+            var hashrateData = null;
+            var blocksData = [];
+            
+            function tryRender() {
+                loadCount++;
+                if (loadCount === 2) {
+                    graphData = hashrateData;
+                    graphBlocks = blocksData;
+                    renderHashrateGraph(hashrateData, blocksData);
+                }
+            }
+            
             d3.json(endpoints[currentGraphPeriod], function(data) {
+                hashrateData = data;
                 if (!data || data.length === 0) {
                     document.getElementById('hashrate-graph').innerHTML = 
                         '<div style="text-align:center; color: var(--text-muted); padding: 100px 0;">No data available for this period</div>';
                     return;
                 }
-                
-                graphData = data;
-                renderHashrateGraph(data);
+                tryRender();
+            });
+            
+            d3.json('../recent_blocks', function(blocks) {
+                blocksData = blocks || [];
+                tryRender();
             });
         }
         
@@ -1366,8 +1385,9 @@
 
         var hashrateChart = null;
 
-        function renderHashrateGraph(data) {
+        function renderHashrateGraph(data, blocks) {
             var container = document.getElementById('hashrate-graph');
+            blocks = blocks || [];
             
             // Clear previous
             if (hashrateChart) {
@@ -1383,6 +1403,10 @@
             var values = [];
             var doaValues = [];
             
+            // Get time range for filtering blocks
+            var minTime = data[0][0] * 1000;
+            var maxTime = data[data.length - 1][0] * 1000;
+            
             data.forEach(function(d) {
                 var timestamp = d[0] * 1000;
                 var goodVal = (d[1] && d[1].good) ? d[1].good : 0;
@@ -1394,19 +1418,53 @@
                 doaValues.push(doaVal);
             });
             
+            // Process blocks within time range
+            var blockMarkers = [];
+            var validLucks = [];
+            blocks.forEach(function(b) {
+                var blockTime = b.ts * 1000;
+                if (blockTime >= minTime && blockTime <= maxTime) {
+                    // Find closest hashrate value for y position
+                    var closestIdx = 0;
+                    var closestDiff = Math.abs(data[0][0] * 1000 - blockTime);
+                    for (var i = 1; i < data.length; i++) {
+                        var diff = Math.abs(data[i][0] * 1000 - blockTime);
+                        if (diff < closestDiff) {
+                            closestDiff = diff;
+                            closestIdx = i;
+                        }
+                    }
+                    var yVal = (data[closestIdx][1] && data[closestIdx][1].good) ? data[closestIdx][1].good : 0;
+                    
+                    blockMarkers.push({
+                        x: blockTime,
+                        y: yVal,
+                        block: b
+                    });
+                }
+                if (b.luck) validLucks.push(b.luck);
+            });
+            
             // Update stats
             var current = values[values.length - 1] || 0;
             var sum = values.reduce(function(a, b) { return a + b; }, 0);
             var avg = values.length > 0 ? sum / values.length : 0;
             var peak = Math.max.apply(null, values) || 0;
-            var doaSum = doaValues.reduce(function(a, b) { return a + b; }, 0);
-            var doaAvg = doaValues.length > 0 ? doaSum / doaValues.length : 0;
-            var doaPercent = avg > 0 ? ((doaAvg / (avg + doaAvg)) * 100).toFixed(2) : '0.00';
+            
+            // Calculate average luck
+            var avgLuck = validLucks.length > 0 ? 
+                validLucks.reduce(function(a, b) { return a + b; }, 0) / validLucks.length : null;
             
             document.getElementById('graph-current').textContent = format_hashrate(current);
             document.getElementById('graph-average').textContent = format_hashrate(avg);
             document.getElementById('graph-peak').textContent = format_hashrate(peak);
-            document.getElementById('graph-doa').textContent = format_hashrate(doaAvg) + ' (' + doaPercent + '%)';
+            if (avgLuck !== null) {
+                var luckEl = document.getElementById('graph-luck');
+                luckEl.textContent = d3.format('.0f')(avgLuck) + '%';
+                luckEl.style.color = avgLuck >= 100 ? 'var(--success)' : (avgLuck >= 75 ? 'var(--warning)' : 'var(--danger)');
+            } else {
+                document.getElementById('graph-luck').textContent = '-';
+            }
             
             // Create Highcharts chart (regular chart for better pan support)
             var isCompact = container.classList.contains('compact');
@@ -1499,6 +1557,15 @@
                         lineWidth: 2,
                         states: { hover: { lineWidth: 3 } },
                         threshold: null
+                    },
+                    scatter: {
+                        marker: {
+                            radius: 8,
+                            symbol: 'diamond',
+                            lineWidth: 2,
+                            lineColor: '#00ff88'
+                        },
+                        states: { hover: { marker: { radius: 10 } } }
                     }
                 },
                 series: [{
@@ -1514,17 +1581,56 @@
                     color: '#ff6b6b',
                     lineWidth: 2,
                     visible: seriesVisibility.doa
+                }, {
+                    type: 'scatter',
+                    name: 'Blocks',
+                    data: blockMarkers.map(function(m) {
+                        return {
+                            x: m.x,
+                            y: m.y,
+                            block: m.block,
+                            marker: {
+                                fillColor: m.block.luck ? 
+                                    (m.block.luck >= 100 ? '#00ff88' : (m.block.luck >= 75 ? '#ffc107' : '#ff6b6b')) 
+                                    : '#888888'
+                            }
+                        };
+                    }),
+                    color: '#00ff88',
+                    visible: seriesVisibility.blocks,
+                    tooltip: {
+                        pointFormatter: function() {
+                            var b = this.block;
+                            var s = '<span style="color:#00ff88">◆</span> <b>Block Found!</b><br/>';
+                            s += 'Height: <b>' + (b.number || b.block_height || '?') + '</b><br/>';
+                            if (b.luck) {
+                                var luckColor = b.luck >= 100 ? '#00ff88' : (b.luck >= 75 ? '#ffc107' : '#ff6b6b');
+                                s += 'Luck: <b style="color:' + luckColor + '">' + d3.format('.0f')(b.luck) + '%</b><br/>';
+                            } else if (b.luck_method === 'first_block') {
+                                s += 'Luck: <b>1st block</b><br/>';
+                            }
+                            if (b.time_to_find) {
+                                s += 'Found in: ' + format_dt(b.time_to_find) + '<br/>';
+                            }
+                            if (b.expected_time) {
+                                s += 'Expected: ' + format_dt(b.expected_time) + '<br/>';
+                            }
+                            s += 'Status: <b>' + (b.status || 'unknown') + '</b>';
+                            return s;
+                        }
+                    }
                 }]
             });
             
             // Also update fullscreen if open
             if (isFullscreen) {
-                renderFullscreenGraph(data);
+                renderFullscreenGraph(data, blocks);
             }
         }
         
-        function renderFullscreenGraph(data) {
+        function renderFullscreenGraph(data, blocks) {
             var container = document.getElementById('fullscreen-graph');
+            blocks = blocks || graphBlocks || [];
             
             if (fullscreenChart) {
                 fullscreenChart.destroy();
@@ -1542,6 +1648,10 @@
             var values = [];
             var doaValues = [];
             
+            // Get time range for filtering blocks
+            var minTime = data[0][0] * 1000;
+            var maxTime = data[data.length - 1][0] * 1000;
+            
             data.forEach(function(d) {
                 var timestamp = d[0] * 1000;
                 var goodVal = (d[1] && d[1].good) ? d[1].good : 0;
@@ -1551,6 +1661,25 @@
                 doarate.push([timestamp, doaVal]);
                 values.push(goodVal);
                 doaValues.push(doaVal);
+            });
+            
+            // Process blocks within time range
+            var blockMarkers = [];
+            blocks.forEach(function(b) {
+                var blockTime = b.ts * 1000;
+                if (blockTime >= minTime && blockTime <= maxTime) {
+                    var closestIdx = 0;
+                    var closestDiff = Math.abs(data[0][0] * 1000 - blockTime);
+                    for (var i = 1; i < data.length; i++) {
+                        var diff = Math.abs(data[i][0] * 1000 - blockTime);
+                        if (diff < closestDiff) {
+                            closestDiff = diff;
+                            closestIdx = i;
+                        }
+                    }
+                    var yVal = (data[closestIdx][1] && data[closestIdx][1].good) ? data[closestIdx][1].good : 0;
+                    blockMarkers.push({ x: blockTime, y: yVal, block: b });
+                }
             });
             
             // Update fullscreen stats
@@ -1647,6 +1776,15 @@
                         marker: { enabled: false },
                         lineWidth: 2,
                         states: { hover: { lineWidth: 3 } }
+                    },
+                    scatter: {
+                        marker: {
+                            radius: 10,
+                            symbol: 'diamond',
+                            lineWidth: 2,
+                            lineColor: '#00ff88'
+                        },
+                        states: { hover: { marker: { radius: 12 } } }
                     }
                 },
                 series: [{
@@ -1661,6 +1799,44 @@
                     data: doarate,
                     color: '#ff6b6b',
                     visible: seriesVisibility.doa
+                }, {
+                    type: 'scatter',
+                    name: 'Blocks',
+                    data: blockMarkers.map(function(m) {
+                        return {
+                            x: m.x,
+                            y: m.y,
+                            block: m.block,
+                            marker: {
+                                fillColor: m.block.luck ? 
+                                    (m.block.luck >= 100 ? '#00ff88' : (m.block.luck >= 75 ? '#ffc107' : '#ff6b6b')) 
+                                    : '#888888'
+                            }
+                        };
+                    }),
+                    color: '#00ff88',
+                    visible: seriesVisibility.blocks,
+                    tooltip: {
+                        pointFormatter: function() {
+                            var b = this.block;
+                            var s = '<span style="color:#00ff88">◆</span> <b>Block Found!</b><br/>';
+                            s += 'Height: <b>' + (b.number || b.block_height || '?') + '</b><br/>';
+                            if (b.luck) {
+                                var luckColor = b.luck >= 100 ? '#00ff88' : (b.luck >= 75 ? '#ffc107' : '#ff6b6b');
+                                s += 'Luck: <b style="color:' + luckColor + '">' + d3.format('.0f')(b.luck) + '%</b><br/>';
+                            } else if (b.luck_method === 'first_block') {
+                                s += 'Luck: <b>1st block</b><br/>';
+                            }
+                            if (b.time_to_find) {
+                                s += 'Found in: ' + format_dt(b.time_to_find) + '<br/>';
+                            }
+                            if (b.expected_time) {
+                                s += 'Expected: ' + format_dt(b.expected_time) + '<br/>';
+                            }
+                            s += 'Status: <b>' + (b.status || 'unknown') + '</b>';
+                            return s;
+                        }
+                    }
                 }]
             });
         }
