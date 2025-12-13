@@ -153,7 +153,12 @@ class Protocol(p2protocol.Protocol):
         self.other_services = services
         
         if nonce == self.node.nonce:
-            raise PeerMisbehavingError('peer sent our nonce back - possible relay loop or attack')
+            # This is a connection to ourselves (e.g., via second ISP line)
+            # Just disconnect without banning - this is not malicious
+            if p2pool.DEBUG:
+                print 'Detected self-connection (our nonce), disconnecting from %s:%i' % self.addr
+            self.disconnect()
+            return
         if nonce in self.node.peers:
             if p2pool.DEBUG:
                 print 'Detected duplicate connection, disconnecting from %s:%i' % self.addr
