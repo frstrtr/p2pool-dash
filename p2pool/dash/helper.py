@@ -35,6 +35,9 @@ def getwork(dashd, net, use_getblocktemplate=True):
     except twisted_error.ConnectionRefusedError:
         print >>sys.stderr, '    dashd connection refused - is dashd running?'
         raise deferral.RetrySilentlyException()
+    except jsonrpc.Error_for_code(-10): # Initial sync
+        print >>sys.stderr, '    Dash Core is in initial sync, waiting for blocks...'
+        raise deferral.RetrySilentlyException()
     except jsonrpc.Error_for_code(-32601): # Method not found
         use_getblocktemplate = not use_getblocktemplate
         try:

@@ -20,7 +20,16 @@ class Error(Exception):
         #    raise TypeError('message must be a unicode')
         self.code, self.message, self.data = code, message, data
     def __str__(self):
-        return '%i %s' % (self.code, self.message) + (' %r' % (self.data, ) if self.data is not None else '')
+        try:
+            # Try to encode message safely, replacing unicode characters that can't be encoded
+            if isinstance(self.message, unicode):
+                safe_message = self.message.encode('ascii', 'replace')
+            else:
+                safe_message = str(self.message)
+            return '%i %s' % (self.code, safe_message) + (' %r' % (self.data, ) if self.data is not None else '')
+        except:
+            # Fallback to code only if message encoding fails
+            return 'Error code: %i' % self.code
     def _to_obj(self):
         return {
             'code': self.code,
