@@ -98,7 +98,7 @@ class WebRateLimiter(object):
         }
 
 # Global rate limiter for web endpoints
-web_rate_limiter = WebRateLimiter(requests_per_minute=120, burst_limit=20)
+web_rate_limiter = WebRateLimiter(requests_per_minute=300, burst_limit=50)
 
 
 def _atomic_read(filename):
@@ -471,6 +471,35 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         ])
     ))))
     web_root.putChild('peer_versions', WebInterface(lambda: dict(('%s:%i' % peer.addr, peer.other_sub_version) for peer in node.p2p_node.peers.itervalues())))
+    
+    def get_peer_list():
+        import time as time_module
+        current_time = time_module.time()
+        peers = []
+        for peer in node.p2p_node.peers.itervalues():
+            peer_addr = (peer.transport.getPeer().host, peer.transport.getPeer().port)
+            uptime = current_time - peer.connection_time if peer.connection_time else 0
+            
+            # Get downtime from disconnect history
+            downtime = 0
+            if peer_addr in node.p2p_node.peer_disconnect_history:
+                last_conn_time, last_disc_time = node.p2p_node.peer_disconnect_history[peer_addr]
+                if peer.connection_time and peer.connection_time > last_disc_time:
+                    # Current connection started after last disconnect
+                    downtime = peer.connection_time - last_disc_time
+            
+            peers.append(dict(
+                address='%s:%i' % peer_addr,
+                web_port=node.net.WORKER_PORT,
+                version=peer.other_sub_version,
+                incoming=peer.incoming,
+                txpool_size=peer.remembered_txs_size,
+                uptime=int(uptime),
+                downtime=int(downtime)
+            ))
+        return peers
+    
+    web_root.putChild('peer_list', WebInterface(get_peer_list))
     web_root.putChild('payout_addr', WebInterface(lambda: getattr(wb, 'address', None)))
     web_root.putChild('payout_addrs', WebInterface(
         lambda: [bitcoin_data.pubkey_hash_to_address(pubkey_hash, node.net.PARENT) for pubkey_hash in wb.pubkeys.keys]))
@@ -793,6 +822,17 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                     # Check block status
                     status = yield get_block_status(block_hash)
                     
+                    # Calculate actual hash difficulty (based on the hash value itself)
+                    # This represents the real work done to find this specific hash
+                    hash_int = int(block_hash, 16)
+                    # Calculate difficulty as: difficulty = max_target / hash_value
+                    # max_target for Bitcoin/Dash is 2^224 - 1 (difficulty 1)
+                    max_target = 0x00000000FFFF0000000000000000000000000000000000000000000000000000
+                    actual_hash_difficulty = float(max_target) / float(hash_int) if hash_int > 0 else 0
+                    
+                    # Get network difficulty at the time of this block
+                    network_difficulty = bitcoin_data.target_to_difficulty(s.header['bits'].target)
+                    
                     blocks.append(dict(
                         ts=s.timestamp,
                         hash=block_hash,
@@ -800,6 +840,8 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                         share='%064x' % s.hash,
                         explorer_url=node.net.PARENT.BLOCK_EXPLORER_URL_PREFIX + block_hash,
                         status=status,
+                        actual_hash_difficulty=actual_hash_difficulty,
+                        network_difficulty=network_difficulty,
                     ))
         except Exception as e:
             log.err(e, 'Error getting recent blocks:')
@@ -863,7 +905,12 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                 block['luck_method'] = None
                 
                 if i == 0:
-                    # First block: can't calculate time_to_find without previous reference
+                    # First block: can't calculate luck without previous reference
+                    # But we can still show expected_time if we have the data
+                    if block_hashrate and block_network_diff:
+                        block['expected_time'] = (block_network_diff * 2**32) / block_hashrate
+                        block['avg_hashrate_used'] = block_hashrate
+                        block['luck_method'] = 'first_block'
                     continue
                 
                 # Time between this block and previous block
@@ -1220,6 +1267,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         'peers': graph.DataStreamDescription(dataview_descriptions, multivalues=True, default_func=graph.make_multivalue_migrator(dict(incoming='incoming_peers', outgoing='outgoing_peers'))),
         'miner_hash_rates': graph.DataStreamDescription(dataview_descriptions, is_gauge=False, multivalues=True, multivalues_keep=10000),
         'miner_dead_hash_rates': graph.DataStreamDescription(dataview_descriptions, is_gauge=False, multivalues=True, multivalues_keep=10000),
+        'miner_count': graph.DataStreamDescription(dataview_descriptions),
         'desired_version_rates': graph.DataStreamDescription(dataview_descriptions, multivalues=True,
             multivalue_undefined_means_0=True),
         'traffic_rate': graph.DataStreamDescription(dataview_descriptions, is_gauge=False, multivalues=True),
@@ -1278,6 +1326,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                     pubkey_hash, 0) * 1e-8
         hd.datastreams['current_payout'].add_datum(t, my_current_payouts)
         miner_hash_rates, miner_dead_hash_rates = wb.get_local_rates()
+        hd.datastreams['miner_count'].add_datum(t, len(miner_hash_rates))
         # Convert script bytes to address strings for matching with miner_hash_rates
         current_txouts_by_address = dict(
             (bitcoin_data.script2_to_address(script, node.net.PARENT), value)
@@ -1316,5 +1365,18 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     # Add security config endpoint
     web_root.putChild('security_config', WebInterface(lambda: sec_config.get_config_summary(), require_auth=True))
     
-    # Return web_root and record_block_found function for block tracking
-    return web_root, record_block_found
+    def get_last_block_info():
+        """Get info about the last found block for luck calculation."""
+        if not block_history:
+            return None
+        # Find the most recent block
+        latest = None
+        latest_ts = 0
+        for hash, info in block_history.iteritems():
+            if info['ts'] > latest_ts:
+                latest_ts = info['ts']
+                latest = info
+        return latest
+    
+    # Return web_root, record_block_found and get_last_block_info for block tracking
+    return web_root, record_block_found, get_last_block_info

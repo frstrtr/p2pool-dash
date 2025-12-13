@@ -36,6 +36,8 @@ class Protocol(p2protocol.Protocol):
         
         self.other_version = None
         self.connected2 = False
+        self.connection_time = None
+        self.last_disconnect_time = None
     
     def connectionMade(self):
         self.factory.proto_made_connection(self)
@@ -153,7 +155,33 @@ class Protocol(p2protocol.Protocol):
         self.other_services = services
         
         if nonce == self.node.nonce:
-            raise PeerMisbehavingError('was connected to self')
+            # Could be self-connection via second ISP, or an attacker spoofing our nonce
+            # Rate-limit: allow occasional self-connects, but ban if too frequent
+            peer_ip = self.transport.getPeer().host
+            now = time.time()
+            
+            # Clean up old attempts (older than 10 minutes)
+            if peer_ip in self.node.self_nonce_attempts:
+                count, first_time = self.node.self_nonce_attempts[peer_ip]
+                if now - first_time > 600:  # Reset after 10 minutes
+                    del self.node.self_nonce_attempts[peer_ip]
+            
+            # Track this attempt
+            if peer_ip in self.node.self_nonce_attempts:
+                count, first_time = self.node.self_nonce_attempts[peer_ip]
+                self.node.self_nonce_attempts[peer_ip] = (count + 1, first_time)
+                if count >= 3:  # More than 3 attempts in 10 minutes = suspicious
+                    print 'Peer %s:%i sent our nonce %d times - possible attack, banning for 5 minutes' % (self.addr[0], self.addr[1], count + 1)
+                    self.node.bans[peer_ip] = now + 300  # 5 minute ban
+                    self.disconnect()
+                    return
+            else:
+                self.node.self_nonce_attempts[peer_ip] = (1, now)
+            
+            if p2pool.DEBUG:
+                print 'Detected self-connection (our nonce), disconnecting from %s:%i' % self.addr
+            self.disconnect()
+            return
         if nonce in self.node.peers:
             if p2pool.DEBUG:
                 print 'Detected duplicate connection, disconnecting from %s:%i' % self.addr
@@ -162,6 +190,7 @@ class Protocol(p2protocol.Protocol):
         
         self.nonce = nonce
         self.connected2 = True
+        self.connection_time = time.time()
         
         self.timeout_delayed.cancel()
         self.timeout_delayed = reactor.callLater(100, self._timeout)
@@ -313,7 +342,8 @@ class Protocol(p2protocol.Protocol):
                         for cache in self.known_txs_cache.itervalues():
                             if tx_hash in cache:
                                 tx = cache[tx_hash]
-                                print 'Transaction %064x rescued from peer latency cache!' % (tx_hash,)
+                                if p2pool.DEBUG:
+                                    print 'Transaction %064x rescued from peer latency cache!' % (tx_hash,)
                                 break
                         else:
                             print >>sys.stderr, 'Peer referenced unknown transaction %064x, disconnecting' % (tx_hash,)
@@ -427,7 +457,8 @@ class Protocol(p2protocol.Protocol):
                 for cache in self.known_txs_cache.itervalues():
                     if tx_hash in cache:
                         tx = cache[tx_hash]
-                        print 'Transaction %064x rescued from peer latency cache!' % (tx_hash,)
+                        if p2pool.DEBUG:
+                            print 'Transaction %064x rescued from peer latency cache!' % (tx_hash,)
                         break
                 else:
                     print >>sys.stderr, 'Peer referenced unknown transaction %064x, disconnecting' % (tx_hash,)
@@ -476,6 +507,10 @@ class Protocol(p2protocol.Protocol):
             if self.node.advertise_ip:
                 self._stop_thread2()
             self.connected2 = False
+        if self.connection_time is not None:
+            self.last_disconnect_time = time.time()
+            # Store disconnect history
+            self.node.peer_disconnect_history[self.addr] = (self.connection_time, self.last_disconnect_time)
         self.factory.proto_lost_connection(self, reason)
         if p2pool.DEBUG:
             print "Peer connection lost:", self.addr, reason
@@ -659,6 +694,8 @@ class Node(object):
         self.nonce = random.randrange(2**64)
         self.peers = {}
         self.bans = {} # address -> end_time
+        self.self_nonce_attempts = {} # address -> (count, first_attempt_time)
+        self.peer_disconnect_history = {} # (host, port) -> (last_connection_time, last_disconnect_time)
         self.clientfactory = ClientFactory(self, desired_outgoing_conns, max_outgoing_attempts)
         self.serverfactory = ServerFactory(self, max_incoming_conns)
         self.running = False
