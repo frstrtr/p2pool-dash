@@ -1409,8 +1409,10 @@
             var doaValues = [];
             
             // Get time range for filtering blocks
-            var minTime = data[0][0] * 1000;
-            var maxTime = data[data.length - 1][0] * 1000;
+            var firstTime = data[0][0] * 1000;
+            var lastTime = data[data.length - 1][0] * 1000;
+            var minTime = Math.min(firstTime, lastTime);
+            var maxTime = Math.max(firstTime, lastTime);
             
             data.forEach(function(d) {
                 var timestamp = d[0] * 1000;
@@ -1748,8 +1750,10 @@
             var doaValues = [];
             
             // Get time range for filtering blocks
-            var minTime = data[0][0] * 1000;
-            var maxTime = data[data.length - 1][0] * 1000;
+            var firstTime = data[0][0] * 1000;
+            var lastTime = data[data.length - 1][0] * 1000;
+            var minTime = Math.min(firstTime, lastTime);
+            var maxTime = Math.max(firstTime, lastTime);
             
             data.forEach(function(d) {
                 var timestamp = d[0] * 1000;
