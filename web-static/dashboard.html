@@ -1158,10 +1158,14 @@
                         return tip;
                     });
                 tr.append('td').text(function(b) {
-                    return b.network_difficulty ? d3.format('.2e')(b.network_difficulty) : '-';
+                    if (!b.network_difficulty) return '-';
+                    var hashrate = b.network_difficulty * Math.pow(2, 32);
+                    return format_hashrate(hashrate);
                 });
                 tr.append('td').text(function(b) {
-                    return b.actual_hash_difficulty ? d3.format('.2e')(b.actual_hash_difficulty) : '-';
+                    if (!b.actual_hash_difficulty) return '-';
+                    var hashrate = b.actual_hash_difficulty * Math.pow(2, 32);
+                    return format_hashrate(hashrate);
                 });
                 tr.append('td')
                     .attr('class', function(b) {
@@ -1598,11 +1602,15 @@
                             if (b.expected_time) {
                                 s += 'Expected: <b>' + format_dt(b.expected_time) + '</b><br/>';
                             }
-                            if (b.actual_hash_difficulty) {
-                                s += 'Hash Difficulty: <b style="color:#00d4ff">' + d3.format('.2e')(b.actual_hash_difficulty) + '</b><br/>';
-                                s += '<span style="font-size:10px;color:#888">(Actual work to find this hash)</span><br/>';
+                            if (b.network_difficulty) {
+                                var netHashrate = b.network_difficulty * Math.pow(2, 32);
+                                s += 'Net Diff: <b style="color:#8888ff">' + format_hashrate(netHashrate) + '</b><br/>';
                             }
-                            s += 'Status: <b style="color:' + (b.status === 'confirmed' ? '#00ff88' : '#ffc107') + '">' + (b.status || 'unknown') + '</b>';
+                            if (b.actual_hash_difficulty) {
+                                var actualHashrate = b.actual_hash_difficulty * Math.pow(2, 32);
+                                s += 'Hash Diff: <b style="color:#00d4ff">' + format_hashrate(actualHashrate) + '</b><br/>';
+                            }
+                            s += 'Status: <b style="color:' + (b.status === 'confirmed' ? '#00ff88' : '#ffc107') + '">' + (b.status || 'unknown') + '</b>;
                             return s;
                         }
                         
@@ -1929,8 +1937,14 @@
                             if (b.expected_time) {
                                 s += 'Expected: <b>' + format_dt(b.expected_time) + '</b><br/>';
                             }
+                            if (b.network_difficulty) {
+                                var netHashrate = b.network_difficulty * Math.pow(2, 32);
+                                s += 'Net Diff: <b style="color:#8888ff">' + format_hashrate(netHashrate) + '</b><br/>';
+                                s += '<span style="font-size:11px;color:#888">(Target difficulty)</span><br/>';
+                            }
                             if (b.actual_hash_difficulty) {
-                                s += 'Hash Difficulty: <b style="color:#00d4ff">' + d3.format('.2e')(b.actual_hash_difficulty) + '</b><br/>';
+                                var actualHashrate = b.actual_hash_difficulty * Math.pow(2, 32);
+                                s += 'Hash Diff: <b style="color:#00d4ff">' + format_hashrate(actualHashrate) + '</b><br/>';
                                 s += '<span style="font-size:11px;color:#888">(Actual work to find this hash)</span><br/>';
                             }
                             s += 'Status: <b style="color:' + (b.status === 'confirmed' ? '#00ff88' : '#ffc107') + '">' + (b.status || 'unknown') + '</b>';
