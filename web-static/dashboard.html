@@ -1129,7 +1129,7 @@
                     .attr('class', 'hash-link')
                     .attr('href', function(b) { return currency_info.block_explorer_url_prefix + b.hash; })
                     .attr('target', '_blank')
-                    .text(function(b) { return b.hash.substr(0, 16) + '...' + b.hash.substr(-8); });
+                    .text(function(b) { return '...' + b.hash.substr(-8); });
                 tr.append('td')
                     .attr('class', function(b) {
                         if (b.luck_method === 'first_block') return 'status-pending';  // First block - no luck calc
@@ -1524,7 +1524,7 @@
                     spacingBottom: 0,
                     spacingLeft: 0,
                     marginTop: 15,
-                    marginRight: 2,
+                    marginRight: 45,
                     marginBottom: 28,
                     marginLeft: 80,
                     panning: { enabled: true, type: 'x' },
