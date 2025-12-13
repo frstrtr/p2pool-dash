@@ -1486,15 +1486,14 @@
                     
                     // Position block higher based on difficulty ratio to make it easier to hover
                     // Higher actual difficulty = block floats higher above hashrate line
+                    // Since block difficulty is ALWAYS higher than network difficulty, baseline is 0%
                     if (b.actual_hash_difficulty && b.network_difficulty && b.network_difficulty > 0) {
                         var diffRatio = b.actual_hash_difficulty / b.network_difficulty;
-                        // Scale ratio: 1.0 = same level, 2.0 = 50% higher, etc.
+                        // Scale ratio: 1.0 = baseline (0%), 2.0 = 30% higher, 3.0 = 60% higher, etc.
                         var heightMultiplier = 1.0 + (diffRatio - 1.0) * 0.3;
                         yVal = yVal * heightMultiplier;
-                    } else {
-                        // Default: float 20% above hashrate line
-                        yVal = yVal * 1.2;
                     }
+                    // No else needed - if no difficulty data, keep at hashrate level
                     
                     blockMarkers.push({
                         x: blockTime,
@@ -1854,15 +1853,14 @@
                     
                     // Position block higher based on difficulty ratio to make it easier to hover
                     // Higher actual difficulty = block floats higher above hashrate line
+                    // Since block difficulty is ALWAYS higher than network difficulty, baseline is 0%
                     if (b.actual_hash_difficulty && b.network_difficulty && b.network_difficulty > 0) {
                         var diffRatio = b.actual_hash_difficulty / b.network_difficulty;
-                        // Scale ratio: 1.0 = same level, 2.0 = 50% higher, etc.
+                        // Scale ratio: 1.0 = baseline (0%), 2.0 = 30% higher, 3.0 = 60% higher, etc.
                         var heightMultiplier = 1.0 + (diffRatio - 1.0) * 0.3;
                         yVal = yVal * heightMultiplier;
-                    } else {
-                        // Default: float 20% above hashrate line
-                        yVal = yVal * 1.2;
                     }
+                    // No else needed - if no difficulty data, keep at hashrate level
                     
                     blockMarkers.push({
                         x: blockTime,
