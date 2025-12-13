@@ -474,6 +474,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     web_root.putChild('peer_list', WebInterface(lambda: [
         dict(
             address='%s:%i' % (peer.transport.getPeer().host, peer.transport.getPeer().port),
+            web_port=node.net.WORKER_PORT,
             version=peer.other_sub_version,
             incoming=peer.incoming,
             txpool_size=peer.remembered_txs_size

@@ -1281,7 +1281,12 @@
                 
                 var tr = d3.select('#peers_tbody').selectAll('tr').data(peers).enter().append('tr');
                 tr.append('td').append('a')
-                    .attr('href', function(p) { return 'http://' + p.address; })
+                    .attr('href', function(p) { 
+                        // Use web_port from API response
+                        var parts = p.address.split(':');
+                        var host = parts[0];
+                        return 'http://' + host + ':' + p.web_port;
+                    })
                     .attr('target', '_blank')
                     .attr('class', 'hash-link')
                     .text(function(p) { return p.address; });
@@ -2216,7 +2221,6 @@
                     loadStats();
                     loadBlocks();
                     loadPayouts();
-                    loadPeers();
                     loadShares();
                     loadHashrateGraph();
                     document.getElementById('last-update').textContent = 'Last update: ' + new Date().toLocaleTimeString();
@@ -2230,8 +2234,8 @@
             loadStats();
             loadBlocks();
             loadPayouts();
-            loadPeers();
             loadShares();
+            loadPeers();
             loadHashrateGraph();
             document.getElementById('last-update').textContent = 'Last update: ' + new Date().toLocaleTimeString();
         }
