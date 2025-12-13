@@ -1126,16 +1126,23 @@
                     .text(function(b) { return b.hash.substr(0, 16) + '...' + b.hash.substr(-8); });
                 tr.append('td')
                     .attr('class', function(b) {
+                        if (b.luck_method === 'first_block') return 'status-pending';  // First block - no luck calc
                         if (!b.luck) return '';
                         if (b.luck >= 100) return 'status-confirmed';
                         if (b.luck >= 75) return 'status-pending';
                         return 'status-orphaned';
                     })
                     .text(function(b) {
+                        if (b.luck_method === 'first_block') return '1st';  // First block indicator
                         if (!b.luck) return '-';
                         return d3.format('.0f')(b.luck) + '%';
                     })
                     .attr('title', function(b) {
+                        if (b.luck_method === 'first_block') {
+                            var tip = 'First block - no previous block for luck calculation';
+                            if (b.expected_time) tip += '\nExpected time was: ' + format_dt(b.expected_time);
+                            return tip;
+                        }
                         if (!b.time_to_find) return '';
                         var tip = 'Found in ' + format_dt(b.time_to_find);
                         if (b.expected_time) tip += ' (expected: ' + format_dt(b.expected_time) + ')';

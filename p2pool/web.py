@@ -863,7 +863,12 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                 block['luck_method'] = None
                 
                 if i == 0:
-                    # First block: can't calculate time_to_find without previous reference
+                    # First block: can't calculate luck without previous reference
+                    # But we can still show expected_time if we have the data
+                    if block_hashrate and block_network_diff:
+                        block['expected_time'] = (block_network_diff * 2**32) / block_hashrate
+                        block['avg_hashrate_used'] = block_hashrate
+                        block['luck_method'] = 'first_block'
                     continue
                 
                 # Time between this block and previous block
