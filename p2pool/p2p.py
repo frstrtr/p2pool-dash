@@ -446,7 +446,8 @@ class Protocol(p2protocol.Protocol):
                 return
             
             if tx_hash in self.node.known_txs_var.value and not warned:
-                print 'Peer sent entire transaction %064x that was already received' % (tx_hash,)
+                if p2pool.DEBUG:
+                    print 'Peer sent entire transaction %064x that was already received' % (tx_hash,)
                 warned = True
             
             self.remembered_txs[tx_hash] = tx
