@@ -427,8 +427,11 @@ class Share(object):
         return [known_txs[tx_hash] for tx_hash in other_tx_hashes]
     
     def should_punish_reason(self, previous_block, bits, tracker, known_txs):
-        if (self.header['previous_block'], self.header['bits']) != (previous_block, bits) and self.header_hash != previous_block and self.peer_addr is not None:
-            return True, 'Block-stale detected! height(%x) < height(%x) or %08x != %08x' % (self.header['previous_block'], previous_block, self.header['bits'].bits, bits.bits)
+        # Removed block-stale punishment per jtoomim fix:
+        # https://github.com/jtoomim/p2pool/commit/b57a4ff93e58c0702aa2481c164517e7290c8d43
+        # https://bitcointalk.org/index.php?topic=18313.msg18580559
+        # Block-stale punishment unfairly penalizes miners with high latency
+        # and can be exploited by >50% hashrate attackers to orphan other shares
         
         if self.pow_hash <= self.header['bits'].target:
             return -1, 'block solution'
@@ -440,12 +443,6 @@ class Share(object):
             all_txs_size = sum(dash_data.tx_type.packed_size(tx) for tx in other_txs)
             if all_txs_size > 2000000:
                 return True, 'txs over block size limit'
-            
-            '''
-            new_txs_size = sum(dash_data.tx_type.packed_size(known_txs[tx_hash]) for tx_hash in self.share_info['new_transaction_hashes'])
-            if new_txs_size > 50000:
-                return True, 'new txs over limit'
-            '''
         
         return False, None
     
