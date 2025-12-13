@@ -1610,7 +1610,7 @@
                                 var actualHashrate = b.actual_hash_difficulty * Math.pow(2, 32);
                                 s += 'Hash Diff: <b style="color:#00d4ff">' + format_hashrate(actualHashrate) + '</b><br/>';
                             }
-                            s += 'Status: <b style="color:' + (b.status === 'confirmed' ? '#00ff88' : '#ffc107') + '">' + (b.status || 'unknown') + '</b>;
+                            s += 'Status: <b style="color:' + (b.status === 'confirmed' ? '#00ff88' : '#ffc107') + '">' + (b.status || 'unknown') + '</b>';
                             return s;
                         }
                         
