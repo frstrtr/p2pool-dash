@@ -471,15 +471,35 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         ])
     ))))
     web_root.putChild('peer_versions', WebInterface(lambda: dict(('%s:%i' % peer.addr, peer.other_sub_version) for peer in node.p2p_node.peers.itervalues())))
-    web_root.putChild('peer_list', WebInterface(lambda: [
-        dict(
-            address='%s:%i' % (peer.transport.getPeer().host, peer.transport.getPeer().port),
-            web_port=node.net.WORKER_PORT,
-            version=peer.other_sub_version,
-            incoming=peer.incoming,
-            txpool_size=peer.remembered_txs_size
-        ) for peer in node.p2p_node.peers.itervalues()
-    ]))
+    
+    def get_peer_list():
+        import time as time_module
+        current_time = time_module.time()
+        peers = []
+        for peer in node.p2p_node.peers.itervalues():
+            peer_addr = (peer.transport.getPeer().host, peer.transport.getPeer().port)
+            uptime = current_time - peer.connection_time if peer.connection_time else 0
+            
+            # Get downtime from disconnect history
+            downtime = 0
+            if peer_addr in node.p2p_node.peer_disconnect_history:
+                last_conn_time, last_disc_time = node.p2p_node.peer_disconnect_history[peer_addr]
+                if peer.connection_time and peer.connection_time > last_disc_time:
+                    # Current connection started after last disconnect
+                    downtime = peer.connection_time - last_disc_time
+            
+            peers.append(dict(
+                address='%s:%i' % peer_addr,
+                web_port=node.net.WORKER_PORT,
+                version=peer.other_sub_version,
+                incoming=peer.incoming,
+                txpool_size=peer.remembered_txs_size,
+                uptime=int(uptime),
+                downtime=int(downtime)
+            ))
+        return peers
+    
+    web_root.putChild('peer_list', WebInterface(get_peer_list))
     web_root.putChild('payout_addr', WebInterface(lambda: getattr(wb, 'address', None)))
     web_root.putChild('payout_addrs', WebInterface(
         lambda: [bitcoin_data.pubkey_hash_to_address(pubkey_hash, node.net.PARENT) for pubkey_hash in wb.pubkeys.keys]))

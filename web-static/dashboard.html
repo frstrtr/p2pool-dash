@@ -959,6 +959,8 @@
                             <th>Address</th>
                             <th>Version</th>
                             <th>Direction</th>
+                            <th>Uptime</th>
+                            <th>Downtime</th>
                             <th>TxPool</th>
                         </tr>
                     </thead>
@@ -1033,6 +1035,19 @@
             var pad = function(n) { return n < 10 ? '0' + n : n; };
             return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + ' ' +
                    pad(d.getHours()) + ':' + pad(d.getMinutes());
+        }
+        
+        function format_duration(seconds) {
+            if (seconds === 0) return '-';
+            var d = Math.floor(seconds / 86400);
+            var h = Math.floor((seconds % 86400) / 3600);
+            var m = Math.floor((seconds % 3600) / 60);
+            var s = Math.floor(seconds % 60);
+            
+            if (d > 0) return d + 'd ' + h + 'h';
+            if (h > 0) return h + 'h ' + m + 'm';
+            if (m > 0) return m + 'm ' + s + 's';
+            return s + 's';
         }
         
         function values(o) { var res = []; for(var x in o) res.push(o[x]); return res; }
@@ -1272,7 +1287,7 @@
                 if (!peers || peers.length === 0) {
                     var tr = d3.select('#peers_tbody').append('tr');
                     tr.append('td')
-                        .attr('colspan', '4')
+                        .attr('colspan', '6')
                         .style('text-align', 'center')
                         .style('color', 'var(--text-muted)')
                         .text('No peers connected');
@@ -1303,6 +1318,10 @@
                             '<span style="color: var(--success)">⬇ Incoming</span>' : 
                             '<span style="color: var(--info)">⬆ Outgoing</span>'; 
                     });
+                tr.append('td').text(function(p) { return format_duration(p.uptime || 0); });
+                tr.append('td')
+                    .text(function(p) { return format_duration(p.downtime || 0); })
+                    .style('color', function(p) { return p.downtime > 0 ? 'var(--text-muted)' : ''; });
                 tr.append('td').text(function(p) { return p.txpool_size || '0'; });
             });
         }
