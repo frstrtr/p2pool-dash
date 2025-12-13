@@ -801,6 +801,9 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                     max_target = 0x00000000FFFF0000000000000000000000000000000000000000000000000000
                     actual_hash_difficulty = float(max_target) / float(hash_int) if hash_int > 0 else 0
                     
+                    # Get network difficulty at the time of this block
+                    network_difficulty = bitcoin_data.target_to_difficulty(s.header['bits'].target)
+                    
                     blocks.append(dict(
                         ts=s.timestamp,
                         hash=block_hash,
@@ -809,6 +812,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                         explorer_url=node.net.PARENT.BLOCK_EXPLORER_URL_PREFIX + block_hash,
                         status=status,
                         actual_hash_difficulty=actual_hash_difficulty,
+                        network_difficulty=network_difficulty,
                     ))
         except Exception as e:
             log.err(e, 'Error getting recent blocks:')

@@ -920,6 +920,8 @@
                             <th>Height</th>
                             <th>Block Hash</th>
                             <th>Luck</th>
+                            <th title="Network difficulty target">Net Diff</th>
+                            <th title="Actual hash difficulty">Hash Diff</th>
                             <th>Status</th>
                         </tr>
                     </thead>
@@ -1155,6 +1157,12 @@
                         else if (b.luck_method) tip += '\n[' + b.luck_method + ']';
                         return tip;
                     });
+                tr.append('td').text(function(b) {
+                    return b.network_difficulty ? d3.format('.2e')(b.network_difficulty) : '-';
+                });
+                tr.append('td').text(function(b) {
+                    return b.actual_hash_difficulty ? d3.format('.2e')(b.actual_hash_difficulty) : '-';
+                });
                 tr.append('td')
                     .attr('class', function(b) {
                         if (b.status === 'confirmed') return 'status-confirmed';
