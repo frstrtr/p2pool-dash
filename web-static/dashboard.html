@@ -1440,28 +1440,30 @@
                     validLucks.push(b.luck);
                 }
                 
-                // For block markers, show ALL blocks - they'll appear at correct X position
-                // Find closest hashrate value for y position
-                var closestIdx = 0;
-                var closestDiff = Math.abs(data[0][0] * 1000 - blockTime);
-                for (var i = 1; i < data.length; i++) {
-                    var diff = Math.abs(data[i][0] * 1000 - blockTime);
-                    if (diff < closestDiff) {
-                        closestDiff = diff;
-                        closestIdx = i;
+                // For block markers, only show blocks within the graph's time range
+                if (blockTime >= minTime && blockTime <= maxTime) {
+                    // Find closest hashrate value for y position
+                    var closestIdx = 0;
+                    var closestDiff = Math.abs(data[0][0] * 1000 - blockTime);
+                    for (var i = 1; i < data.length; i++) {
+                        var diff = Math.abs(data[i][0] * 1000 - blockTime);
+                        if (diff < closestDiff) {
+                            closestDiff = diff;
+                            closestIdx = i;
+                        }
                     }
+                    var yVal = (data[closestIdx][1] && data[closestIdx][1].good) ? data[closestIdx][1].good : 0;
+                    // Use a minimum y value so block is visible even if hashrate is 0
+                    if (yVal === 0 && values.length > 0) {
+                        yVal = Math.max.apply(null, values) * 0.1 || 1000000000;
+                    }
+                    
+                    blockMarkers.push({
+                        x: blockTime,
+                        y: yVal,
+                        block: b
+                    });
                 }
-                var yVal = (data[closestIdx][1] && data[closestIdx][1].good) ? data[closestIdx][1].good : 0;
-                // Use a minimum y value so block is visible even if hashrate is 0
-                if (yVal === 0 && values.length > 0) {
-                    yVal = Math.max.apply(null, values) * 0.1 || 1000000000;
-                }
-                
-                blockMarkers.push({
-                    x: blockTime,
-                    y: yVal,
-                    block: b
-                });
             });
             
             // Debug: log processed results
@@ -1772,28 +1774,30 @@
                     validLucks.push(b.luck);
                 }
                 
-                // For block markers, show ALL blocks
-                // Find closest hashrate value for y position
-                var closestIdx = 0;
-                var closestDiff = Math.abs(data[0][0] * 1000 - blockTime);
-                for (var i = 1; i < data.length; i++) {
-                    var diff = Math.abs(data[i][0] * 1000 - blockTime);
-                    if (diff < closestDiff) {
-                        closestDiff = diff;
-                        closestIdx = i;
+                // For block markers, only show blocks within the graph's time range
+                if (blockTime >= minTime && blockTime <= maxTime) {
+                    // Find closest hashrate value for y position
+                    var closestIdx = 0;
+                    var closestDiff = Math.abs(data[0][0] * 1000 - blockTime);
+                    for (var i = 1; i < data.length; i++) {
+                        var diff = Math.abs(data[i][0] * 1000 - blockTime);
+                        if (diff < closestDiff) {
+                            closestDiff = diff;
+                            closestIdx = i;
+                        }
                     }
+                    var yVal = (data[closestIdx][1] && data[closestIdx][1].good) ? data[closestIdx][1].good : 0;
+                    // Use a minimum y value so block is visible even if hashrate is 0
+                    if (yVal === 0 && values.length > 0) {
+                        yVal = Math.max.apply(null, values) * 0.1 || 1000000000;
+                    }
+                    
+                    blockMarkers.push({
+                        x: blockTime,
+                        y: yVal,
+                        block: b
+                    });
                 }
-                var yVal = (data[closestIdx][1] && data[closestIdx][1].good) ? data[closestIdx][1].good : 0;
-                // Use a minimum y value so block is visible even if hashrate is 0
-                if (yVal === 0 && values.length > 0) {
-                    yVal = Math.max.apply(null, values) * 0.1 || 1000000000;
-                }
-                
-                blockMarkers.push({
-                    x: blockTime,
-                    y: yVal,
-                    block: b
-                });
             });
             
             // Update fullscreen stats
