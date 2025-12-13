@@ -344,7 +344,11 @@ class Node(object):
         return p2pool_data.get_expected_payouts(self.tracker, self.best_share_var.value, self.dashd_work.value['bits'].target, real_pay, self.net)
     
     def clean_tracker(self):
-        best, desired, decorated_heads, bad_peer_addresses = self.tracker.think(self.get_height_rel_highest, self.dashd_work.value['previous_block'], self.dashd_work.value['bits'], self.known_txs_var.value)
+        try:
+            best, desired, decorated_heads, bad_peer_addresses = self.tracker.think(self.get_height_rel_highest, self.dashd_work.value['previous_block'], self.dashd_work.value['bits'], self.known_txs_var.value)
+        except Exception as e:
+            log.err(e, 'Error in tracker.think() - continuing')
+            return  # Skip this iteration, try again next time
         
         # eat away at heads
         if decorated_heads:

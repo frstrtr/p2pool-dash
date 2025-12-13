@@ -796,13 +796,17 @@ def run():
             else:
                 text = " ".join([str(m) for m in eventDict["message"]]) + "\n"
             
-            from twisted.web import client
-            client.getPage(
-                url='http://u.forre.st/p2pool_error.cgi',
-                method='POST',
-                postdata=p2pool.__version__ + ' ' + net.NAME + '\n' + text,
-                timeout=15,
-            ).addBoth(lambda x: None)
+            try:
+                from twisted.web import client
+                client.getPage(
+                    url='http://u.forre.st/p2pool_error.cgi',
+                    method='POST',
+                    postdata=p2pool.__version__ + ' ' + net.NAME + '\n' + text,
+                    timeout=15,
+                ).addBoth(lambda x: None)
+            except ImportError:
+                # OpenSSL not available - can't submit error reports (requires SSL for redirects)
+                pass
     if not args.no_bugreport:
         log.addObserver(ErrorReporter().emit)
     
