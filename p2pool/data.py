@@ -201,6 +201,9 @@ class Share(object):
                 if hasattr(payee, 'startswith') and payee.startswith('!'):
                     # Direct script encoded as hex after "!" prefix (not in base58 alphabet)
                     pm_script = payee[1:].decode('hex')
+                elif hasattr(payee, 'startswith') and payee.startswith('script:'):
+                    # Old protocol format - skip silently (already logged in attempt_verify)
+                    continue
                 else:
                     # Regular address - convert to script
                     try:
