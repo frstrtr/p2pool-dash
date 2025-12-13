@@ -864,6 +864,7 @@
                         <div class="legend-item" data-series="good" onclick="toggleSeries('good', this)" title="Click to toggle Good hashrate"><span class="legend-color" style="background: #008de4;"></span><span>Good</span></div>
                         <div class="legend-item" data-series="doa" onclick="toggleSeries('doa', this)" title="Click to toggle DOA hashrate"><span class="legend-color" style="background: #ff6b6b;"></span><span>DOA</span></div>
                         <div class="legend-item" data-series="blocks" onclick="toggleSeries('blocks', this)" title="Click to toggle block markers"><span class="legend-color" style="background: #00ff88;"></span><span>Blocks</span></div>
+                        <div class="legend-item" data-series="lucktrend" onclick="toggleSeries('lucktrend', this)" title="Click to toggle luck trend line"><span class="legend-color" style="background: #ffc107;"></span><span>Luck</span></div>
                     </div>
                     <div class="graph-container compact" id="hashrate-graph"></div>
                     <div class="graph-stats compact">
@@ -889,6 +890,8 @@
                     <span style="margin-left: 20px; color: var(--text-muted);">|</span>
                     <div class="legend-item" data-series="good" onclick="toggleSeries('good', this)" title="Click to toggle Good hashrate" style="margin-left: 15px;"><span class="legend-color" style="background: #008de4;"></span><span>Good</span></div>
                     <div class="legend-item" data-series="doa" onclick="toggleSeries('doa', this)" title="Click to toggle DOA hashrate"><span class="legend-color" style="background: #ff6b6b;"></span><span>DOA</span></div>
+                    <div class="legend-item" data-series="blocks" onclick="toggleSeries('blocks', this)" title="Click to toggle block markers"><span class="legend-color" style="background: #00ff88;"></span><span>Blocks</span></div>
+                    <div class="legend-item" data-series="lucktrend" onclick="toggleSeries('lucktrend', this)" title="Click to toggle luck trend line"><span class="legend-color" style="background: #ffc107;"></span><span>Luck</span></div>
                 </div>
                 <button class="fullscreen-close" onclick="toggleGraphFullscreen()">✕ Close</button>
             </div>
@@ -897,7 +900,7 @@
                 <div class="fullscreen-stat"><div class="fullscreen-stat-label">Current</div><div class="fullscreen-stat-value" id="fs-graph-current">-</div></div>
                 <div class="fullscreen-stat"><div class="fullscreen-stat-label">Average</div><div class="fullscreen-stat-value" id="fs-graph-average">-</div></div>
                 <div class="fullscreen-stat"><div class="fullscreen-stat-label">Peak</div><div class="fullscreen-stat-value" id="fs-graph-peak">-</div></div>
-                <div class="fullscreen-stat"><div class="fullscreen-stat-label">DOA</div><div class="fullscreen-stat-value" id="fs-graph-doa">-</div></div>
+                <div class="fullscreen-stat"><div class="fullscreen-stat-label">Avg Luck</div><div class="fullscreen-stat-value" id="fs-graph-luck">-</div></div>
             </div>
         </div>
         
@@ -1262,7 +1265,7 @@
         var graphBlocks = [];
         var isFullscreen = false;
         var fullscreenChart = null;
-        var seriesVisibility = { good: true, doa: true, blocks: true };
+        var seriesVisibility = { good: true, doa: true, blocks: true, lucktrend: true };
         
         function toggleSeries(seriesName, element) {
             seriesVisibility[seriesName] = !seriesVisibility[seriesName];
@@ -1276,28 +1279,23 @@
                 }
             });
             
-            // Update chart series visibility
-            var seriesIndex = seriesName === 'good' ? 0 : (seriesName === 'doa' ? 1 : 2);
+            // Map series names to indices
+            var seriesIndexMap = { good: 0, doa: 1, blocks: 2, lucktrend: 3 };
+            var seriesIndex = seriesIndexMap[seriesName];
             
-            if (hashrateChart) {
-                var series = hashrateChart.series[seriesIndex];
-                if (series) {
-                    if (seriesVisibility[seriesName]) {
-                        series.show();
-                    } else {
-                        series.hide();
-                    }
+            if (hashrateChart && hashrateChart.series[seriesIndex]) {
+                if (seriesVisibility[seriesName]) {
+                    hashrateChart.series[seriesIndex].show();
+                } else {
+                    hashrateChart.series[seriesIndex].hide();
                 }
             }
             
-            if (fullscreenChart) {
-                var series = fullscreenChart.series[seriesIndex];
-                if (series) {
-                    if (seriesVisibility[seriesName]) {
-                        series.show();
-                    } else {
-                        series.hide();
-                    }
+            if (fullscreenChart && fullscreenChart.series[seriesIndex]) {
+                if (seriesVisibility[seriesName]) {
+                    fullscreenChart.series[seriesIndex].show();
+                } else {
+                    fullscreenChart.series[seriesIndex].hide();
                 }
             }
         }
@@ -1418,12 +1416,27 @@
                 doaValues.push(doaVal);
             });
             
-            // Process blocks within time range
+            // Process blocks - show all blocks, not just those in exact time range
             var blockMarkers = [];
+            var luckTrendData = [];
             var validLucks = [];
-            blocks.forEach(function(b) {
+            
+            // Sort blocks by timestamp
+            var sortedBlocks = blocks.slice().sort(function(a, b) { return a.ts - b.ts; });
+            
+            sortedBlocks.forEach(function(b) {
                 var blockTime = b.ts * 1000;
-                if (blockTime >= minTime && blockTime <= maxTime) {
+                
+                // For luck trend, collect all blocks with luck data
+                if (b.luck) {
+                    luckTrendData.push([blockTime, b.luck]);
+                    validLucks.push(b.luck);
+                }
+                
+                // For block markers, show if within extended range (10% margin)
+                var timeRange = maxTime - minTime;
+                var margin = timeRange * 0.1;
+                if (blockTime >= (minTime - margin) && blockTime <= (maxTime + margin)) {
                     // Find closest hashrate value for y position
                     var closestIdx = 0;
                     var closestDiff = Math.abs(data[0][0] * 1000 - blockTime);
@@ -1435,6 +1448,10 @@
                         }
                     }
                     var yVal = (data[closestIdx][1] && data[closestIdx][1].good) ? data[closestIdx][1].good : 0;
+                    // Use a minimum y value so block is visible even if hashrate is 0
+                    if (yVal === 0 && values.length > 0) {
+                        yVal = Math.max.apply(null, values) * 0.1 || 1000000000;
+                    }
                     
                     blockMarkers.push({
                         x: blockTime,
@@ -1442,7 +1459,6 @@
                         block: b
                     });
                 }
-                if (b.luck) validLucks.push(b.luck);
             });
             
             // Update stats
@@ -1500,7 +1516,8 @@
                     gridLineColor: '#2a2a4a',
                     gridLineWidth: 1
                 },
-                yAxis: {
+                yAxis: [{
+                    // Primary Y-axis for hashrate
                     title: { text: null },
                     min: 0,
                     lineColor: '#3a3a5a',
@@ -1513,7 +1530,27 @@
                     },
                     gridLineColor: '#2a2a4a',
                     opposite: false
-                },
+                }, {
+                    // Secondary Y-axis for luck percentage
+                    title: { text: null },
+                    min: 0,
+                    max: 300,
+                    lineColor: '#ffc107',
+                    tickColor: '#ffc107',
+                    labels: {
+                        style: { color: '#ffc107', fontSize: '10px' },
+                        formatter: function() { return this.value + '%'; }
+                    },
+                    gridLineWidth: 0,
+                    opposite: true,
+                    plotLines: [{
+                        value: 100,
+                        color: '#ffc107',
+                        dashStyle: 'dot',
+                        width: 1,
+                        label: { text: '100%', style: { color: '#ffc107', fontSize: '9px' }, align: 'right' }
+                    }]
+                }],
                 tooltip: {
                     shared: true,
                     backgroundColor: 'rgba(22, 22, 42, 0.95)',
@@ -1526,8 +1563,13 @@
                         this.points.forEach(function(point) {
                             if (point.series.name === 'Hashrate') goodVal = point.y;
                             if (point.series.name === 'Dead on arrival') doaVal = point.y;
-                            s += '<br/><span style="color:' + point.color + '">●</span> ' + 
-                                 point.series.name + ': <b>' + format_hashrate(point.y) + '</b>';
+                            if (point.series.name === 'Luck Trend') {
+                                s += '<br/><span style="color:' + point.color + '">●</span> ' + 
+                                     point.series.name + ': <b>' + d3.format('.0f')(point.y) + '%</b>';
+                            } else {
+                                s += '<br/><span style="color:' + point.color + '">●</span> ' + 
+                                     point.series.name + ': <b>' + format_hashrate(point.y) + '</b>';
+                            }
                         });
                         if (goodVal > 0) {
                             var percent = ((doaVal / (goodVal + doaVal)) * 100).toFixed(2);
@@ -1580,7 +1622,8 @@
                     data: doarate,
                     color: '#ff6b6b',
                     lineWidth: 2,
-                    visible: seriesVisibility.doa
+                    visible: seriesVisibility.doa,
+                    yAxis: 0
                 }, {
                     type: 'scatter',
                     name: 'Blocks',
@@ -1598,6 +1641,7 @@
                     }),
                     color: '#00ff88',
                     visible: seriesVisibility.blocks,
+                    yAxis: 0,
                     tooltip: {
                         pointFormatter: function() {
                             var b = this.block;
@@ -1619,6 +1663,20 @@
                             return s;
                         }
                     }
+                }, {
+                    type: 'spline',
+                    name: 'Luck Trend',
+                    data: luckTrendData,
+                    color: '#ffc107',
+                    lineWidth: 2,
+                    dashStyle: 'ShortDash',
+                    marker: {
+                        enabled: true,
+                        radius: 4,
+                        fillColor: '#ffc107'
+                    },
+                    visible: seriesVisibility.lucktrend,
+                    yAxis: 1
                 }]
             });
             
@@ -1663,8 +1721,20 @@
                 doaValues.push(doaVal);
             });
             
-            // Process blocks within time range
+            // Process blocks and build luck trend data (from ALL blocks, not filtered)
             var blockMarkers = [];
+            var luckTrendData = [];
+            
+            // First pass: get all blocks with luck data for trend line
+            blocks.forEach(function(b) {
+                var blockTime = b.ts * 1000;
+                if (b.luck && b.luck > 0) {
+                    luckTrendData.push([blockTime, b.luck]);
+                }
+            });
+            luckTrendData.sort(function(a, b) { return a[0] - b[0]; });
+            
+            // Second pass: get blocks in time range for markers
             blocks.forEach(function(b) {
                 var blockTime = b.ts * 1000;
                 if (blockTime >= minTime && blockTime <= maxTime) {
@@ -1719,7 +1789,7 @@
                     gridLineColor: '#2a2a4a',
                     gridLineWidth: 1
                 },
-                yAxis: {
+                yAxis: [{
                     title: { text: null },
                     min: 0,
                     lineColor: '#3a3a5a',
@@ -1730,7 +1800,21 @@
                     },
                     gridLineColor: '#2a2a4a',
                     opposite: false
-                },
+                }, {
+                    // Second Y-axis for luck percentage
+                    id: 'luck-axis',
+                    title: { text: 'Luck', style: { color: '#ffa500' } },
+                    min: 0,
+                    max: 200,
+                    lineColor: '#ffa500',
+                    tickColor: '#ffa500',
+                    labels: {
+                        style: { color: '#ffa500', fontSize: '11px' },
+                        formatter: function() { return this.value + '%'; }
+                    },
+                    gridLineWidth: 0,
+                    opposite: true
+                }],
                 tooltip: {
                     shared: true,
                     backgroundColor: 'rgba(22, 22, 42, 0.95)',
@@ -1742,8 +1826,13 @@
                         this.points.forEach(function(point) {
                             if (point.series.name === 'Hashrate') goodVal = point.y;
                             if (point.series.name === 'Dead on arrival') doaVal = point.y;
-                            s += '<br/><span style="color:' + point.color + '">●</span> ' + 
-                                 point.series.name + ': <b>' + format_hashrate(point.y) + '</b>';
+                            if (point.series.name === 'Luck Trend') {
+                                s += '<br/><span style="color:' + point.color + '">●</span> ' + 
+                                     point.series.name + ': <b>' + point.y.toFixed(1) + '%</b>';
+                            } else if (point.series.name !== 'Blocks') {
+                                s += '<br/><span style="color:' + point.color + '">●</span> ' + 
+                                     point.series.name + ': <b>' + format_hashrate(point.y) + '</b>';
+                            }
                         });
                         if (goodVal > 0) {
                             var percent = ((doaVal / (goodVal + doaVal)) * 100).toFixed(2);
@@ -1837,6 +1926,16 @@
                             return s;
                         }
                     }
+                }, {
+                    type: 'spline',
+                    name: 'Luck Trend',
+                    data: luckTrendData,
+                    yAxis: 1,
+                    color: '#ffa500',
+                    lineWidth: 2,
+                    dashStyle: 'ShortDash',
+                    visible: seriesVisibility.lucktrend,
+                    marker: { enabled: true, radius: 4, symbol: 'circle' }
                 }]
             });
         }
