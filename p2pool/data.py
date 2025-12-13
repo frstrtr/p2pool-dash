@@ -197,12 +197,18 @@ class Share(object):
                 if not payee:
                     continue  # Skip payments without valid payee
                 # Check if it's a script-encoded payment (starts with '!')
-                if isinstance(payee, str) and payee.startswith('!'):
+                # Python 2: isinstance check for both str and unicode
+                if hasattr(payee, 'startswith') and payee.startswith('!'):
                     # Direct script encoded as hex after "!" prefix (not in base58 alphabet)
                     pm_script = payee[1:].decode('hex')
                 else:
                     # Regular address - convert to script
-                    pm_script = dash_data.address_to_script2(payee, net.PARENT)
+                    try:
+                        pm_script = dash_data.address_to_script2(payee, net.PARENT)
+                    except (ValueError, AttributeError) as e:
+                        # Skip invalid addresses or malformed payee
+                        print 'WARNING: Invalid payee in payment: %r (error: %s)' % (payee, e)
+                        continue
                 pm_payout = obj.get('amount', 0)
                 if pm_payout > 0:
                     payments_tx += [dict(value=pm_payout, script=pm_script)]
