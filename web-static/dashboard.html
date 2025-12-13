@@ -1387,6 +1387,12 @@
             var container = document.getElementById('hashrate-graph');
             blocks = blocks || [];
             
+            // Debug: log blocks info
+            console.log('renderHashrateGraph - Blocks received:', blocks.length);
+            if (blocks.length > 0) {
+                console.log('First block:', JSON.stringify(blocks[0]));
+            }
+            
             // Clear previous
             if (hashrateChart) {
                 hashrateChart.destroy();
@@ -1460,6 +1466,9 @@
                     });
                 }
             });
+            
+            // Debug: log processed results
+            console.log('Compact - blockMarkers:', blockMarkers.length, 'luckTrendData:', luckTrendData.length);
             
             // Update stats
             var current = values[values.length - 1] || 0;
@@ -1690,6 +1699,9 @@
             var container = document.getElementById('fullscreen-graph');
             blocks = blocks || graphBlocks || [];
             
+            // Debug: log blocks info
+            console.log('renderFullscreenGraph - Blocks received:', blocks.length, 'graphBlocks:', graphBlocks ? graphBlocks.length : 0);
+            
             if (fullscreenChart) {
                 fullscreenChart.destroy();
                 fullscreenChart = null;
@@ -1783,6 +1795,7 @@
             fullscreenChart = Highcharts.chart('fullscreen-graph', {
                 chart: {
                     type: 'area',
+                    height: '70%',
                     backgroundColor: 'transparent',
                     style: { fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif' },
                     marginTop: 20,
