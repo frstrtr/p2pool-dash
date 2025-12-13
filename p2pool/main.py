@@ -490,9 +490,15 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
                     datums, dt = wb.local_rate_monitor.get_datums_in_last()
                     my_att_s = sum(datum['work']/dt for datum in datums)
                     my_shares_per_s = sum(datum['work']/dt/dash_data.target_to_average_attempts(datum['share_target']) for datum in datums)
-                    this_str += '\n Local: %sH/s in last %s Local dead on arrival: %s Expected time to share: %s' % (
+                    
+                    # Get worker/miner info
+                    miner_hash_rates, miner_dead_hash_rates = wb.get_local_rates()
+                    num_workers = len(miner_hash_rates)
+                    
+                    this_str += '\n Local: %sH/s in last %s Workers: %i Local dead on arrival: %s Expected time to share: %s' % (
                         math.format(int(my_att_s)),
                         math.format_dt(dt),
+                        num_workers,
                         math.format_binomial_conf(sum(1 for datum in datums if datum['dead']), len(datums), 0.95),
                         math.format_dt(1/my_shares_per_s) if my_shares_per_s else '???',
                     )
