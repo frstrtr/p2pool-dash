@@ -888,11 +888,11 @@
                     <button class="time-btn" data-period="week" onclick="selectGraphPeriod('week')">1W</button>
                     <button class="time-btn" data-period="month" onclick="selectGraphPeriod('month')">1M</button>
                     <button class="time-btn" data-period="year" onclick="selectGraphPeriod('year')">1Y</button>
-                    <span style="margin-left: 20px; color: var(--text-muted);">|</span>
-                    <div class="legend-item" data-series="good" onclick="toggleSeries('good', this)" title="Click to toggle Good hashrate" style="margin-left: 15px;"><span class="legend-color" style="background: #008de4;"></span><span>Good</span></div>
-                    <div class="legend-item" data-series="doa" onclick="toggleSeries('doa', this)" title="Click to toggle DOA hashrate"><span class="legend-color" style="background: #ff6b6b;"></span><span>DOA</span></div>
-                    <div class="legend-item" data-series="blocks" onclick="toggleSeries('blocks', this)" title="Click to toggle block markers"><span class="legend-color" style="background: #00ff88;"></span><span>Blocks</span></div>
-                    <div class="legend-item" data-series="lucktrend" onclick="toggleSeries('lucktrend', this)" title="Click to toggle luck trend line"><span class="legend-color" style="background: #ffc107;"></span><span>Luck</span></div>
+                    <span style="margin: 0 15px; color: var(--text-muted);">|</span>
+                    <div class="legend-item" data-series="good" onclick="toggleSeries('good', this)" title="Click to toggle Good hashrate" style="font-size: 14px; padding: 6px 12px;"><span class="legend-color" style="background: #008de4; width: 14px; height: 14px;"></span><span>Good</span></div>
+                    <div class="legend-item" data-series="doa" onclick="toggleSeries('doa', this)" title="Click to toggle DOA hashrate" style="font-size: 14px; padding: 6px 12px;"><span class="legend-color" style="background: #ff6b6b; width: 14px; height: 14px;"></span><span>DOA</span></div>
+                    <div class="legend-item" data-series="blocks" onclick="toggleSeries('blocks', this)" title="Click to toggle block markers" style="font-size: 14px; padding: 6px 12px;"><span class="legend-color" style="background: #00ff88; width: 14px; height: 14px;"></span><span>Blocks</span></div>
+                    <div class="legend-item" data-series="lucktrend" onclick="toggleSeries('lucktrend', this)" title="Click to toggle luck trend line" style="font-size: 14px; padding: 6px 12px;"><span class="legend-color" style="background: #ffc107; width: 14px; height: 14px;"></span><span>Luck</span></div>
                 </div>
                 <button class="fullscreen-close" onclick="toggleGraphFullscreen()">✕ Close</button>
             </div>
@@ -1560,13 +1560,38 @@
                 tooltip: {
                     shared: true,
                     backgroundColor: 'rgba(22, 22, 42, 0.95)',
-                    borderColor: '#008de4',
                     borderColor: '#3a3a5a',
                     style: { color: '#e0e0e0' },
                     formatter: function() {
+                        // Handle scatter points (blocks) separately
+                        if (this.point && this.point.block) {
+                            var b = this.point.block;
+                            var s = '<b>' + Highcharts.dateFormat('%b %e, %H:%M:%S', this.x) + '</b><br/>';
+                            s += '<span style="color:#00ff88">◆</span> <b>Block Found!</b><br/>';
+                            s += 'Height: <b>' + (b.number || '?') + '</b><br/>';
+                            if (b.luck) {
+                                var luckColor = b.luck >= 100 ? '#00ff88' : (b.luck >= 75 ? '#ffc107' : '#ff6b6b');
+                                s += 'Luck: <b style="color:' + luckColor + '">' + d3.format('.0f')(b.luck) + '%</b><br/>';
+                            } else if (b.luck_method === 'first_block') {
+                                s += 'Luck: <b style="color:#888">1st block</b><br/>';
+                            }
+                            if (b.time_to_find) {
+                                s += 'Found in: <b>' + format_dt(b.time_to_find) + '</b><br/>';
+                            }
+                            if (b.expected_time) {
+                                s += 'Expected: <b>' + format_dt(b.expected_time) + '</b><br/>';
+                            }
+                            s += 'Status: <b style="color:' + (b.status === 'confirmed' ? '#00ff88' : '#ffc107') + '">' + (b.status || 'unknown') + '</b>';
+                            return s;
+                        }
+                        
+                        // Handle regular points (hashrate, doa, luck trend)
+                        if (!this.points) return false;
+                        
                         var s = '<b>' + Highcharts.dateFormat('%b %e, %H:%M:%S', this.x) + '</b>';
                         var goodVal = 0, doaVal = 0;
                         this.points.forEach(function(point) {
+                            if (point.series.name === 'Blocks') return; // Skip blocks in shared tooltip
                             if (point.series.name === 'Hashrate') goodVal = point.y;
                             if (point.series.name === 'Dead on arrival') doaVal = point.y;
                             if (point.series.name === 'Luck Trend') {
@@ -1853,18 +1878,44 @@
                 tooltip: {
                     shared: true,
                     backgroundColor: 'rgba(22, 22, 42, 0.95)',
-                    borderColor: '#008de4',
-                    style: { color: '#e0e0e0', fontSize: '12px' },
+                    borderColor: '#3a3a5a',
+                    style: { color: '#e0e0e0', fontSize: '13px' },
                     formatter: function() {
+                        // Handle scatter points (blocks) separately
+                        if (this.point && this.point.block) {
+                            var b = this.point.block;
+                            var s = '<b>' + Highcharts.dateFormat('%b %e, %H:%M:%S', this.x) + '</b><br/>';
+                            s += '<span style="color:#00ff88">◆</span> <b>Block Found!</b><br/>';
+                            s += 'Height: <b>' + (b.number || '?') + '</b><br/>';
+                            if (b.luck) {
+                                var luckColor = b.luck >= 100 ? '#00ff88' : (b.luck >= 75 ? '#ffc107' : '#ff6b6b');
+                                s += 'Luck: <b style="color:' + luckColor + '">' + d3.format('.0f')(b.luck) + '%</b><br/>';
+                            } else if (b.luck_method === 'first_block') {
+                                s += 'Luck: <b style="color:#888">1st block</b><br/>';
+                            }
+                            if (b.time_to_find) {
+                                s += 'Found in: <b>' + format_dt(b.time_to_find) + '</b><br/>';
+                            }
+                            if (b.expected_time) {
+                                s += 'Expected: <b>' + format_dt(b.expected_time) + '</b><br/>';
+                            }
+                            s += 'Status: <b style="color:' + (b.status === 'confirmed' ? '#00ff88' : '#ffc107') + '">' + (b.status || 'unknown') + '</b>';
+                            return s;
+                        }
+                        
+                        // Handle regular points
+                        if (!this.points) return false;
+                        
                         var s = '<b>' + Highcharts.dateFormat('%b %e, %H:%M:%S', this.x) + '</b>';
                         var goodVal = 0, doaVal = 0;
                         this.points.forEach(function(point) {
+                            if (point.series.name === 'Blocks') return;
                             if (point.series.name === 'Hashrate') goodVal = point.y;
                             if (point.series.name === 'Dead on arrival') doaVal = point.y;
                             if (point.series.name === 'Luck Trend') {
                                 s += '<br/><span style="color:' + point.color + '">●</span> ' + 
-                                     point.series.name + ': <b>' + point.y.toFixed(1) + '%</b>';
-                            } else if (point.series.name !== 'Blocks') {
+                                     point.series.name + ': <b>' + d3.format('.0f')(point.y) + '%</b>';
+                            } else {
                                 s += '<br/><span style="color:' + point.color + '">●</span> ' + 
                                      point.series.name + ': <b>' + format_hashrate(point.y) + '</b>';
                             }
@@ -1873,6 +1924,9 @@
                             var percent = ((doaVal / (goodVal + doaVal)) * 100).toFixed(2);
                             s += '<br/><span style="color:#8888a0">DOA Rate: ' + percent + '%</span>';
                         }
+                        return s;
+                    }
+                },
                         return s;
                     }
                 },
