@@ -853,8 +853,8 @@
                     <div class="graph-header">
                         <h2>📈 Pool Hashrate</h2>
                         <div class="time-selector">
-                            <button class="time-btn active" data-period="hour" onclick="selectGraphPeriod('hour')">1H</button>
-                            <button class="time-btn" data-period="day" onclick="selectGraphPeriod('day')">1D</button>
+                            <button class="time-btn" data-period="hour" onclick="selectGraphPeriod('hour')">1H</button>
+                            <button class="time-btn active" data-period="day" onclick="selectGraphPeriod('day')">1D</button>
                             <button class="time-btn" data-period="week" onclick="selectGraphPeriod('week')">1W</button>
                             <button class="time-btn" data-period="month" onclick="selectGraphPeriod('month')">1M</button>
                             <button class="time-btn" data-period="year" onclick="selectGraphPeriod('year')">1Y</button>
@@ -884,7 +884,7 @@
                 <span class="fullscreen-title">📊 Pool Hashrate</span>
                 <div class="fullscreen-controls">
                     <button class="time-btn" data-period="hour" onclick="selectGraphPeriod('hour')">1H</button>
-                    <button class="time-btn" data-period="day" onclick="selectGraphPeriod('day')">1D</button>
+                    <button class="time-btn active" data-period="day" onclick="selectGraphPeriod('day')">1D</button>
                     <button class="time-btn" data-period="week" onclick="selectGraphPeriod('week')">1W</button>
                     <button class="time-btn" data-period="month" onclick="selectGraphPeriod('month')">1M</button>
                     <button class="time-btn" data-period="year" onclick="selectGraphPeriod('year')">1Y</button>
@@ -1273,7 +1273,7 @@
         // =============================================
         // Hashrate Graph
         // =============================================
-        var currentGraphPeriod = 'hour';
+        var currentGraphPeriod = 'day';
         var graphData = [];
         var graphBlocks = [];
         var isFullscreen = false;
