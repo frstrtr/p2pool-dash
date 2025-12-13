@@ -1721,23 +1721,28 @@
                 doaValues.push(doaVal);
             });
             
-            // Process blocks and build luck trend data (from ALL blocks, not filtered)
+            // Process blocks - show all blocks, not just those in exact time range
             var blockMarkers = [];
             var luckTrendData = [];
+            var validLucks = [];
             
-            // First pass: get all blocks with luck data for trend line
-            blocks.forEach(function(b) {
+            // Sort blocks by timestamp
+            var sortedBlocks = blocks.slice().sort(function(a, b) { return a.ts - b.ts; });
+            
+            sortedBlocks.forEach(function(b) {
                 var blockTime = b.ts * 1000;
-                if (b.luck && b.luck > 0) {
+                
+                // For luck trend, collect all blocks with luck data
+                if (b.luck) {
                     luckTrendData.push([blockTime, b.luck]);
+                    validLucks.push(b.luck);
                 }
-            });
-            luckTrendData.sort(function(a, b) { return a[0] - b[0]; });
-            
-            // Second pass: get blocks in time range for markers
-            blocks.forEach(function(b) {
-                var blockTime = b.ts * 1000;
-                if (blockTime >= minTime && blockTime <= maxTime) {
+                
+                // For block markers, show if within extended range (10% margin)
+                var timeRange = maxTime - minTime;
+                var margin = timeRange * 0.1;
+                if (blockTime >= (minTime - margin) && blockTime <= (maxTime + margin)) {
+                    // Find closest hashrate value for y position
                     var closestIdx = 0;
                     var closestDiff = Math.abs(data[0][0] * 1000 - blockTime);
                     for (var i = 1; i < data.length; i++) {
@@ -1748,7 +1753,16 @@
                         }
                     }
                     var yVal = (data[closestIdx][1] && data[closestIdx][1].good) ? data[closestIdx][1].good : 0;
-                    blockMarkers.push({ x: blockTime, y: yVal, block: b });
+                    // Use a minimum y value so block is visible even if hashrate is 0
+                    if (yVal === 0 && values.length > 0) {
+                        yVal = Math.max.apply(null, values) * 0.1 || 1000000000;
+                    }
+                    
+                    blockMarkers.push({
+                        x: blockTime,
+                        y: yVal,
+                        block: b
+                    });
                 }
             });
             
@@ -1772,7 +1786,7 @@
                     backgroundColor: 'transparent',
                     style: { fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif' },
                     marginTop: 20,
-                    marginRight: 20,
+                    marginRight: 60,
                     marginBottom: 60,
                     marginLeft: 80,
                     panning: { enabled: true, type: 'x' },
@@ -1802,18 +1816,24 @@
                     opposite: false
                 }, {
                     // Second Y-axis for luck percentage
-                    id: 'luck-axis',
-                    title: { text: 'Luck', style: { color: '#ffa500' } },
+                    title: { text: null },
                     min: 0,
-                    max: 200,
-                    lineColor: '#ffa500',
-                    tickColor: '#ffa500',
+                    max: 300,
+                    lineColor: '#ffc107',
+                    tickColor: '#ffc107',
                     labels: {
-                        style: { color: '#ffa500', fontSize: '11px' },
+                        style: { color: '#ffc107', fontSize: '11px' },
                         formatter: function() { return this.value + '%'; }
                     },
                     gridLineWidth: 0,
-                    opposite: true
+                    opposite: true,
+                    plotLines: [{
+                        value: 100,
+                        color: '#ffc107',
+                        dashStyle: 'dot',
+                        width: 1,
+                        zIndex: 3
+                    }]
                 }],
                 tooltip: {
                     shared: true,
@@ -1881,13 +1901,15 @@
                     name: 'Hashrate',
                     data: hashrate,
                     color: '#008de4',
-                    visible: seriesVisibility.good
+                    visible: seriesVisibility.good,
+                    yAxis: 0
                 }, {
                     type: 'spline',
                     name: 'Dead on arrival',
                     data: doarate,
                     color: '#ff6b6b',
-                    visible: seriesVisibility.doa
+                    visible: seriesVisibility.doa,
+                    yAxis: 0
                 }, {
                     type: 'scatter',
                     name: 'Blocks',
@@ -1905,6 +1927,7 @@
                     }),
                     color: '#00ff88',
                     visible: seriesVisibility.blocks,
+                    yAxis: 0,
                     tooltip: {
                         pointFormatter: function() {
                             var b = this.block;
@@ -1930,12 +1953,16 @@
                     type: 'spline',
                     name: 'Luck Trend',
                     data: luckTrendData,
-                    yAxis: 1,
-                    color: '#ffa500',
+                    color: '#ffc107',
                     lineWidth: 2,
                     dashStyle: 'ShortDash',
+                    marker: {
+                        enabled: true,
+                        radius: 4,
+                        fillColor: '#ffc107'
+                    },
                     visible: seriesVisibility.lucktrend,
-                    marker: { enabled: true, radius: 4, symbol: 'circle' }
+                    yAxis: 1
                 }]
             });
         }
