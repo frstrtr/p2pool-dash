@@ -1484,6 +1484,18 @@
                         yVal = Math.max.apply(null, values) * 0.1 || 1000000000;
                     }
                     
+                    // Position block higher based on difficulty ratio to make it easier to hover
+                    // Higher actual difficulty = block floats higher above hashrate line
+                    if (b.actual_hash_difficulty && b.network_difficulty && b.network_difficulty > 0) {
+                        var diffRatio = b.actual_hash_difficulty / b.network_difficulty;
+                        // Scale ratio: 1.0 = same level, 2.0 = 50% higher, etc.
+                        var heightMultiplier = 1.0 + (diffRatio - 1.0) * 0.3;
+                        yVal = yVal * heightMultiplier;
+                    } else {
+                        // Default: float 20% above hashrate line
+                        yVal = yVal * 1.2;
+                    }
+                    
                     blockMarkers.push({
                         x: blockTime,
                         y: yVal,
@@ -1838,6 +1850,18 @@
                     // Use a minimum y value so block is visible even if hashrate is 0
                     if (yVal === 0 && values.length > 0) {
                         yVal = Math.max.apply(null, values) * 0.1 || 1000000000;
+                    }
+                    
+                    // Position block higher based on difficulty ratio to make it easier to hover
+                    // Higher actual difficulty = block floats higher above hashrate line
+                    if (b.actual_hash_difficulty && b.network_difficulty && b.network_difficulty > 0) {
+                        var diffRatio = b.actual_hash_difficulty / b.network_difficulty;
+                        // Scale ratio: 1.0 = same level, 2.0 = 50% higher, etc.
+                        var heightMultiplier = 1.0 + (diffRatio - 1.0) * 0.3;
+                        yVal = yVal * heightMultiplier;
+                    } else {
+                        // Default: float 20% above hashrate line
+                        yVal = yVal * 1.2;
                     }
                     
                     blockMarkers.push({
