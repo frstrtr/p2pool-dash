@@ -510,6 +510,16 @@ class OkayTracker(forest.Tracker):
             raise AssertionError()
         try:
             share.check(self)
+        except ValueError as e:
+            error_msg = str(e)
+            # Suppress full traceback for expected protocol incompatibility errors
+            if 'gentx doesn\'t match' in error_msg or 'Invalid payee' in error_msg:
+                # This is likely an old protocol share - log briefly without full traceback
+                peer_info = (' from %s:%d' % share.peer_addr) if share.peer_addr else ''
+                print 'Rejected incompatible share %064x%s (protocol mismatch)' % (share.hash, peer_info)
+            else:
+                log.err(None, 'Share check failed: %064x -> %064x: %s' % (share.hash, share.previous_hash if share.previous_hash is not None else 0, error_msg))
+            return False
         except:
             log.err(None, 'Share check failed: %064x -> %064x' % (share.hash, share.previous_hash if share.previous_hash is not None else 0))
             return False
