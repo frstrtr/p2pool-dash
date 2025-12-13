@@ -793,6 +793,14 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                     # Check block status
                     status = yield get_block_status(block_hash)
                     
+                    # Calculate actual hash difficulty (based on the hash value itself)
+                    # This represents the real work done to find this specific hash
+                    hash_int = int(block_hash, 16)
+                    # Calculate difficulty as: difficulty = max_target / hash_value
+                    # max_target for Bitcoin/Dash is 2^224 - 1 (difficulty 1)
+                    max_target = 0x00000000FFFF0000000000000000000000000000000000000000000000000000
+                    actual_hash_difficulty = float(max_target) / float(hash_int) if hash_int > 0 else 0
+                    
                     blocks.append(dict(
                         ts=s.timestamp,
                         hash=block_hash,
@@ -800,6 +808,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                         share='%064x' % s.hash,
                         explorer_url=node.net.PARENT.BLOCK_EXPLORER_URL_PREFIX + block_hash,
                         status=status,
+                        actual_hash_difficulty=actual_hash_difficulty,
                     ))
         except Exception as e:
             log.err(e, 'Error getting recent blocks:')
