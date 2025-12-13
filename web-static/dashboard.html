@@ -1289,7 +1289,13 @@
                     })
                     .attr('target', '_blank')
                     .attr('class', 'hash-link')
-                    .text(function(p) { return p.address; });
+                    .text(function(p) { 
+                        // Display format: IP:WORKER_PORT (P2P:P2P_PORT)
+                        var parts = p.address.split(':');
+                        var host = parts[0];
+                        var p2p_port = parts[1];
+                        return host + ':' + p.web_port + ' (P2P:' + p2p_port + ')';
+                    });
                 tr.append('td').text(function(p) { return p.version || '-'; });
                 tr.append('td')
                     .html(function(p) { 
