@@ -667,9 +667,10 @@
         }
         
         .graph-container.compact {
-            height: 220px;
+            height: calc(35vh - 100px);
             flex: 1;
             min-height: 200px;
+            max-height: 400px;
         }
         
         .graph-stats.compact {
@@ -1523,7 +1524,7 @@
             
             // Create Highcharts chart (regular chart for better pan support)
             var isCompact = container.classList.contains('compact');
-            var chartHeight = isCompact ? 220 : 300;
+            var chartHeight = isCompact ? null : 300;
             
             hashrateChart = Highcharts.chart('hashrate-graph', {
                 chart: {
