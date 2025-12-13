@@ -807,9 +807,9 @@
                 </div>
                 
                 <div class="stat-card">
-                    <h3><span class="icon">💰</span> Block Value</h3>
+                    <h3><span class="icon">💰</span> Miners Block Value</h3>
                     <div class="stat-value warning"><span id="block_value_miner">-</span> <small class="symbol-small">DASH</small></div>
-                    <div class="stat-sub">Total: <span id="block_value">-</span> (MN/Treas: <span id="block_value_payments">-</span>)</div>
+                    <div class="stat-sub">Total: <span id="block_value">-</span> (Master Node/Treasury: <span id="block_value_payments">-</span>)</div>
                     <div class="stat-detail">Expected Block: <span id="time_to_block">-</span></div>
                 </div>
                 
@@ -947,6 +947,28 @@
             </div>
         </div>
         
+        <!-- Peer Nodes Table -->
+        <div class="table-section">
+            <div class="section-header">
+                <h2>🌐 Peer Nodes</h2>
+            </div>
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Address</th>
+                            <th>Version</th>
+                            <th>Direction</th>
+                            <th>TxPool</th>
+                        </tr>
+                    </thead>
+                    <tbody id="peers_tbody">
+                    </tbody>
+                </table>
+                <div class="loading" id="peers_loading">Loading peers...</div>
+            </div>
+        </div>
+        
         <!-- Share Explorer -->
         <div class="shares-section">
             <div class="section-header">
@@ -1027,6 +1049,7 @@
             loadStats();
             loadBlocks();
             loadPayouts();
+            loadPeers();
             loadShares();
         });
         
@@ -1238,6 +1261,38 @@
                         .style('color', 'var(--text-muted)')
                         .text('+ ' + (arr.length - 20) + ' more addresses');
                 }
+            });
+        }
+        
+        function loadPeers() {
+            d3.json('../peer_list', function(peers) {
+                d3.select('#peers_loading').style('display', 'none');
+                d3.select('#peers_tbody').selectAll('tr').remove();
+                
+                if (!peers || peers.length === 0) {
+                    var tr = d3.select('#peers_tbody').append('tr');
+                    tr.append('td')
+                        .attr('colspan', '4')
+                        .style('text-align', 'center')
+                        .style('color', 'var(--text-muted)')
+                        .text('No peers connected');
+                    return;
+                }
+                
+                var tr = d3.select('#peers_tbody').selectAll('tr').data(peers).enter().append('tr');
+                tr.append('td').append('a')
+                    .attr('href', function(p) { return 'http://' + p.address; })
+                    .attr('target', '_blank')
+                    .attr('class', 'hash-link')
+                    .text(function(p) { return p.address; });
+                tr.append('td').text(function(p) { return p.version || '-'; });
+                tr.append('td')
+                    .html(function(p) { 
+                        return p.incoming ? 
+                            '<span style="color: var(--success)">⬇ Incoming</span>' : 
+                            '<span style="color: var(--info)">⬆ Outgoing</span>'; 
+                    });
+                tr.append('td').text(function(p) { return p.txpool_size || '0'; });
             });
         }
         
@@ -2161,6 +2216,7 @@
                     loadStats();
                     loadBlocks();
                     loadPayouts();
+                    loadPeers();
                     loadShares();
                     loadHashrateGraph();
                     document.getElementById('last-update').textContent = 'Last update: ' + new Date().toLocaleTimeString();
@@ -2174,6 +2230,7 @@
             loadStats();
             loadBlocks();
             loadPayouts();
+            loadPeers();
             loadShares();
             loadHashrateGraph();
             document.getElementById('last-update').textContent = 'Last update: ' + new Date().toLocaleTimeString();

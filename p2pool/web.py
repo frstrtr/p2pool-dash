@@ -471,6 +471,14 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         ])
     ))))
     web_root.putChild('peer_versions', WebInterface(lambda: dict(('%s:%i' % peer.addr, peer.other_sub_version) for peer in node.p2p_node.peers.itervalues())))
+    web_root.putChild('peer_list', WebInterface(lambda: [
+        dict(
+            address='%s:%i' % (peer.transport.getPeer().host, peer.transport.getPeer().port),
+            version=peer.other_sub_version,
+            incoming=peer.incoming,
+            txpool_size=peer.remembered_txs_size
+        ) for peer in node.p2p_node.peers.itervalues()
+    ]))
     web_root.putChild('payout_addr', WebInterface(lambda: getattr(wb, 'address', None)))
     web_root.putChild('payout_addrs', WebInterface(
         lambda: [bitcoin_data.pubkey_hash_to_address(pubkey_hash, node.net.PARENT) for pubkey_hash in wb.pubkeys.keys]))
