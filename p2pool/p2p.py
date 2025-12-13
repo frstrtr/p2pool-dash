@@ -153,8 +153,29 @@ class Protocol(p2protocol.Protocol):
         self.other_services = services
         
         if nonce == self.node.nonce:
-            # This is a connection to ourselves (e.g., via second ISP line)
-            # Just disconnect without banning - this is not malicious
+            # Could be self-connection via second ISP, or an attacker spoofing our nonce
+            # Rate-limit: allow occasional self-connects, but ban if too frequent
+            peer_ip = self.transport.getPeer().host
+            now = time.time()
+            
+            # Clean up old attempts (older than 10 minutes)
+            if peer_ip in self.node.self_nonce_attempts:
+                count, first_time = self.node.self_nonce_attempts[peer_ip]
+                if now - first_time > 600:  # Reset after 10 minutes
+                    del self.node.self_nonce_attempts[peer_ip]
+            
+            # Track this attempt
+            if peer_ip in self.node.self_nonce_attempts:
+                count, first_time = self.node.self_nonce_attempts[peer_ip]
+                self.node.self_nonce_attempts[peer_ip] = (count + 1, first_time)
+                if count >= 3:  # More than 3 attempts in 10 minutes = suspicious
+                    print 'Peer %s:%i sent our nonce %d times - possible attack, banning for 5 minutes' % (self.addr[0], self.addr[1], count + 1)
+                    self.node.bans[peer_ip] = now + 300  # 5 minute ban
+                    self.disconnect()
+                    return
+            else:
+                self.node.self_nonce_attempts[peer_ip] = (1, now)
+            
             if p2pool.DEBUG:
                 print 'Detected self-connection (our nonce), disconnecting from %s:%i' % self.addr
             self.disconnect()
@@ -664,6 +685,7 @@ class Node(object):
         self.nonce = random.randrange(2**64)
         self.peers = {}
         self.bans = {} # address -> end_time
+        self.self_nonce_attempts = {} # address -> (count, first_attempt_time)
         self.clientfactory = ClientFactory(self, desired_outgoing_conns, max_outgoing_attempts)
         self.serverfactory = ServerFactory(self, max_incoming_conns)
         self.running = False
