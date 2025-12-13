@@ -2,7 +2,60 @@
 
 This document summarizes the fixes made to support high-hashrate ASIC miners (particularly Antminer D9 with ~1.7 TH/s each, ~10 TH/s total for 6 miners).
 
+**Release v1.1.0** - Dash Platform support + Protocol v1700 (December 13, 2025)
 **Release v1.0.0** - First stable release with full ASIC support (December 11, 2025)
+
+## v1.1.0 - Dash Platform Payment Support (December 13, 2025)
+
+### Protocol v1700: Script-Only Payment Encoding
+
+**Critical fix for Dash mainnet blocks with platform credit pool payments**
+
+**Files:** `p2pool/dash/helper.py`, `p2pool/data.py`, `p2pool/p2p.py`, `p2pool/networks/*.py`
+
+- **Problem:** Dash platform introduces credit pool OP_RETURN payments with empty `payee` field. The `packed_payments` serialization format only transmits `payee` and `amount`, causing the script to be lost when shares are transmitted between nodes. This resulted in "gentx mismatch" errors and inability to mine valid blocks.
+
+- **Solution:** Encode script-only payments with `!<hex>` prefix in the `payee` field:
+  - Regular masternode: `"XvTXYLoB6..."` → decoded as Dash address
+  - Platform OP_RETURN: `"!6a"` → decoded as raw hex script `\x6a`
+  - Uses `!` prefix (1 byte) which is not in base58 alphabet
+  - Saves 6 bytes vs original `"script:"` prefix (7 bytes)
+
+- **Protocol Version:** Bumped from 1600 → 1700
+  - Nodes reject peers with version < 1700
+  - Added `MINIMUM_PROTOCOL_VERSION` to network configs
+  - Incompatible with old nodes (they can't decode `!` prefix)
+
+- **Payment Types Supported:**
+  - ✅ Regular masternode payments (address-based)
+  - ✅ Platform/credit pool payments (script-only OP_RETURN)
+  - ✅ Superblock/treasury payments (every 16616 blocks)
+  - ✅ DIP3/DIP4 coinbase payloads
+
+**Result:** First mainnet block mined successfully at height 2387691 with correct platform payments! 🎉
+
+```python
+# Example getblocktemplate masternode payments:
+"masternode": [
+  {
+    "payee": "",                              # Empty for platform
+    "script": "6a",                           # OP_RETURN
+    "amount": 49787579                        # Platform credit pool
+  },
+  {
+    "payee": "XvTXYLoB6MkyVBkZ2UPntVhfy337QCq9xW",
+    "script": "76a914d8ddd6d187c74c22bc770b3d07d7d087feaace2d88ac",
+    "amount": 82979299                        # Regular masternode
+  }
+]
+```
+
+### Strict Peer Validation (jtoomim-style)
+
+- Reverted to strict peer banning for all validation failures
+- Removed soft pass for gentx mismatch (no longer needed with proper encoding)
+- All invalid shares result in peer penalization
+- Cleaner `attempt_verify()` returns simple bool instead of tuple
 
 ## Summary of Changes
 
