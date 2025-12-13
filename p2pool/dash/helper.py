@@ -35,6 +35,9 @@ def getwork(dashd, net, use_getblocktemplate=True):
     except twisted_error.ConnectionRefusedError:
         print >>sys.stderr, '    dashd connection refused - is dashd running?'
         raise deferral.RetrySilentlyException()
+    except jsonrpc.Error_for_code(-10): # Initial sync
+        print >>sys.stderr, '    Dash Core is in initial sync, waiting for blocks...'
+        raise deferral.RetrySilentlyException()
     except jsonrpc.Error_for_code(-32601): # Method not found
         use_getblocktemplate = not use_getblocktemplate
         try:
@@ -44,6 +47,14 @@ def getwork(dashd, net, use_getblocktemplate=True):
         except jsonrpc.Error_for_code(-32601): # Method not found
             print >>sys.stderr, 'Error: dash version too old! Upgrade to v20.0.0 or newer!'
             raise deferral.RetrySilentlyException()
+    except jsonrpc.Error, e:
+        # Catch any other JSON-RPC errors and handle them gracefully
+        try:
+            error_msg = str(e)
+        except:
+            error_msg = 'JSON-RPC error (code: %s)' % getattr(e, 'code', 'unknown')
+        print >>sys.stderr, '    dashd RPC error: %s' % error_msg
+        raise deferral.RetrySilentlyException()
 
     # Include ALL transactions from getblocktemplate
     # Per BIP 22, transactions are already ordered with dependencies before dependents
@@ -191,10 +202,10 @@ def submit_block_rpc(block, ignore_failure, dashd, dashd_work, net):
     print 'BLOCK SUBMISSION RESULT (RPC):'
     if p2p_won_race:
         print '  *** P2P WON THE RACE! Block already propagated via P2P network ***'
-        print '  RPC result: %r (this is expected when P2P submits first)' % result
+        print '  RPC result: %s (this is expected when P2P submits first)' % str(result)
         print '  SUCCESS: Block was accepted!'
     else:
-        print '  RPC accepted: %s (result: %r)' % (success, result)
+        print '  RPC accepted: %s (result: %s)' % (success, str(result))
     print '  Expected success: %s' % success_expected
     
     if (not success and success_expected and not ignore_failure) or (success and not success_expected):

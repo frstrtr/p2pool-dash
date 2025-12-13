@@ -338,7 +338,7 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
         print 'Listening for workers on %r port %i...' % (worker_endpoint[0], worker_endpoint[1])
         
         wb = work.WorkerBridge(node, my_pubkey_hash, args.donation_percentage, merged_urls, args.worker_fee, args, pubkeys, dashd)
-        web_root, record_block_found = web.get_web_root(wb, datadir_path, dashd_getnetworkinfo_var, static_dir=args.web_static)
+        web_root, record_block_found, get_last_block_info = web.get_web_root(wb, datadir_path, dashd_getnetworkinfo_var, static_dir=args.web_static)
         caching_wb = worker_interface.CachingWorkerBridge(wb)
         worker_interface.WorkerInterface(caching_wb).attach_to(web_root, get_handler=lambda request: request.redirect('/static/'))
         web_serverfactory = server.Site(web_root)
@@ -369,11 +369,12 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
                 miner_address = dash_data.script2_to_address(share.new_script, net.PARENT)
                 explorer_url = net.PARENT.BLOCK_EXPLORER_URL_PREFIX + block_hash
                 
-                # Record block for luck calculation
-                record_block_found(block_hash, block_height, share_hash, miner_address, share.timestamp)
+                # Get previous block info for luck calculation BEFORE recording this block
+                prev_block = get_last_block_info()
                 
-                # Get pool hashrate for Telegram message
+                # Get pool hashrate and network difficulty
                 pool_hashrate = None
+                network_diff = None
                 try:
                     height = node.tracker.get_height(node.best_share_var.value)
                     if height >= 2:
@@ -384,8 +385,50 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
                             stale_prop = p2pool_data.get_average_stale_prop(
                                 node.tracker, node.best_share_var.value, lookbehind)
                             pool_hashrate = raw_hashrate / (1 - stale_prop) if stale_prop < 1 else raw_hashrate
+                    # Get network difficulty
+                    if node.dashd_work.value and 'bits' in node.dashd_work.value:
+                        network_diff = dash_data.target_to_difficulty(node.dashd_work.value['bits'].target)
                 except Exception:
                     pass
+                
+                # Record block for luck calculation
+                record_block_found(block_hash, block_height, share_hash, miner_address, share.timestamp)
+                
+                # Calculate and log luck
+                luck_str = ''
+                if prev_block and pool_hashrate and network_diff:
+                    try:
+                        actual_time = share.timestamp - prev_block['ts']
+                        if actual_time > 0:
+                            # Use average of previous and current hashrate if available
+                            prev_hashrate = prev_block.get('pool_hashrate')
+                            if prev_hashrate:
+                                avg_hashrate = (prev_hashrate + pool_hashrate) / 2
+                            else:
+                                avg_hashrate = pool_hashrate
+                            
+                            expected_time = (network_diff * 2**32) / avg_hashrate
+                            luck = (expected_time / actual_time) * 100
+                            
+                            luck_str = ' Luck: %.1f%% (found in %s, expected %s)' % (
+                                luck,
+                                math.format_dt(actual_time),
+                                math.format_dt(expected_time)
+                            )
+                    except Exception as e:
+                        if p2pool.DEBUG:
+                            print 'Error calculating luck: %s' % str(e)
+                elif pool_hashrate and network_diff:
+                    # First block or no previous block data - just show expected time
+                    try:
+                        expected_time = (network_diff * 2**32) / pool_hashrate
+                        luck_str = ' (expected time to block: %s)' % math.format_dt(expected_time)
+                    except Exception:
+                        pass
+                
+                # Print luck info
+                if luck_str:
+                    print 'BLOCK LUCK:%s' % luck_str
                 
                 # Send Telegram notification (don't block on this)
                 if telegram_notifier is not None and telegram_notifier.is_configured():
@@ -490,9 +533,15 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
                     datums, dt = wb.local_rate_monitor.get_datums_in_last()
                     my_att_s = sum(datum['work']/dt for datum in datums)
                     my_shares_per_s = sum(datum['work']/dt/dash_data.target_to_average_attempts(datum['share_target']) for datum in datums)
-                    this_str += '\n Local: %sH/s in last %s Local dead on arrival: %s Expected time to share: %s' % (
+                    
+                    # Get worker/miner info
+                    miner_hash_rates, miner_dead_hash_rates = wb.get_local_rates()
+                    num_workers = len(miner_hash_rates)
+                    
+                    this_str += '\n Local: %sH/s in last %s Workers: %i Local dead on arrival: %s Expected time to share: %s' % (
                         math.format(int(my_att_s)),
                         math.format_dt(dt),
+                        num_workers,
                         math.format_binomial_conf(sum(1 for datum in datums if datum['dead']), len(datums), 0.95),
                         math.format_dt(1/my_shares_per_s) if my_shares_per_s else '???',
                     )

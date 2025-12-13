@@ -421,39 +421,50 @@
             .two-col { grid-template-columns: 1fr; }
         }
         
-        /* New Main Layout: 1/4 + 3/4 columns */
+        /* New Main Layout: 4 columns with graph spanning 2x3 */
         .main-layout {
             display: grid;
-            grid-template-columns: 1fr 3fr;
-            gap: 20px;
-            margin-bottom: 30px;
+            grid-template-columns: repeat(4, 1fr);
+            grid-auto-rows: 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
         }
         
         .left-column {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
+            display: contents;
         }
         
         .right-column {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
+            display: contents;
         }
         
         .right-column .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 15px;
-            margin-bottom: 0;
+            display: contents;
         }
         
-        @media (max-width: 900px) {
+        .right-column .graph-section {
+            grid-column: 2 / 5;
+            grid-row: 2 / 4;
+        }
+        
+        @media (max-width: 1200px) {
+            .main-layout {
+                grid-template-columns: repeat(2, 1fr);
+                grid-auto-rows: auto;
+            }
+            .right-column .graph-section {
+                grid-column: 1 / -1;
+                grid-row: auto;
+            }
+        }
+        
+        @media (max-width: 768px) {
             .main-layout {
                 grid-template-columns: 1fr;
             }
-            .right-column .stats-grid {
-                grid-template-columns: 1fr;
+            .right-column .graph-section {
+                grid-column: 1;
+                grid-row: auto;
             }
         }
         
@@ -667,9 +678,7 @@
         }
         
         .graph-container.compact {
-            height: 220px;
-            flex: 1;
-            min-height: 200px;
+            height: 260px;
         }
         
         .graph-stats.compact {
@@ -740,7 +749,8 @@
         
         .graph-fullscreen-overlay .fullscreen-graph {
             flex: 1;
-            min-height: 0;
+            min-height: 400px;
+            height: calc(100vh - 200px);
         }
         
         .graph-fullscreen-overlay .fullscreen-controls {
@@ -796,29 +806,15 @@
         <div class="last-update" id="last-update">Last update: loading...</div>
         <div class="warnings" id="warnings"></div>
         
-        <!-- New Layout: Left Column (1/4) + Right Column (3/4) -->
+        <!-- New Layout: 4 columns grid -->
         <div class="main-layout">
-            <!-- Left Column: Pool Hash Rate, Block Value, Your Payout -->
+            <!-- First Row: Pool Hash Rate, Local Hash Rate, Shares, Network -->
             <div class="left-column">
                 <div class="stat-card">
                     <h3><span class="icon">🌐</span> Pool Hash Rate</h3>
                     <div class="stat-value primary" id="pool_rate">-</div>
                     <div class="stat-sub">DOA+Orphan: <span id="pool_stale">-</span></div>
                     <div class="stat-detail">Share Difficulty: <span id="difficulty">-</span></div>
-                </div>
-                
-                <div class="stat-card">
-                    <h3><span class="icon">💰</span> Block Value</h3>
-                    <div class="stat-value warning"><span id="block_value_miner">-</span> <small class="symbol-small">DASH</small></div>
-                    <div class="stat-sub">Total: <span id="block_value">-</span> (MN/Treas: <span id="block_value_payments">-</span>)</div>
-                    <div class="stat-detail">Expected Block: <span id="time_to_block">-</span></div>
-                </div>
-                
-                <div class="stat-card">
-                    <h3><span class="icon">💎</span> Your Payout</h3>
-                    <div class="stat-value success"><span id="payout_totamount">-</span> <small class="symbol-small">DASH</small></div>
-                    <div class="stat-sub">If block found now</div>
-                    <div class="stat-detail">Expected 24h: <span id="expected_payout_amount">-</span> <span class="symbol-small">DASH</span></div>
                 </div>
             </div>
             
@@ -848,13 +844,28 @@
                     </div>
                 </div>
                 
-                <!-- Pool Hashrate Graph (compact) -->
+                <!-- Second Row: Miners Block Value -->
+                <div class="stat-card">
+                    <h3><span class="icon">💰</span> Miners Block Value</h3>
+                    <div class="stat-value warning"><span id="block_value_miner">-</span> <small class="symbol-small">DASH</small></div>
+                    <div class="stat-sub">Total: <span id="block_value">-</span> (Master Node/Treasury: <span id="block_value_payments">-</span>)</div>
+                    <div class="stat-detail">Expected Block: <span id="time_to_block">-</span></div>
+                </div>
+                
+                <!-- Third Row: Node Owner Payout -->
+                <div class="stat-card">
+                    <h3><span class="icon">💎</span> Node Owner Payout</h3>
+                    <div class="stat-value success"><span id="payout_totamount">-</span> <small class="symbol-small">DASH</small></div>
+                    <div class="stat-sub">If block found now</div>
+                    <div class="stat-detail">Expected 24h: <span id="expected_payout_amount">-</span> <span class="symbol-small">DASH</span></div>
+                </div>
+                
                 <div class="graph-section compact">
                     <div class="graph-header">
                         <h2>📈 Pool Hashrate</h2>
                         <div class="time-selector">
-                            <button class="time-btn active" data-period="hour" onclick="selectGraphPeriod('hour')">1H</button>
-                            <button class="time-btn" data-period="day" onclick="selectGraphPeriod('day')">1D</button>
+                            <button class="time-btn" data-period="hour" onclick="selectGraphPeriod('hour')">1H</button>
+                            <button class="time-btn active" data-period="day" onclick="selectGraphPeriod('day')">1D</button>
                             <button class="time-btn" data-period="week" onclick="selectGraphPeriod('week')">1W</button>
                             <button class="time-btn" data-period="month" onclick="selectGraphPeriod('month')">1M</button>
                             <button class="time-btn" data-period="year" onclick="selectGraphPeriod('year')">1Y</button>
@@ -864,13 +875,16 @@
                     <div class="graph-legend compact">
                         <div class="legend-item" data-series="good" onclick="toggleSeries('good', this)" title="Click to toggle Good hashrate"><span class="legend-color" style="background: #008de4;"></span><span>Good</span></div>
                         <div class="legend-item" data-series="doa" onclick="toggleSeries('doa', this)" title="Click to toggle DOA hashrate"><span class="legend-color" style="background: #ff6b6b;"></span><span>DOA</span></div>
+                        <div class="legend-item" data-series="blocks" onclick="toggleSeries('blocks', this)" title="Click to toggle block markers"><span class="legend-color" style="background: #00ff88;"></span><span>Blocks</span></div>
+                        <div class="legend-item" data-series="miners" onclick="toggleSeries('miners', this)" title="Click to toggle miner count"><span class="legend-color" style="background: #9c27b0;"></span><span>Miners</span></div>
+                        <div class="legend-item" data-series="lucktrend" onclick="toggleSeries('lucktrend', this)" title="Click to toggle luck trend line"><span class="legend-color" style="background: #ffc107;"></span><span>Luck</span></div>
                     </div>
                     <div class="graph-container compact" id="hashrate-graph"></div>
                     <div class="graph-stats compact">
                         <div class="graph-stat"><div class="graph-stat-label">Current</div><div class="graph-stat-value" id="graph-current">-</div></div>
                         <div class="graph-stat"><div class="graph-stat-label">Average</div><div class="graph-stat-value" id="graph-average">-</div></div>
                         <div class="graph-stat"><div class="graph-stat-label">Peak</div><div class="graph-stat-value" id="graph-peak">-</div></div>
-                        <div class="graph-stat"><div class="graph-stat-label">DOA</div><div class="graph-stat-value" id="graph-doa">-</div></div>
+                        <div class="graph-stat"><div class="graph-stat-label">Avg Luck</div><div class="graph-stat-value" id="graph-luck">-</div></div>
                     </div>
                 </div>
             </div>
@@ -882,13 +896,16 @@
                 <span class="fullscreen-title">📊 Pool Hashrate</span>
                 <div class="fullscreen-controls">
                     <button class="time-btn" data-period="hour" onclick="selectGraphPeriod('hour')">1H</button>
-                    <button class="time-btn" data-period="day" onclick="selectGraphPeriod('day')">1D</button>
+                    <button class="time-btn active" data-period="day" onclick="selectGraphPeriod('day')">1D</button>
                     <button class="time-btn" data-period="week" onclick="selectGraphPeriod('week')">1W</button>
                     <button class="time-btn" data-period="month" onclick="selectGraphPeriod('month')">1M</button>
                     <button class="time-btn" data-period="year" onclick="selectGraphPeriod('year')">1Y</button>
-                    <span style="margin-left: 20px; color: var(--text-muted);">|</span>
-                    <div class="legend-item" data-series="good" onclick="toggleSeries('good', this)" title="Click to toggle Good hashrate" style="margin-left: 15px;"><span class="legend-color" style="background: #008de4;"></span><span>Good</span></div>
-                    <div class="legend-item" data-series="doa" onclick="toggleSeries('doa', this)" title="Click to toggle DOA hashrate"><span class="legend-color" style="background: #ff6b6b;"></span><span>DOA</span></div>
+                    <span style="margin: 0 15px; color: var(--text-muted);">|</span>
+                    <div class="legend-item" data-series="good" onclick="toggleSeries('good', this)" title="Click to toggle Good hashrate" style="font-size: 14px; padding: 6px 12px;"><span class="legend-color" style="background: #008de4; width: 14px; height: 14px;"></span><span>Good</span></div>
+                    <div class="legend-item" data-series="doa" onclick="toggleSeries('doa', this)" title="Click to toggle DOA hashrate" style="font-size: 14px; padding: 6px 12px;"><span class="legend-color" style="background: #ff6b6b; width: 14px; height: 14px;"></span><span>DOA</span></div>
+                    <div class="legend-item" data-series="blocks" onclick="toggleSeries('blocks', this)" title="Click to toggle block markers" style="font-size: 14px; padding: 6px 12px;"><span class="legend-color" style="background: #00ff88; width: 14px; height: 14px;"></span><span>Blocks</span></div>
+                    <div class="legend-item" data-series="miners" onclick="toggleSeries('miners', this)" title="Click to toggle miner count" style="font-size: 14px; padding: 6px 12px;"><span class="legend-color" style="background: #9c27b0; width: 14px; height: 14px;"></span><span>Miners</span></div>
+                    <div class="legend-item" data-series="lucktrend" onclick="toggleSeries('lucktrend', this)" title="Click to toggle luck trend line" style="font-size: 14px; padding: 6px 12px;"><span class="legend-color" style="background: #ffc107; width: 14px; height: 14px;"></span><span>Luck</span></div>
                 </div>
                 <button class="fullscreen-close" onclick="toggleGraphFullscreen()">✕ Close</button>
             </div>
@@ -897,17 +914,22 @@
                 <div class="fullscreen-stat"><div class="fullscreen-stat-label">Current</div><div class="fullscreen-stat-value" id="fs-graph-current">-</div></div>
                 <div class="fullscreen-stat"><div class="fullscreen-stat-label">Average</div><div class="fullscreen-stat-value" id="fs-graph-average">-</div></div>
                 <div class="fullscreen-stat"><div class="fullscreen-stat-label">Peak</div><div class="fullscreen-stat-value" id="fs-graph-peak">-</div></div>
-                <div class="fullscreen-stat"><div class="fullscreen-stat-label">DOA</div><div class="fullscreen-stat-value" id="fs-graph-doa">-</div></div>
+                <div class="fullscreen-stat"><div class="fullscreen-stat-label">Avg Luck</div><div class="fullscreen-stat-value" id="fs-graph-luck">-</div></div>
             </div>
         </div>
         
         <div class="two-col">
             <!-- Recent Blocks -->
             <div class="table-container">
-                <div class="section-header">
+                <div class="section-header" style="flex-wrap: wrap;">
                     <h2>🏆 Recent Blocks</h2>
-                    <span class="badge" id="blocks_count">0</span>
-                    <span class="badge" id="pool_luck_badge" style="margin-left: 10px; background: var(--success);">Luck: -</span>
+                    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                        <span class="badge" id="blocks_count">0</span>
+                        <span class="badge" id="pool_luck_badge" style="background: var(--success);">Avg: -</span>
+                        <span class="badge" id="luck_current_round" style="background: var(--primary);" title="Current round luck">Round: -</span>
+                        <span class="badge" id="luck_seven_days" style="background: var(--primary);" title="7-day average luck">7d: -</span>
+                        <span class="badge" id="luck_thirty_days" style="background: var(--primary);" title="30-day average luck">30d: -</span>
+                    </div>
                 </div>
                 <table id="blocks">
                     <thead>
@@ -916,6 +938,8 @@
                             <th>Height</th>
                             <th>Block Hash</th>
                             <th>Luck</th>
+                            <th title="Network difficulty target">Net Diff</th>
+                            <th title="Actual hash difficulty">Hash Diff</th>
                             <th>Status</th>
                         </tr>
                     </thead>
@@ -940,6 +964,30 @@
                     <tbody></tbody>
                 </table>
                 <div class="loading" id="payouts_loading">Loading payouts</div>
+            </div>
+        </div>
+        
+        <!-- Peer Nodes Table -->
+        <div class="table-section">
+            <div class="section-header">
+                <h2>🌐 Peer Nodes</h2>
+            </div>
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Address</th>
+                            <th>Version</th>
+                            <th>Direction</th>
+                            <th>Uptime</th>
+                            <th>Downtime</th>
+                            <th>TxPool</th>
+                        </tr>
+                    </thead>
+                    <tbody id="peers_tbody">
+                    </tbody>
+                </table>
+                <div class="loading" id="peers_loading">Loading peers...</div>
             </div>
         </div>
         
@@ -1009,6 +1057,19 @@
                    pad(d.getHours()) + ':' + pad(d.getMinutes());
         }
         
+        function format_duration(seconds) {
+            if (seconds === 0) return '-';
+            var d = Math.floor(seconds / 86400);
+            var h = Math.floor((seconds % 86400) / 3600);
+            var m = Math.floor((seconds % 3600) / 60);
+            var s = Math.floor(seconds % 60);
+            
+            if (d > 0) return d + 'd ' + h + 'h';
+            if (h > 0) return h + 'h ' + m + 'm';
+            if (m > 0) return m + 'm ' + s + 's';
+            return s + 's';
+        }
+        
         function values(o) { var res = []; for(var x in o) res.push(o[x]); return res; }
         
         var currency_info = {};
@@ -1016,20 +1077,24 @@
         // Load currency info first
         d3.json('../web/currency_info', function(info) {
             currency_info = info || {};
-            d3.selectAll('.symbol-small').text(info.symbol || 'DASH');
-            d3.select('#currency-symbol').text(info.symbol || 'DASH');
+            d3.selectAll('.symbol-small').text((info && info.symbol) || 'DASH');
+            d3.select('#currency-symbol').text((info && info.symbol) || 'DASH');
             
             // Now load everything else
             loadStats();
             loadBlocks();
             loadPayouts();
+            loadPoolLuck();
+            loadPeers();
             loadShares();
         });
         
         // Load version
         d3.json('../web/version', function(version) {
-            d3.select('#version').text(version);
-            d3.select('#footer_version').text('v' + version);
+            if (version) {
+                d3.select('#version').text(version);
+                d3.select('#footer_version').text('v' + version);
+            }
         });
         
         function loadStats() {
@@ -1123,19 +1188,26 @@
                     .attr('class', 'hash-link')
                     .attr('href', function(b) { return currency_info.block_explorer_url_prefix + b.hash; })
                     .attr('target', '_blank')
-                    .text(function(b) { return b.hash.substr(0, 16) + '...' + b.hash.substr(-8); });
+                    .text(function(b) { return '...' + b.hash.substr(-8); });
                 tr.append('td')
                     .attr('class', function(b) {
+                        if (b.luck_method === 'first_block') return 'status-pending';  // First block - no luck calc
                         if (!b.luck) return '';
                         if (b.luck >= 100) return 'status-confirmed';
                         if (b.luck >= 75) return 'status-pending';
                         return 'status-orphaned';
                     })
                     .text(function(b) {
+                        if (b.luck_method === 'first_block') return '1st';  // First block indicator
                         if (!b.luck) return '-';
                         return d3.format('.0f')(b.luck) + '%';
                     })
                     .attr('title', function(b) {
+                        if (b.luck_method === 'first_block') {
+                            var tip = 'First block - no previous block for luck calculation';
+                            if (b.expected_time) tip += '\nExpected time was: ' + format_dt(b.expected_time);
+                            return tip;
+                        }
                         if (!b.time_to_find) return '';
                         var tip = 'Found in ' + format_dt(b.time_to_find);
                         if (b.expected_time) tip += ' (expected: ' + format_dt(b.expected_time) + ')';
@@ -1143,6 +1215,28 @@
                         else if (b.luck_method === 'simple_avg') tip += '\n[Avg of block hashrates]';
                         else if (b.luck_method) tip += '\n[' + b.luck_method + ']';
                         return tip;
+                    });
+                tr.append('td')
+                    .text(function(b) {
+                        if (!b.network_difficulty) return '-';
+                        var hashrate = Math.floor(b.network_difficulty * Math.pow(2, 32) / 150);
+                        return format_hashrate(hashrate);
+                    })
+                    .attr('title', function(b) {
+                        if (!b.network_difficulty) return '';
+                        var pdiff = b.network_difficulty * 65536;
+                        return 'bdiff: ' + d3.format(',.2f')(b.network_difficulty) + '\npdiff: ' + d3.format('.2e')(pdiff);
+                    });
+                tr.append('td')
+                    .text(function(b) {
+                        if (!b.actual_hash_difficulty) return '-';
+                        var hashrate = Math.floor(b.actual_hash_difficulty * Math.pow(2, 32) / 150);
+                        return format_hashrate(hashrate);
+                    })
+                    .attr('title', function(b) {
+                        if (!b.actual_hash_difficulty) return '';
+                        var pdiff = b.actual_hash_difficulty * 65536;
+                        return 'bdiff: ' + d3.format(',.2f')(b.actual_hash_difficulty) + '\npdiff: ' + d3.format('.2e')(pdiff);
                     });
                 tr.append('td')
                     .attr('class', function(b) {
@@ -1158,9 +1252,56 @@
             });
         }
         
+        function loadPoolLuck() {
+            d3.json('../luck_stats', function(luckData) {
+                if (!luckData || !luckData.luck_available) {
+                    return;
+                }
+
+                // Current round luck (current luck trend)
+                if (luckData.current_luck_trend) {
+                    var currentLuck = luckData.current_luck_trend;
+                    d3.select('#luck_current_round')
+                        .text('Round: ' + d3.format('.0f')(currentLuck) + '%')
+                        .style('background', currentLuck >= 100 ? 'var(--success)' : (currentLuck >= 75 ? 'var(--warning)' : 'var(--danger)'));
+                } else {
+                    d3.select('#luck_current_round').text('Round: -').style('background', 'var(--primary)');
+                }
+
+                // Calculate 7-day and 30-day luck from blocks
+                var now = Date.now() / 1000;
+                var sevenDaysAgo = now - (7 * 24 * 60 * 60);
+                var thirtyDaysAgo = now - (30 * 24 * 60 * 60);
+
+                var sevenDayBlocks = luckData.blocks.filter(function(b) { return b.ts >= sevenDaysAgo && b.luck; });
+                var thirtyDayBlocks = luckData.blocks.filter(function(b) { return b.ts >= thirtyDaysAgo && b.luck; });
+
+                if (sevenDayBlocks.length > 0) {
+                    var sevenDayLuck = d3.sum(sevenDayBlocks, function(b) { return b.luck; }) / sevenDayBlocks.length;
+                    d3.select('#luck_seven_days')
+                        .text('7d: ' + d3.format('.0f')(sevenDayLuck) + '%')
+                        .style('background', sevenDayLuck >= 100 ? 'var(--success)' : (sevenDayLuck >= 75 ? 'var(--warning)' : 'var(--danger)'));
+                } else {
+                    d3.select('#luck_seven_days').text('7d: -').style('background', 'var(--primary)');
+                }
+
+                if (thirtyDayBlocks.length > 0) {
+                    var thirtyDayLuck = d3.sum(thirtyDayBlocks, function(b) { return b.luck; }) / thirtyDayBlocks.length;
+                    d3.select('#luck_thirty_days')
+                        .text('30d: ' + d3.format('.0f')(thirtyDayLuck) + '%')
+                        .style('background', thirtyDayLuck >= 100 ? 'var(--success)' : (thirtyDayLuck >= 75 ? 'var(--warning)' : 'var(--danger)'));
+                } else {
+                    d3.select('#luck_thirty_days').text('30d: -').style('background', 'var(--primary)');
+                }
+            });
+        }
+
         function loadPayouts() {
             d3.json('../current_payouts', function(pays) {
                 d3.select('#payouts_loading').style('display', 'none');
+                // Clear existing rows before adding new data
+                d3.select('#payouts tbody').selectAll('tr').remove();
+                
                 if (!pays) return;
                 
                 var arr = [];
@@ -1188,7 +1329,7 @@
                     .attr('class', 'hash-link')
                     .attr('href', function(addr) { return currency_info.address_explorer_url_prefix + addr; })
                     .attr('target', '_blank')
-                    .text(function(addr) { return addr.substr(0, 10) + '...' + addr.substr(-6); });
+                    .text(function(addr) { return addr; });
                 tr.append('td')
                     .style('text-align', 'right')
                     .attr('class', 'amount')
@@ -1205,8 +1346,57 @@
             });
         }
         
+        function loadPeers() {
+            d3.json('../peer_list', function(peers) {
+                d3.select('#peers_loading').style('display', 'none');
+                d3.select('#peers_tbody').selectAll('tr').remove();
+                
+                if (!peers || peers.length === 0) {
+                    var tr = d3.select('#peers_tbody').append('tr');
+                    tr.append('td')
+                        .attr('colspan', '6')
+                        .style('text-align', 'center')
+                        .style('color', 'var(--text-muted)')
+                        .text('No peers connected');
+                    return;
+                }
+                
+                var tr = d3.select('#peers_tbody').selectAll('tr').data(peers).enter().append('tr');
+                tr.append('td').append('a')
+                    .attr('href', function(p) { 
+                        // Use web_port from API response
+                        var parts = p.address.split(':');
+                        var host = parts[0];
+                        return 'http://' + host + ':' + p.web_port;
+                    })
+                    .attr('target', '_blank')
+                    .attr('class', 'hash-link')
+                    .text(function(p) { 
+                        // Display format: IP:WORKER_PORT (P2P:P2P_PORT)
+                        var parts = p.address.split(':');
+                        var host = parts[0];
+                        var p2p_port = parts[1];
+                        return host + ':' + p.web_port + ' (P2P:' + p2p_port + ')';
+                    });
+                tr.append('td').text(function(p) { return p.version || '-'; });
+                tr.append('td')
+                    .html(function(p) { 
+                        return p.incoming ? 
+                            '<span style="color: var(--success)">⬇ Incoming</span>' : 
+                            '<span style="color: var(--info)">⬆ Outgoing</span>'; 
+                    });
+                tr.append('td').text(function(p) { return format_duration(p.uptime || 0); });
+                tr.append('td')
+                    .text(function(p) { return format_duration(p.downtime || 0); })
+                    .style('color', function(p) { return p.downtime > 0 ? 'var(--text-muted)' : ''; });
+                tr.append('td').text(function(p) { return p.txpool_size || '0'; });
+            });
+        }
+        
         function loadShares() {
             d3.json('../web/best_share_hash', function(hash) {
+                // Clear existing content
+                d3.select('#best_share').selectAll('*').remove();
                 if (hash) {
                     d3.select('#best_share').append('a')
                         .attr('class', 'share-link')
@@ -1222,6 +1412,9 @@
         
         function fillShares(url, selector) {
             d3.json(url, function(data) {
+                // Clear existing content before adding
+                d3.select(selector).selectAll('*').remove();
+                
                 if (!data || data.length === 0) {
                     d3.select(selector).append('span')
                         .style('color', 'var(--text-muted)')
@@ -1242,11 +1435,13 @@
         // =============================================
         // Hashrate Graph
         // =============================================
-        var currentGraphPeriod = 'hour';
+        var currentGraphPeriod = 'day';
         var graphData = [];
+        var graphMinerData = [];
+        var graphBlocks = [];
         var isFullscreen = false;
         var fullscreenChart = null;
-        var seriesVisibility = { good: true, doa: true };
+        var seriesVisibility = { good: true, doa: true, blocks: true, miners: true, lucktrend: true };
         
         function toggleSeries(seriesName, element) {
             seriesVisibility[seriesName] = !seriesVisibility[seriesName];
@@ -1260,28 +1455,23 @@
                 }
             });
             
-            // Update chart series visibility
-            var seriesIndex = seriesName === 'good' ? 0 : 1;
+            // Map series names to indices
+            var seriesIndexMap = { good: 0, doa: 1, blocks: 2, miners: 3, lucktrend: 4 };
+            var seriesIndex = seriesIndexMap[seriesName];
             
-            if (hashrateChart) {
-                var series = hashrateChart.series[seriesIndex];
-                if (series) {
-                    if (seriesVisibility[seriesName]) {
-                        series.show();
-                    } else {
-                        series.hide();
-                    }
+            if (hashrateChart && hashrateChart.series[seriesIndex]) {
+                if (seriesVisibility[seriesName]) {
+                    hashrateChart.series[seriesIndex].show();
+                } else {
+                    hashrateChart.series[seriesIndex].hide();
                 }
             }
             
-            if (fullscreenChart) {
-                var series = fullscreenChart.series[seriesIndex];
-                if (series) {
-                    if (seriesVisibility[seriesName]) {
-                        series.show();
-                    } else {
-                        series.hide();
-                    }
+            if (fullscreenChart && fullscreenChart.series[seriesIndex]) {
+                if (seriesVisibility[seriesName]) {
+                    fullscreenChart.series[seriesIndex].show();
+                } else {
+                    fullscreenChart.series[seriesIndex].hide();
                 }
             }
         }
@@ -1294,7 +1484,7 @@
                 overlay.classList.add('active');
                 document.body.style.overflow = 'hidden';
                 // Render fullscreen chart
-                renderFullscreenGraph(graphData);
+                renderFullscreenGraph(graphData, graphMinerData, graphBlocks);
                 // Update button states
                 updatePeriodButtons();
             } else {
@@ -1331,15 +1521,48 @@
                 'year': '../web/graph_data/pool_rates/last_year'
             };
             
+            // Load hashrate data, miner count, and blocks in parallel
+            var loadCount = 0;
+            var hashrateData = null;
+            var minerCountData = null;
+            var blocksData = [];
+            
+            function tryRender() {
+                loadCount++;
+                if (loadCount === 3) {
+                    graphData = hashrateData;
+                    graphMinerData = minerCountData;
+                    graphBlocks = blocksData;
+                    renderHashrateGraph(hashrateData, minerCountData, blocksData);
+                }
+            }
+            
             d3.json(endpoints[currentGraphPeriod], function(data) {
+                hashrateData = data;
                 if (!data || data.length === 0) {
                     document.getElementById('hashrate-graph').innerHTML = 
                         '<div style="text-align:center; color: var(--text-muted); padding: 100px 0;">No data available for this period</div>';
                     return;
                 }
-                
-                graphData = data;
-                renderHashrateGraph(data);
+                tryRender();
+            });
+            
+            var minerEndpoints = {
+                'hour': '../web/graph_data/miner_count/last_hour',
+                'day': '../web/graph_data/miner_count/last_day',
+                'week': '../web/graph_data/miner_count/last_week',
+                'month': '../web/graph_data/miner_count/last_month',
+                'year': '../web/graph_data/miner_count/last_year'
+            };
+            
+            d3.json(minerEndpoints[currentGraphPeriod], function(data) {
+                minerCountData = data || [];
+                tryRender();
+            });
+            
+            d3.json('../recent_blocks', function(blocks) {
+                blocksData = blocks || [];
+                tryRender();
             });
         }
         
@@ -1351,8 +1574,16 @@
 
         var hashrateChart = null;
 
-        function renderHashrateGraph(data) {
+        function renderHashrateGraph(data, minerData, blocks) {
             var container = document.getElementById('hashrate-graph');
+            blocks = blocks || [];
+            minerData = minerData || [];
+            
+            // Debug: log blocks info
+            console.log('renderHashrateGraph - Blocks received:', blocks.length);
+            if (blocks.length > 0) {
+                console.log('First block:', JSON.stringify(blocks[0]));
+            }
             
             // Clear previous
             if (hashrateChart) {
@@ -1365,8 +1596,15 @@
             // Parse data - d[1] is an object {good: x, orphan: y, null: z} or null
             var hashrate = [];
             var doarate = [];
+            var minerCount = [];
             var values = [];
             var doaValues = [];
+            
+            // Get time range for filtering blocks
+            var firstTime = data[0][0] * 1000;
+            var lastTime = data[data.length - 1][0] * 1000;
+            var minTime = Math.min(firstTime, lastTime);
+            var maxTime = Math.max(firstTime, lastTime);
             
             data.forEach(function(d) {
                 var timestamp = d[0] * 1000;
@@ -1379,23 +1617,99 @@
                 doaValues.push(doaVal);
             });
             
+            // Parse miner count data
+            minerData.forEach(function(d) {
+                var timestamp = d[0] * 1000;
+                var count = d[1] || 0;
+                minerCount.push([timestamp, count]);
+            });
+            
+            // Process blocks - show all blocks, not just those in exact time range
+            var blockMarkers = [];
+            var luckTrendData = [];
+            var validLucks = [];
+            
+            // Sort blocks by timestamp
+            var sortedBlocks = blocks.slice().sort(function(a, b) { return a.ts - b.ts; });
+            
+            sortedBlocks.forEach(function(b) {
+                var blockTime = b.ts * 1000;
+                
+                // For luck trend, collect all blocks with luck data
+                if (b.luck) {
+                    luckTrendData.push([blockTime, b.luck]);
+                    validLucks.push(b.luck);
+                }
+                
+                // For block markers, show blocks within time range + 5% margin
+                var timeRange = maxTime - minTime;
+                var margin = timeRange * 0.05;
+                if (blockTime >= (minTime - margin) && blockTime <= (maxTime + margin)) {
+                    // Find closest hashrate value for y position
+                    var closestIdx = 0;
+                    var closestDiff = Math.abs(data[0][0] * 1000 - blockTime);
+                    for (var i = 1; i < data.length; i++) {
+                        var diff = Math.abs(data[i][0] * 1000 - blockTime);
+                        if (diff < closestDiff) {
+                            closestDiff = diff;
+                            closestIdx = i;
+                        }
+                    }
+                    var yVal = (data[closestIdx][1] && data[closestIdx][1].good) ? data[closestIdx][1].good : 0;
+                    // Use a minimum y value so block is visible even if hashrate is 0
+                    if (yVal === 0 && values.length > 0) {
+                        yVal = Math.max.apply(null, values) * 0.1 || 1000000000;
+                    }
+                    
+                    // Position block higher based on difficulty ratio to make it easier to hover
+                    // Higher actual difficulty = block floats higher above hashrate line
+                    // Since block difficulty is ALWAYS higher than network difficulty, baseline is 0%
+                    if (b.actual_hash_difficulty && b.network_difficulty && b.network_difficulty > 0) {
+                        var diffRatio = b.actual_hash_difficulty / b.network_difficulty;
+                        // Scale ratio: 1.0 = baseline (0%), 2.0 = 30% higher, 3.0 = 60% higher, etc.
+                        var heightMultiplier = 1.0 + (diffRatio - 1.0) * 0.3;
+                        yVal = yVal * heightMultiplier;
+                    }
+                    // No else needed - if no difficulty data, keep at hashrate level
+                    
+                    blockMarkers.push({
+                        x: blockTime,
+                        y: yVal,
+                        block: b
+                    });
+                }
+            });
+            
+            // Debug: log processed results
+            console.log('Compact - blockMarkers:', blockMarkers.length, 'luckTrendData:', luckTrendData.length, 'minTime:', new Date(minTime), 'maxTime:', new Date(maxTime));
+            if (blocks.length > 0) {
+                console.log('Block time:', new Date(blocks[0].ts * 1000), 'in range:', (blocks[0].ts * 1000 >= minTime && blocks[0].ts * 1000 <= maxTime));
+            }
+            
             // Update stats
             var current = values[values.length - 1] || 0;
             var sum = values.reduce(function(a, b) { return a + b; }, 0);
             var avg = values.length > 0 ? sum / values.length : 0;
             var peak = Math.max.apply(null, values) || 0;
-            var doaSum = doaValues.reduce(function(a, b) { return a + b; }, 0);
-            var doaAvg = doaValues.length > 0 ? doaSum / doaValues.length : 0;
-            var doaPercent = avg > 0 ? ((doaAvg / (avg + doaAvg)) * 100).toFixed(2) : '0.00';
+            
+            // Calculate average luck
+            var avgLuck = validLucks.length > 0 ? 
+                validLucks.reduce(function(a, b) { return a + b; }, 0) / validLucks.length : null;
             
             document.getElementById('graph-current').textContent = format_hashrate(current);
             document.getElementById('graph-average').textContent = format_hashrate(avg);
             document.getElementById('graph-peak').textContent = format_hashrate(peak);
-            document.getElementById('graph-doa').textContent = format_hashrate(doaAvg) + ' (' + doaPercent + '%)';
+            if (avgLuck !== null) {
+                var luckEl = document.getElementById('graph-luck');
+                luckEl.textContent = d3.format('.0f')(avgLuck) + '%';
+                luckEl.style.color = avgLuck >= 100 ? 'var(--success)' : (avgLuck >= 75 ? 'var(--warning)' : 'var(--danger)');
+            } else {
+                document.getElementById('graph-luck').textContent = '-';
+            }
             
             // Create Highcharts chart (regular chart for better pan support)
             var isCompact = container.classList.contains('compact');
-            var chartHeight = isCompact ? 220 : 300;
+            var chartHeight = isCompact ? null : 300;
             
             hashrateChart = Highcharts.chart('hashrate-graph', {
                 chart: {
@@ -1408,7 +1722,7 @@
                     spacingBottom: 0,
                     spacingLeft: 0,
                     marginTop: 15,
-                    marginRight: 2,
+                    marginRight: 45,
                     marginBottom: 28,
                     marginLeft: 80,
                     panning: { enabled: true, type: 'x' },
@@ -1427,7 +1741,8 @@
                     gridLineColor: '#2a2a4a',
                     gridLineWidth: 1
                 },
-                yAxis: {
+                yAxis: [{
+                    // Primary Y-axis for hashrate
                     title: { text: null },
                     min: 0,
                     lineColor: '#3a3a5a',
@@ -1440,21 +1755,95 @@
                     },
                     gridLineColor: '#2a2a4a',
                     opposite: false
-                },
+                }, {
+                    // Secondary Y-axis for luck percentage (logarithmic scale)
+                    title: { text: null },
+                    type: 'logarithmic',
+                    min: 1,
+                    lineColor: '#ffc107',
+                    tickColor: '#ffc107',
+                    labels: {
+                        style: { color: '#ffc107', fontSize: '10px' },
+                        formatter: function() { return this.value + '%'; }
+                    },
+                    gridLineWidth: 0,
+                    opposite: true,
+                    plotLines: [{
+                        value: 100,
+                        color: '#ffc107',
+                        dashStyle: 'dot',
+                        width: 1,
+                        label: { text: '100%', style: { color: '#ffc107', fontSize: '9px' }, align: 'right' }
+                    }]
+                }, {
+                    // Third Y-axis for miner count
+                    title: { text: null },
+                    min: 0,
+                    allowDecimals: false,
+                    lineColor: '#9c27b0',
+                    tickColor: '#9c27b0',
+                    labels: {
+                        style: { color: '#9c27b0', fontSize: '10px' }
+                    },
+                    gridLineWidth: 0,
+                    opposite: true
+                }],
                 tooltip: {
                     shared: true,
                     backgroundColor: 'rgba(22, 22, 42, 0.95)',
-                    borderColor: '#008de4',
                     borderColor: '#3a3a5a',
                     style: { color: '#e0e0e0' },
                     formatter: function() {
+                        // Handle scatter points (blocks) separately
+                        if (this.point && this.point.block) {
+                            var b = this.point.block;
+                            var s = '<b>' + Highcharts.dateFormat('%b %e, %H:%M:%S', this.x) + '</b><br/>';
+                            s += '<span style="color:#00ff88">◆</span> <b>Block Found!</b><br/>';
+                            s += 'Height: <b>' + (b.number || '?') + '</b><br/>';
+                            if (b.luck) {
+                                var luckColor = b.luck >= 100 ? '#00ff88' : (b.luck >= 75 ? '#ffc107' : '#ff6b6b');
+                                s += 'Luck: <b style="color:' + luckColor + '">' + d3.format('.0f')(b.luck) + '%</b><br/>';
+                            } else if (b.luck_method === 'first_block') {
+                                s += 'Luck: <b style="color:#888">1st block</b><br/>';
+                            }
+                            if (b.time_to_find) {
+                                s += 'Found in: <b>' + format_dt(b.time_to_find) + '</b><br/>';
+                            }
+                            if (b.expected_time) {
+                                s += 'Expected: <b>' + format_dt(b.expected_time) + '</b><br/>';
+                            }
+                            if (b.network_difficulty) {
+                                var netHashrate = Math.floor(b.network_difficulty * Math.pow(2, 32) / 150);
+                                var netPdiff = b.network_difficulty * 65536;
+                                s += 'Net Diff: <b style="color:#8888ff">' + format_hashrate(netHashrate) + '</b><br/>';
+                                s += '<span style="font-size:10px;color:#aaa">(bdiff: ' + d3.format(',.2f')(b.network_difficulty) + ', pdiff: ' + d3.format('.2e')(netPdiff) + ')</span><br/>';
+                            }
+                            if (b.actual_hash_difficulty) {
+                                var actualHashrate = Math.floor(b.actual_hash_difficulty * Math.pow(2, 32) / 150);
+                                var actualPdiff = b.actual_hash_difficulty * 65536;
+                                s += 'Hash Diff: <b style="color:#00d4ff">' + format_hashrate(actualHashrate) + '</b><br/>';
+                                s += '<span style="font-size:10px;color:#aaa">(bdiff: ' + d3.format(',.2f')(b.actual_hash_difficulty) + ', pdiff: ' + d3.format('.2e')(actualPdiff) + ')</span><br/>';
+                            }
+                            s += 'Status: <b style="color:' + (b.status === 'confirmed' ? '#00ff88' : '#ffc107') + '">' + (b.status || 'unknown') + '</b>';
+                            return s;
+                        }
+                        
+                        // Handle regular points (hashrate, doa, luck trend)
+                        if (!this.points) return false;
+                        
                         var s = '<b>' + Highcharts.dateFormat('%b %e, %H:%M:%S', this.x) + '</b>';
                         var goodVal = 0, doaVal = 0;
                         this.points.forEach(function(point) {
+                            if (point.series.name === 'Blocks') return; // Skip blocks in shared tooltip
                             if (point.series.name === 'Hashrate') goodVal = point.y;
                             if (point.series.name === 'Dead on arrival') doaVal = point.y;
-                            s += '<br/><span style="color:' + point.color + '">●</span> ' + 
-                                 point.series.name + ': <b>' + format_hashrate(point.y) + '</b>';
+                            if (point.series.name === 'Luck Trend') {
+                                s += '<br/><span style="color:' + point.color + '">●</span> ' + 
+                                     point.series.name + ': <b>' + d3.format('.0f')(point.y) + '%</b>';
+                            } else {
+                                s += '<br/><span style="color:' + point.color + '">●</span> ' + 
+                                     point.series.name + ': <b>' + format_hashrate(point.y) + '</b>';
+                            }
                         });
                         if (goodVal > 0) {
                             var percent = ((doaVal / (goodVal + doaVal)) * 100).toFixed(2);
@@ -1484,6 +1873,19 @@
                         lineWidth: 2,
                         states: { hover: { lineWidth: 3 } },
                         threshold: null
+                    },
+                    scatter: {
+                        marker: {
+                            radius: 12,
+                            symbol: 'diamond',
+                            lineWidth: 2,
+                            lineColor: '#00ff88'
+                        },
+                        states: { 
+                            hover: { marker: { radius: 14 } },
+                            inactive: { opacity: 1 }
+                        },
+                        stickyTracking: false
                     }
                 },
                 series: [{
@@ -1498,18 +1900,85 @@
                     data: doarate,
                     color: '#ff6b6b',
                     lineWidth: 2,
-                    visible: seriesVisibility.doa
+                    visible: seriesVisibility.doa,
+                    yAxis: 0
+                }, {
+                    type: 'scatter',
+                    name: 'Blocks',
+                    data: blockMarkers.map(function(m) {
+                        return {
+                            x: m.x,
+                            y: m.y,
+                            block: m.block,
+                            marker: {
+                                fillColor: m.block.luck ? 
+                                    (m.block.luck >= 100 ? '#00ff88' : (m.block.luck >= 75 ? '#ffc107' : '#ff6b6b')) 
+                                    : '#888888'
+                            }
+                        };
+                    }),
+                    color: '#00ff88',
+                    visible: seriesVisibility.blocks,
+                    yAxis: 0,
+                    tooltip: {
+                        pointFormatter: function() {
+                            var b = this.block;
+                            var s = '<span style="color:#00ff88">◆</span> <b>Block Found!</b><br/>';
+                            s += 'Height: <b>' + (b.number || b.block_height || '?') + '</b><br/>';
+                            if (b.luck) {
+                                var luckColor = b.luck >= 100 ? '#00ff88' : (b.luck >= 75 ? '#ffc107' : '#ff6b6b');
+                                s += 'Luck: <b style="color:' + luckColor + '">' + d3.format('.0f')(b.luck) + '%</b><br/>';
+                            } else if (b.luck_method === 'first_block') {
+                                s += 'Luck: <b>1st block</b><br/>';
+                            }
+                            if (b.time_to_find) {
+                                s += 'Found in: ' + format_dt(b.time_to_find) + '<br/>';
+                            }
+                            if (b.expected_time) {
+                                s += 'Expected: ' + format_dt(b.expected_time) + '<br/>';
+                            }
+                            s += 'Status: <b>' + (b.status || 'unknown') + '</b>';
+                            return s;
+                        }
+                    }
+                }, {
+                    type: 'spline',
+                    name: 'Miners',
+                    data: minerCount,
+                    color: '#9c27b0',
+                    lineWidth: 2,
+                    yAxis: 2,
+                    visible: seriesVisibility.miners
+                }, {
+                    type: 'spline',
+                    name: 'Luck Trend',
+                    data: luckTrendData,
+                    color: '#ffc107',
+                    lineWidth: 2,
+                    dashStyle: 'ShortDash',
+                    marker: {
+                        enabled: true,
+                        radius: 4,
+                        fillColor: '#ffc107'
+                    },
+                    visible: seriesVisibility.lucktrend,
+                    yAxis: 1
                 }]
             });
             
             // Also update fullscreen if open
             if (isFullscreen) {
-                renderFullscreenGraph(data);
+                renderFullscreenGraph(data, minerData, blocks);
             }
         }
         
-        function renderFullscreenGraph(data) {
+        function renderFullscreenGraph(data, minerData, blocks) {
             var container = document.getElementById('fullscreen-graph');
+            blocks = blocks || graphBlocks || [];
+            minerData = minerData || [];
+            
+            // Debug: log blocks info
+            console.log('renderFullscreenGraph - Blocks received:', blocks.length, 'graphBlocks:', graphBlocks ? graphBlocks.length : 0);
             
             if (fullscreenChart) {
                 fullscreenChart.destroy();
@@ -1527,6 +1996,12 @@
             var values = [];
             var doaValues = [];
             
+            // Get time range for filtering blocks
+            var firstTime = data[0][0] * 1000;
+            var lastTime = data[data.length - 1][0] * 1000;
+            var minTime = Math.min(firstTime, lastTime);
+            var maxTime = Math.max(firstTime, lastTime);
+            
             data.forEach(function(d) {
                 var timestamp = d[0] * 1000;
                 var goodVal = (d[1] && d[1].good) ? d[1].good : 0;
@@ -1538,6 +2013,70 @@
                 doaValues.push(doaVal);
             });
             
+            // Process miner count data
+            var minerCount = [];
+            minerData.forEach(function(d) {
+                var timestamp = d[0] * 1000;
+                var count = d[1] || 0;
+                minerCount.push([timestamp, count]);
+            });
+            
+            // Process blocks - show all blocks, not just those in exact time range
+            var blockMarkers = [];
+            var luckTrendData = [];
+            var validLucks = [];
+            
+            // Sort blocks by timestamp
+            var sortedBlocks = blocks.slice().sort(function(a, b) { return a.ts - b.ts; });
+            
+            sortedBlocks.forEach(function(b) {
+                var blockTime = b.ts * 1000;
+                
+                // For luck trend, collect all blocks with luck data
+                if (b.luck) {
+                    luckTrendData.push([blockTime, b.luck]);
+                    validLucks.push(b.luck);
+                }
+                
+                // For block markers, show blocks within time range + 5% margin
+                var timeRange = maxTime - minTime;
+                var margin = timeRange * 0.05;
+                if (blockTime >= (minTime - margin) && blockTime <= (maxTime + margin)) {
+                    // Find closest hashrate value for y position
+                    var closestIdx = 0;
+                    var closestDiff = Math.abs(data[0][0] * 1000 - blockTime);
+                    for (var i = 1; i < data.length; i++) {
+                        var diff = Math.abs(data[i][0] * 1000 - blockTime);
+                        if (diff < closestDiff) {
+                            closestDiff = diff;
+                            closestIdx = i;
+                        }
+                    }
+                    var yVal = (data[closestIdx][1] && data[closestIdx][1].good) ? data[closestIdx][1].good : 0;
+                    // Use a minimum y value so block is visible even if hashrate is 0
+                    if (yVal === 0 && values.length > 0) {
+                        yVal = Math.max.apply(null, values) * 0.1 || 1000000000;
+                    }
+                    
+                    // Position block higher based on difficulty ratio to make it easier to hover
+                    // Higher actual difficulty = block floats higher above hashrate line
+                    // Since block difficulty is ALWAYS higher than network difficulty, baseline is 0%
+                    if (b.actual_hash_difficulty && b.network_difficulty && b.network_difficulty > 0) {
+                        var diffRatio = b.actual_hash_difficulty / b.network_difficulty;
+                        // Scale ratio: 1.0 = baseline (0%), 2.0 = 30% higher, 3.0 = 60% higher, etc.
+                        var heightMultiplier = 1.0 + (diffRatio - 1.0) * 0.3;
+                        yVal = yVal * heightMultiplier;
+                    }
+                    // No else needed - if no difficulty data, keep at hashrate level
+                    
+                    blockMarkers.push({
+                        x: blockTime,
+                        y: yVal,
+                        block: b
+                    });
+                }
+            });
+            
             // Update fullscreen stats
             var current = values[values.length - 1] || 0;
             var sum = values.reduce(function(a, b) { return a + b; }, 0);
@@ -1547,10 +2086,20 @@
             var doaAvg = doaValues.length > 0 ? doaSum / doaValues.length : 0;
             var doaPercent = avg > 0 ? ((doaAvg / (avg + doaAvg)) * 100).toFixed(2) : '0.00';
             
+            // Calculate average luck for fullscreen
+            var fsAvgLuck = validLucks.length > 0 ? 
+                validLucks.reduce(function(a, b) { return a + b; }, 0) / validLucks.length : null;
+            
             document.getElementById('fs-graph-current').textContent = format_hashrate(current);
             document.getElementById('fs-graph-average').textContent = format_hashrate(avg);
             document.getElementById('fs-graph-peak').textContent = format_hashrate(peak);
-            document.getElementById('fs-graph-doa').textContent = format_hashrate(doaAvg) + ' (' + doaPercent + '%)';
+            if (fsAvgLuck !== null) {
+                var luckEl = document.getElementById('fs-graph-luck');
+                luckEl.textContent = d3.format('.0f')(fsAvgLuck) + '%';
+                luckEl.style.color = fsAvgLuck >= 100 ? 'var(--success)' : (fsAvgLuck >= 75 ? 'var(--warning)' : 'var(--danger)');
+            } else {
+                document.getElementById('fs-graph-luck').textContent = '-';
+            }
             
             fullscreenChart = Highcharts.chart('fullscreen-graph', {
                 chart: {
@@ -1558,7 +2107,7 @@
                     backgroundColor: 'transparent',
                     style: { fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif' },
                     marginTop: 20,
-                    marginRight: 20,
+                    marginRight: 60,
                     marginBottom: 60,
                     marginLeft: 80,
                     panning: { enabled: true, type: 'x' },
@@ -1575,7 +2124,7 @@
                     gridLineColor: '#2a2a4a',
                     gridLineWidth: 1
                 },
-                yAxis: {
+                yAxis: [{
                     title: { text: null },
                     min: 0,
                     lineColor: '#3a3a5a',
@@ -1586,20 +2135,97 @@
                     },
                     gridLineColor: '#2a2a4a',
                     opposite: false
-                },
+                }, {
+                    // Second Y-axis for luck percentage (logarithmic scale)
+                    title: { text: null },
+                    type: 'logarithmic',
+                    min: 1,
+                    lineColor: '#ffc107',
+                    tickColor: '#ffc107',
+                    labels: {
+                        style: { color: '#ffc107', fontSize: '11px' },
+                        formatter: function() { return this.value + '%'; }
+                    },
+                    gridLineWidth: 0,
+                    opposite: true,
+                    plotLines: [{
+                        value: 100,
+                        color: '#ffc107',
+                        dashStyle: 'dot',
+                        width: 1,
+                        zIndex: 3
+                    }]
+                }, {
+                    // Third Y-axis for miner count
+                    title: { text: null },
+                    min: 0,
+                    allowDecimals: false,
+                    lineColor: '#9c27b0',
+                    tickColor: '#9c27b0',
+                    labels: {
+                        style: { color: '#9c27b0', fontSize: '11px' }
+                    },
+                    gridLineWidth: 0,
+                    opposite: true
+                }],
                 tooltip: {
                     shared: true,
                     backgroundColor: 'rgba(22, 22, 42, 0.95)',
-                    borderColor: '#008de4',
-                    style: { color: '#e0e0e0', fontSize: '12px' },
+                    borderColor: '#3a3a5a',
+                    style: { color: '#e0e0e0', fontSize: '13px' },
                     formatter: function() {
+                        // Handle scatter points (blocks) separately
+                        if (this.point && this.point.block) {
+                            var b = this.point.block;
+                            var s = '<b>' + Highcharts.dateFormat('%b %e, %H:%M:%S', this.x) + '</b><br/>';
+                            s += '<span style="color:#00ff88">◆</span> <b>Block Found!</b><br/>';
+                            s += 'Height: <b>' + (b.number || '?') + '</b><br/>';
+                            if (b.luck) {
+                                var luckColor = b.luck >= 100 ? '#00ff88' : (b.luck >= 75 ? '#ffc107' : '#ff6b6b');
+                                s += 'Luck: <b style="color:' + luckColor + '">' + d3.format('.0f')(b.luck) + '%</b><br/>';
+                            } else if (b.luck_method === 'first_block') {
+                                s += 'Luck: <b style="color:#888">1st block</b><br/>';
+                            }
+                            if (b.time_to_find) {
+                                s += 'Found in: <b>' + format_dt(b.time_to_find) + '</b><br/>';
+                            }
+                            if (b.expected_time) {
+                                s += 'Expected: <b>' + format_dt(b.expected_time) + '</b><br/>';
+                            }
+                            if (b.network_difficulty) {
+                                var netHashrate = Math.floor(b.network_difficulty * Math.pow(2, 32) / 150);
+                                var netPdiff = b.network_difficulty * 65536;
+                                s += 'Net Diff: <b style="color:#8888ff">' + format_hashrate(netHashrate) + '</b><br/>';
+                                s += '<span style="font-size:11px;color:#888">(Hashrate needed to solve in 2.5 min)</span><br/>';
+                                s += '<span style="font-size:11px;color:#aaa">bdiff: ' + d3.format(',.2f')(b.network_difficulty) + ', pdiff: ' + d3.format('.2e')(netPdiff) + '</span><br/>';
+                            }
+                            if (b.actual_hash_difficulty) {
+                                var actualHashrate = Math.floor(b.actual_hash_difficulty * Math.pow(2, 32) / 150);
+                                var actualPdiff = b.actual_hash_difficulty * 65536;
+                                s += 'Hash Diff: <b style="color:#00d4ff">' + format_hashrate(actualHashrate) + '</b><br/>';
+                                s += '<span style="font-size:11px;color:#888">(Hashrate equivalent of found hash)</span><br/>';
+                                s += '<span style="font-size:11px;color:#aaa">bdiff: ' + d3.format(',.2f')(b.actual_hash_difficulty) + ', pdiff: ' + d3.format('.2e')(actualPdiff) + '</span><br/>';
+                            }
+                            s += 'Status: <b style="color:' + (b.status === 'confirmed' ? '#00ff88' : '#ffc107') + '">' + (b.status || 'unknown') + '</b>';
+                            return s;
+                        }
+                        
+                        // Handle regular points
+                        if (!this.points) return false;
+                        
                         var s = '<b>' + Highcharts.dateFormat('%b %e, %H:%M:%S', this.x) + '</b>';
                         var goodVal = 0, doaVal = 0;
                         this.points.forEach(function(point) {
+                            if (point.series.name === 'Blocks') return;
                             if (point.series.name === 'Hashrate') goodVal = point.y;
                             if (point.series.name === 'Dead on arrival') doaVal = point.y;
-                            s += '<br/><span style="color:' + point.color + '">●</span> ' + 
-                                 point.series.name + ': <b>' + format_hashrate(point.y) + '</b>';
+                            if (point.series.name === 'Luck Trend') {
+                                s += '<br/><span style="color:' + point.color + '">●</span> ' + 
+                                     point.series.name + ': <b>' + d3.format('.0f')(point.y) + '%</b>';
+                            } else {
+                                s += '<br/><span style="color:' + point.color + '">●</span> ' + 
+                                     point.series.name + ': <b>' + format_hashrate(point.y) + '</b>';
+                            }
                         });
                         if (goodVal > 0) {
                             var percent = ((doaVal / (goodVal + doaVal)) * 100).toFixed(2);
@@ -1632,6 +2258,19 @@
                         marker: { enabled: false },
                         lineWidth: 2,
                         states: { hover: { lineWidth: 3 } }
+                    },
+                    scatter: {
+                        marker: {
+                            radius: 14,
+                            symbol: 'diamond',
+                            lineWidth: 2,
+                            lineColor: '#00ff88'
+                        },
+                        states: { 
+                            hover: { marker: { radius: 16 } },
+                            inactive: { opacity: 1 }
+                        },
+                        stickyTracking: false
                     }
                 },
                 series: [{
@@ -1639,13 +2278,76 @@
                     name: 'Hashrate',
                     data: hashrate,
                     color: '#008de4',
-                    visible: seriesVisibility.good
+                    visible: seriesVisibility.good,
+                    yAxis: 0
                 }, {
                     type: 'spline',
                     name: 'Dead on arrival',
                     data: doarate,
                     color: '#ff6b6b',
-                    visible: seriesVisibility.doa
+                    visible: seriesVisibility.doa,
+                    yAxis: 0
+                }, {
+                    type: 'scatter',
+                    name: 'Blocks',
+                    data: blockMarkers.map(function(m) {
+                        return {
+                            x: m.x,
+                            y: m.y,
+                            block: m.block,
+                            marker: {
+                                fillColor: m.block.luck ? 
+                                    (m.block.luck >= 100 ? '#00ff88' : (m.block.luck >= 75 ? '#ffc107' : '#ff6b6b')) 
+                                    : '#888888'
+                            }
+                        };
+                    }),
+                    color: '#00ff88',
+                    visible: seriesVisibility.blocks,
+                    yAxis: 0,
+                    tooltip: {
+                        pointFormatter: function() {
+                            var b = this.block;
+                            var s = '<span style="color:#00ff88">◆</span> <b>Block Found!</b><br/>';
+                            s += 'Height: <b>' + (b.number || b.block_height || '?') + '</b><br/>';
+                            if (b.luck) {
+                                var luckColor = b.luck >= 100 ? '#00ff88' : (b.luck >= 75 ? '#ffc107' : '#ff6b6b');
+                                s += 'Luck: <b style="color:' + luckColor + '">' + d3.format('.0f')(b.luck) + '%</b><br/>';
+                            } else if (b.luck_method === 'first_block') {
+                                s += 'Luck: <b>1st block</b><br/>';
+                            }
+                            if (b.time_to_find) {
+                                s += 'Found in: ' + format_dt(b.time_to_find) + '<br/>';
+                            }
+                            if (b.expected_time) {
+                                s += 'Expected: ' + format_dt(b.expected_time) + '<br/>';
+                            }
+                            s += 'Status: <b>' + (b.status || 'unknown') + '</b>';
+                            return s;
+                        }
+                    }
+                }, {
+                    type: 'spline',
+                    name: 'Miners',
+                    data: minerCount,
+                    color: '#9c27b0',
+                    lineWidth: 2,
+                    yAxis: 2,
+                    visible: seriesVisibility.miners
+                }, {
+                    type: 'spline',
+                    name: 'Luck Trend',
+                    data: luckTrendData,
+                    color: '#ffc107',
+                    lineWidth: 2,
+                    dashStyle: 'ShortDash',
+                    marker: {
+                        enabled: true,
+                        radius: 4,
+                        fillColor: '#ffc107'
+                    },
+                    visible: seriesVisibility.lucktrend,
+                    yAxis: 1
                 }]
             });
         }
@@ -1684,6 +2386,9 @@
                 autoRefreshInterval = setInterval(function() {
                     loadStats();
                     loadBlocks();
+                    loadPayouts();
+                    loadPoolLuck();
+                    loadShares();
                     loadHashrateGraph();
                     document.getElementById('last-update').textContent = 'Last update: ' + new Date().toLocaleTimeString();
                 }, 30000);
@@ -1696,6 +2401,9 @@
             loadStats();
             loadBlocks();
             loadPayouts();
+            loadPoolLuck();
+            loadShares();
+            loadPeers();
             loadHashrateGraph();
             document.getElementById('last-update').textContent = 'Last update: ' + new Date().toLocaleTimeString();
         }
