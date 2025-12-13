@@ -1161,6 +1161,9 @@
         function loadPayouts() {
             d3.json('../current_payouts', function(pays) {
                 d3.select('#payouts_loading').style('display', 'none');
+                // Clear existing rows before adding new data
+                d3.select('#payouts tbody').selectAll('tr').remove();
+                
                 if (!pays) return;
                 
                 var arr = [];
@@ -1207,6 +1210,8 @@
         
         function loadShares() {
             d3.json('../web/best_share_hash', function(hash) {
+                // Clear existing content
+                d3.select('#best_share').selectAll('*').remove();
                 if (hash) {
                     d3.select('#best_share').append('a')
                         .attr('class', 'share-link')
@@ -1222,6 +1227,9 @@
         
         function fillShares(url, selector) {
             d3.json(url, function(data) {
+                // Clear existing content before adding
+                d3.select(selector).selectAll('*').remove();
+                
                 if (!data || data.length === 0) {
                     d3.select(selector).append('span')
                         .style('color', 'var(--text-muted)')
@@ -1684,6 +1692,8 @@
                 autoRefreshInterval = setInterval(function() {
                     loadStats();
                     loadBlocks();
+                    loadPayouts();
+                    loadShares();
                     loadHashrateGraph();
                     document.getElementById('last-update').textContent = 'Last update: ' + new Date().toLocaleTimeString();
                 }, 30000);
@@ -1696,6 +1706,7 @@
             loadStats();
             loadBlocks();
             loadPayouts();
+            loadShares();
             loadHashrateGraph();
             document.getElementById('last-update').textContent = 'Last update: ' + new Date().toLocaleTimeString();
         }
