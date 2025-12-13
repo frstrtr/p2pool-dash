@@ -1057,8 +1057,8 @@
         // Load currency info first
         d3.json('../web/currency_info', function(info) {
             currency_info = info || {};
-            d3.selectAll('.symbol-small').text(info.symbol || 'DASH');
-            d3.select('#currency-symbol').text(info.symbol || 'DASH');
+            d3.selectAll('.symbol-small').text((info && info.symbol) || 'DASH');
+            d3.select('#currency-symbol').text((info && info.symbol) || 'DASH');
             
             // Now load everything else
             loadStats();
@@ -1070,8 +1070,10 @@
         
         // Load version
         d3.json('../web/version', function(version) {
-            d3.select('#version').text(version);
-            d3.select('#footer_version').text('v' + version);
+            if (version) {
+                d3.select('#version').text(version);
+                d3.select('#footer_version').text('v' + version);
+            }
         });
         
         function loadStats() {

@@ -98,7 +98,7 @@ class WebRateLimiter(object):
         }
 
 # Global rate limiter for web endpoints
-web_rate_limiter = WebRateLimiter(requests_per_minute=120, burst_limit=20)
+web_rate_limiter = WebRateLimiter(requests_per_minute=300, burst_limit=50)
 
 
 def _atomic_read(filename):
