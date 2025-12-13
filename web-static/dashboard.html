@@ -1214,7 +1214,7 @@
                     .attr('class', 'hash-link')
                     .attr('href', function(addr) { return currency_info.address_explorer_url_prefix + addr; })
                     .attr('target', '_blank')
-                    .text(function(addr) { return addr.substr(0, 10) + '...' + addr.substr(-6); });
+                    .text(function(addr) { return addr; });
                 tr.append('td')
                     .style('text-align', 'right')
                     .attr('class', 'amount')
