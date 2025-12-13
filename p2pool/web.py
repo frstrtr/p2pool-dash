@@ -1316,5 +1316,18 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     # Add security config endpoint
     web_root.putChild('security_config', WebInterface(lambda: sec_config.get_config_summary(), require_auth=True))
     
-    # Return web_root and record_block_found function for block tracking
-    return web_root, record_block_found
+    def get_last_block_info():
+        """Get info about the last found block for luck calculation."""
+        if not block_history:
+            return None
+        # Find the most recent block
+        latest = None
+        latest_ts = 0
+        for hash, info in block_history.iteritems():
+            if info['ts'] > latest_ts:
+                latest_ts = info['ts']
+                latest = info
+        return latest
+    
+    # Return web_root, record_block_found and get_last_block_info for block tracking
+    return web_root, record_block_found, get_last_block_info
