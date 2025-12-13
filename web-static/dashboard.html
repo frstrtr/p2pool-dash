@@ -1157,16 +1157,28 @@
                         else if (b.luck_method) tip += '\n[' + b.luck_method + ']';
                         return tip;
                     });
-                tr.append('td').text(function(b) {
-                    if (!b.network_difficulty) return '-';
-                    var hashrate = Math.floor(b.network_difficulty * Math.pow(2, 32) / 150);
-                    return format_hashrate(hashrate);
-                });
-                tr.append('td').text(function(b) {
-                    if (!b.actual_hash_difficulty) return '-';
-                    var hashrate = Math.floor(b.actual_hash_difficulty * Math.pow(2, 32) / 150);
-                    return format_hashrate(hashrate);
-                });
+                tr.append('td')
+                    .text(function(b) {
+                        if (!b.network_difficulty) return '-';
+                        var hashrate = Math.floor(b.network_difficulty * Math.pow(2, 32) / 150);
+                        return format_hashrate(hashrate);
+                    })
+                    .attr('title', function(b) {
+                        if (!b.network_difficulty) return '';
+                        var pdiff = b.network_difficulty * 65536;
+                        return 'bdiff: ' + d3.format(',.2f')(b.network_difficulty) + '\npdiff: ' + d3.format('.2e')(pdiff);
+                    });
+                tr.append('td')
+                    .text(function(b) {
+                        if (!b.actual_hash_difficulty) return '-';
+                        var hashrate = Math.floor(b.actual_hash_difficulty * Math.pow(2, 32) / 150);
+                        return format_hashrate(hashrate);
+                    })
+                    .attr('title', function(b) {
+                        if (!b.actual_hash_difficulty) return '';
+                        var pdiff = b.actual_hash_difficulty * 65536;
+                        return 'bdiff: ' + d3.format(',.2f')(b.actual_hash_difficulty) + '\npdiff: ' + d3.format('.2e')(pdiff);
+                    });
                 tr.append('td')
                     .attr('class', function(b) {
                         if (b.status === 'confirmed') return 'status-confirmed';
@@ -1604,11 +1616,15 @@
                             }
                             if (b.network_difficulty) {
                                 var netHashrate = Math.floor(b.network_difficulty * Math.pow(2, 32) / 150);
+                                var netPdiff = b.network_difficulty * 65536;
                                 s += 'Net Diff: <b style="color:#8888ff">' + format_hashrate(netHashrate) + '</b><br/>';
+                                s += '<span style="font-size:10px;color:#aaa">(bdiff: ' + d3.format(',.2f')(b.network_difficulty) + ', pdiff: ' + d3.format('.2e')(netPdiff) + ')</span><br/>';
                             }
                             if (b.actual_hash_difficulty) {
                                 var actualHashrate = Math.floor(b.actual_hash_difficulty * Math.pow(2, 32) / 150);
+                                var actualPdiff = b.actual_hash_difficulty * 65536;
                                 s += 'Hash Diff: <b style="color:#00d4ff">' + format_hashrate(actualHashrate) + '</b><br/>';
+                                s += '<span style="font-size:10px;color:#aaa">(bdiff: ' + d3.format(',.2f')(b.actual_hash_difficulty) + ', pdiff: ' + d3.format('.2e')(actualPdiff) + ')</span><br/>';
                             }
                             s += 'Status: <b style="color:' + (b.status === 'confirmed' ? '#00ff88' : '#ffc107') + '">' + (b.status || 'unknown') + '</b>';
                             return s;
@@ -1939,13 +1955,17 @@
                             }
                             if (b.network_difficulty) {
                                 var netHashrate = Math.floor(b.network_difficulty * Math.pow(2, 32) / 150);
+                                var netPdiff = b.network_difficulty * 65536;
                                 s += 'Net Diff: <b style="color:#8888ff">' + format_hashrate(netHashrate) + '</b><br/>';
                                 s += '<span style="font-size:11px;color:#888">(Hashrate needed to solve in 2.5 min)</span><br/>';
+                                s += '<span style="font-size:11px;color:#aaa">bdiff: ' + d3.format(',.2f')(b.network_difficulty) + ', pdiff: ' + d3.format('.2e')(netPdiff) + '</span><br/>';
                             }
                             if (b.actual_hash_difficulty) {
                                 var actualHashrate = Math.floor(b.actual_hash_difficulty * Math.pow(2, 32) / 150);
+                                var actualPdiff = b.actual_hash_difficulty * 65536;
                                 s += 'Hash Diff: <b style="color:#00d4ff">' + format_hashrate(actualHashrate) + '</b><br/>';
                                 s += '<span style="font-size:11px;color:#888">(Hashrate equivalent of found hash)</span><br/>';
+                                s += '<span style="font-size:11px;color:#aaa">bdiff: ' + d3.format(',.2f')(b.actual_hash_difficulty) + ', pdiff: ' + d3.format('.2e')(actualPdiff) + '</span><br/>';
                             }
                             s += 'Status: <b style="color:' + (b.status === 'confirmed' ? '#00ff88' : '#ffc107') + '">' + (b.status || 'unknown') + '</b>';
                             return s;
