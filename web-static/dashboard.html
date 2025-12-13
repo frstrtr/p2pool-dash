@@ -1440,32 +1440,28 @@
                     validLucks.push(b.luck);
                 }
                 
-                // For block markers, show if within extended range (10% margin)
-                var timeRange = maxTime - minTime;
-                var margin = timeRange * 0.1;
-                if (blockTime >= (minTime - margin) && blockTime <= (maxTime + margin)) {
-                    // Find closest hashrate value for y position
-                    var closestIdx = 0;
-                    var closestDiff = Math.abs(data[0][0] * 1000 - blockTime);
-                    for (var i = 1; i < data.length; i++) {
-                        var diff = Math.abs(data[i][0] * 1000 - blockTime);
-                        if (diff < closestDiff) {
-                            closestDiff = diff;
-                            closestIdx = i;
-                        }
+                // For block markers, show ALL blocks - they'll appear at correct X position
+                // Find closest hashrate value for y position
+                var closestIdx = 0;
+                var closestDiff = Math.abs(data[0][0] * 1000 - blockTime);
+                for (var i = 1; i < data.length; i++) {
+                    var diff = Math.abs(data[i][0] * 1000 - blockTime);
+                    if (diff < closestDiff) {
+                        closestDiff = diff;
+                        closestIdx = i;
                     }
-                    var yVal = (data[closestIdx][1] && data[closestIdx][1].good) ? data[closestIdx][1].good : 0;
-                    // Use a minimum y value so block is visible even if hashrate is 0
-                    if (yVal === 0 && values.length > 0) {
-                        yVal = Math.max.apply(null, values) * 0.1 || 1000000000;
-                    }
-                    
-                    blockMarkers.push({
-                        x: blockTime,
-                        y: yVal,
-                        block: b
-                    });
                 }
+                var yVal = (data[closestIdx][1] && data[closestIdx][1].good) ? data[closestIdx][1].good : 0;
+                // Use a minimum y value so block is visible even if hashrate is 0
+                if (yVal === 0 && values.length > 0) {
+                    yVal = Math.max.apply(null, values) * 0.1 || 1000000000;
+                }
+                
+                blockMarkers.push({
+                    x: blockTime,
+                    y: yVal,
+                    block: b
+                });
             });
             
             // Debug: log processed results
@@ -1751,32 +1747,28 @@
                     validLucks.push(b.luck);
                 }
                 
-                // For block markers, show if within extended range (10% margin)
-                var timeRange = maxTime - minTime;
-                var margin = timeRange * 0.1;
-                if (blockTime >= (minTime - margin) && blockTime <= (maxTime + margin)) {
-                    // Find closest hashrate value for y position
-                    var closestIdx = 0;
-                    var closestDiff = Math.abs(data[0][0] * 1000 - blockTime);
-                    for (var i = 1; i < data.length; i++) {
-                        var diff = Math.abs(data[i][0] * 1000 - blockTime);
-                        if (diff < closestDiff) {
-                            closestDiff = diff;
-                            closestIdx = i;
-                        }
+                // For block markers, show ALL blocks
+                // Find closest hashrate value for y position
+                var closestIdx = 0;
+                var closestDiff = Math.abs(data[0][0] * 1000 - blockTime);
+                for (var i = 1; i < data.length; i++) {
+                    var diff = Math.abs(data[i][0] * 1000 - blockTime);
+                    if (diff < closestDiff) {
+                        closestDiff = diff;
+                        closestIdx = i;
                     }
-                    var yVal = (data[closestIdx][1] && data[closestIdx][1].good) ? data[closestIdx][1].good : 0;
-                    // Use a minimum y value so block is visible even if hashrate is 0
-                    if (yVal === 0 && values.length > 0) {
-                        yVal = Math.max.apply(null, values) * 0.1 || 1000000000;
-                    }
-                    
-                    blockMarkers.push({
-                        x: blockTime,
-                        y: yVal,
-                        block: b
-                    });
                 }
+                var yVal = (data[closestIdx][1] && data[closestIdx][1].good) ? data[closestIdx][1].good : 0;
+                // Use a minimum y value so block is visible even if hashrate is 0
+                if (yVal === 0 && values.length > 0) {
+                    yVal = Math.max.apply(null, values) * 0.1 || 1000000000;
+                }
+                
+                blockMarkers.push({
+                    x: blockTime,
+                    y: yVal,
+                    block: b
+                });
             });
             
             // Update fullscreen stats
@@ -1788,10 +1780,20 @@
             var doaAvg = doaValues.length > 0 ? doaSum / doaValues.length : 0;
             var doaPercent = avg > 0 ? ((doaAvg / (avg + doaAvg)) * 100).toFixed(2) : '0.00';
             
+            // Calculate average luck for fullscreen
+            var fsAvgLuck = validLucks.length > 0 ? 
+                validLucks.reduce(function(a, b) { return a + b; }, 0) / validLucks.length : null;
+            
             document.getElementById('fs-graph-current').textContent = format_hashrate(current);
             document.getElementById('fs-graph-average').textContent = format_hashrate(avg);
             document.getElementById('fs-graph-peak').textContent = format_hashrate(peak);
-            document.getElementById('fs-graph-doa').textContent = format_hashrate(doaAvg) + ' (' + doaPercent + '%)';
+            if (fsAvgLuck !== null) {
+                var luckEl = document.getElementById('fs-graph-luck');
+                luckEl.textContent = d3.format('.0f')(fsAvgLuck) + '%';
+                luckEl.style.color = fsAvgLuck >= 100 ? 'var(--success)' : (fsAvgLuck >= 75 ? 'var(--warning)' : 'var(--danger)');
+            } else {
+                document.getElementById('fs-graph-luck').textContent = '-';
+            }
             
             fullscreenChart = Highcharts.chart('fullscreen-graph', {
                 chart: {
