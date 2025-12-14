@@ -884,6 +884,7 @@
                         <div class="graph-stat"><div class="graph-stat-label">Current</div><div class="graph-stat-value" id="graph-current">-</div></div>
                         <div class="graph-stat"><div class="graph-stat-label">Average</div><div class="graph-stat-value" id="graph-average">-</div></div>
                         <div class="graph-stat"><div class="graph-stat-label">Peak</div><div class="graph-stat-value" id="graph-peak">-</div></div>
+                        <div class="graph-stat"><div class="graph-stat-label">Miners</div><div class="graph-stat-value" id="graph-miners">-</div></div>
                         <div class="graph-stat"><div class="graph-stat-label">Avg Luck</div><div class="graph-stat-value" id="graph-luck">-</div></div>
                     </div>
                 </div>
@@ -914,6 +915,7 @@
                 <div class="fullscreen-stat"><div class="fullscreen-stat-label">Current</div><div class="fullscreen-stat-value" id="fs-graph-current">-</div></div>
                 <div class="fullscreen-stat"><div class="fullscreen-stat-label">Average</div><div class="fullscreen-stat-value" id="fs-graph-average">-</div></div>
                 <div class="fullscreen-stat"><div class="fullscreen-stat-label">Peak</div><div class="fullscreen-stat-value" id="fs-graph-peak">-</div></div>
+                <div class="fullscreen-stat"><div class="fullscreen-stat-label">Miners</div><div class="fullscreen-stat-value" id="fs-graph-miners">-</div></div>
                 <div class="fullscreen-stat"><div class="fullscreen-stat-label">Avg Luck</div><div class="fullscreen-stat-value" id="fs-graph-luck">-</div></div>
             </div>
         </div>
@@ -1699,6 +1701,11 @@
             document.getElementById('graph-current').textContent = format_hashrate(current);
             document.getElementById('graph-average').textContent = format_hashrate(avg);
             document.getElementById('graph-peak').textContent = format_hashrate(peak);
+            
+            // Display current miner count
+            var currentMinerCount = minerCount.length > 0 ? minerCount[minerCount.length - 1][1] : 0;
+            document.getElementById('graph-miners').textContent = currentMinerCount;
+            
             if (avgLuck !== null) {
                 var luckEl = document.getElementById('graph-luck');
                 luckEl.textContent = d3.format('.0f')(avgLuck) + '%';
@@ -2093,6 +2100,11 @@
             document.getElementById('fs-graph-current').textContent = format_hashrate(current);
             document.getElementById('fs-graph-average').textContent = format_hashrate(avg);
             document.getElementById('fs-graph-peak').textContent = format_hashrate(peak);
+            
+            // Display current miner count in fullscreen
+            var fsMinerCount = minerCount.length > 0 ? minerCount[minerCount.length - 1][1] : 0;
+            document.getElementById('fs-graph-miners').textContent = fsMinerCount;
+            
             if (fsAvgLuck !== null) {
                 var luckEl = document.getElementById('fs-graph-luck');
                 luckEl.textContent = d3.format('.0f')(fsAvgLuck) + '%';
