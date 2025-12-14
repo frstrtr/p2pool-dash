@@ -120,7 +120,7 @@ class Protocol(p2protocol.Protocol):
                 self.send_addrs(addrs=[
                     dict(
                         address=dict(
-                            services=self.other_services,
+                            services=0,
                             address=host,
                             port=port,
                         ),
