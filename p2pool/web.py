@@ -504,6 +504,21 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     web_root.putChild('payout_addrs', WebInterface(
         lambda: [bitcoin_data.pubkey_hash_to_address(pubkey_hash, node.net.PARENT) for pubkey_hash in wb.pubkeys.keys]))
     
+    def get_node_info():
+        """Return node configuration info for miners."""
+        external_ip = getattr(wb.args, 'p2pool_external_ip', None)
+        worker_port = node.net.WORKER_PORT
+        p2p_port = node.net.P2P_PORT
+        
+        return dict(
+            external_ip=external_ip,
+            worker_port=worker_port,
+            p2p_port=p2p_port,
+            network=node.net.NAME
+        )
+    
+    web_root.putChild('node_info', WebInterface(get_node_info))
+    
     # ==========================================================================
     # BLOCK HISTORY STORAGE - for accurate luck calculation
     # ==========================================================================
