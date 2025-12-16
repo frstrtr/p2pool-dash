@@ -1208,11 +1208,10 @@
                 
                 var tr = d3.select('#active_miners tbody').selectAll('tr').data(display).enter().append('tr');
                 
-                // Address column
+                // Address column with link to miner detail page
                 tr.append('td').append('a')
                     .attr('class', 'hash-link')
-                    .attr('href', function(m) { return currency_info.address_explorer_url_prefix + m.address; })
-                    .attr('target', '_blank')
+                    .attr('href', function(m) { return 'miner.html?address=' + m.address; })
                     .text(function(m) { return m.address; });
                 
                 // Hashrate column

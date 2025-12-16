@@ -593,13 +593,21 @@
             miners.forEach(function(miner) {
                 var card = container.append('div').attr('class', 'miner-card');
                 
-                // Header
+                // Header with link to detail page
                 var header = card.append('div').attr('class', 'miner-header');
                 var addr_div = header.append('div').attr('class', 'miner-address');
+                
+                // Link to individual miner page
+                addr_div.append('a')
+                    .attr('href', 'miner.html?address=' + miner.address)
+                    .text(miner.address);
+                
+                // Add external blockchain explorer link
                 addr_div.append('a')
                     .attr('href', currency_info.address_explorer_url_prefix + miner.address)
                     .attr('target', '_blank')
-                    .text(miner.address);
+                    .attr('style', 'margin-left: 10px; font-size: 0.8rem;')
+                    .text('↗');
                 
                 // Stats
                 var stats = card.append('div').attr('class', 'miner-stats');

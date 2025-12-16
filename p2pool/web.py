@@ -429,6 +429,53 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     
     web_root.putChild('stratum_stats', WebInterface(get_stratum_stats))
     
+    # ==== Individual miner stats endpoint ====
+    def get_miner_stats(address):
+        """Get detailed statistics for a specific miner address"""
+        if not address:
+            return {'error': 'No address provided'}
+        
+        miner_hash_rates, miner_dead_hash_rates = wb.get_local_rates()
+        
+        if address not in miner_hash_rates:
+            return {'error': 'Miner not found', 'active': False}
+        
+        # Current rates
+        hashrate = miner_hash_rates.get(address, 0)
+        dead_hashrate = miner_dead_hash_rates.get(address, 0)
+        doa_rate = dead_hashrate / hashrate if hashrate > 0 else 0
+        
+        # Current payout
+        current_txouts = node.get_current_txouts()
+        address_script = bitcoin_data.address_to_script2(address, node.net.PARENT)
+        current_payout = current_txouts.get(address_script, 0) / 1e8 if address_script else 0
+        
+        # Share difficulty
+        miner_last_diff = 0
+        if address in wb.last_work_shares.value:
+            miner_last_diff = bitcoin_data.target_to_difficulty(wb.last_work_shares.value[address].target)
+        
+        # Time to share
+        attempts_to_share = node.net.PARENT.DUMB_SCRYPT_DIFF if not hasattr(node.net, 'DASH_DIFF') else node.net.DASH_DIFF
+        time_to_share = attempts_to_share / hashrate if hashrate > 0 else float('inf')
+        
+        # Get global stats for context
+        global_stale_prop = p2pool_data.get_average_stale_prop(node.tracker, node.best_share_var.value, min(node.tracker.get_height(node.best_share_var.value), 720))
+        
+        return dict(
+            address=address,
+            active=True,
+            hashrate=hashrate,
+            dead_hashrate=dead_hashrate,
+            doa_rate=doa_rate,
+            share_difficulty=miner_last_diff,
+            time_to_share=time_to_share,
+            current_payout=current_payout,
+            global_stale_prop=global_stale_prop,
+        )
+    
+    web_root.putChild('miner_stats', WebInterface(get_miner_stats))
+    
     # ==== Security/DDoS monitoring endpoint ====
     def get_stratum_security():
         """Get stratum security and DDoS detection metrics"""
