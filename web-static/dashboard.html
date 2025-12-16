@@ -1663,16 +1663,16 @@
             sortedBlocks.forEach(function(b) {
                 var blockTime = b.ts * 1000;
                 
-                // For luck trend, collect all blocks with luck data
-                if (b.luck) {
-                    luckTrendData.push([blockTime, b.luck]);
-                    validLucks.push(b.luck);
-                }
-                
-                // For block markers, show blocks within selected time window
+                // Check if block is within selected time window
                 var timeRange = maxTime - minTime;
                 var margin = timeRange * 0.05;
                 if (blockTime >= (minTime - margin) && blockTime <= (maxTime + margin)) {
+                    // For luck trend, collect blocks with luck data within time window
+                    if (b.luck) {
+                        luckTrendData.push([blockTime, b.luck]);
+                        validLucks.push(b.luck);
+                    }
+                    
                     // Find closest hashrate value for y position
                     var closestIdx = 0;
                     var closestDiff = Math.abs(data[0][0] * 1000 - blockTime);
@@ -2078,16 +2078,16 @@
             sortedBlocks.forEach(function(b) {
                 var blockTime = b.ts * 1000;
                 
-                // For luck trend, collect all blocks with luck data
-                if (b.luck) {
-                    luckTrendData.push([blockTime, b.luck]);
-                    validLucks.push(b.luck);
-                }
-                
-                // For block markers, show blocks within selected time window
+                // Check if block is within selected time window
                 var timeRange = maxTime - minTime;
                 var margin = timeRange * 0.05;
                 if (blockTime >= (minTime - margin) && blockTime <= (maxTime + margin)) {
+                    // For luck trend, collect blocks with luck data within time window
+                    if (b.luck) {
+                        luckTrendData.push([blockTime, b.luck]);
+                        validLucks.push(b.luck);
+                    }
+                    
                     // Find closest hashrate value for y position
                     var closestIdx = 0;
                     var closestDiff = Math.abs(data[0][0] * 1000 - blockTime);
