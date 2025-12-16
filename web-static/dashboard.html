@@ -1721,22 +1721,38 @@
                 }
             });
             
-            // Find the last block before the time window to extend luck trend line backward
+            // Extend luck trend line backward by interpolating at the window edge
+            // Find the last block before window and first block in window
             var lastBlockBeforeWindow = null;
+            var firstBlockInWindow = null;
             for (var i = 0; i < sortedBlocks.length; i++) {
                 var bt = sortedBlocks[i].ts * 1000;
                 if (bt < minTime && sortedBlocks[i].luck) {
                     lastBlockBeforeWindow = sortedBlocks[i];
-                } else if (bt >= minTime) {
+                } else if (bt >= minTime && sortedBlocks[i].luck && !firstBlockInWindow) {
+                    firstBlockInWindow = sortedBlocks[i];
                     break;
                 }
             }
             
-            // Prepend last block before window to luck trend (to prevent line truncation at window edge)
-            if (lastBlockBeforeWindow && lastBlockBeforeWindow.luck && luckTrendData.length > 0) {
-                luckTrendData.unshift([lastBlockBeforeWindow.ts * 1000, lastBlockBeforeWindow.luck]);
-                validLucks.push(lastBlockBeforeWindow.luck);
+            // Interpolate luck value at minTime to create smooth line start (without marker)
+            if (lastBlockBeforeWindow && firstBlockInWindow && luckTrendData.length > 0) {
+                var t0 = lastBlockBeforeWindow.ts * 1000;
+                var t1 = firstBlockInWindow.ts * 1000;
+                var luck0 = lastBlockBeforeWindow.luck;
+                var luck1 = firstBlockInWindow.luck;
+                // Linear interpolation: luck = luck0 + (luck1 - luck0) * (minTime - t0) / (t1 - t0)
+                var interpolatedLuck = luck0 + (luck1 - luck0) * (minTime - t0) / (t1 - t0);
+                luckTrendData.unshift({x: minTime, y: interpolatedLuck, marker: {enabled: false}});
             }
+            
+            // Convert simple array points to objects (so interpolated point format matches)
+            luckTrendData = luckTrendData.map(function(point) {
+                if (Array.isArray(point)) {
+                    return {x: point[0], y: point[1]};
+                }
+                return point;
+            });
             
             // Debug: log processed results
             console.log('Compact - blockMarkers:', blockMarkers.length, 'luckTrendData:', luckTrendData.length, 'minTime:', new Date(minTime), 'maxTime:', new Date(maxTime));
@@ -2153,22 +2169,38 @@
                 }
             });
             
-            // Find the last block before the time window to extend luck trend line backward
+            // Extend luck trend line backward by interpolating at the window edge
+            // Find the last block before window and first block in window
             var lastBlockBeforeWindow = null;
+            var firstBlockInWindow = null;
             for (var i = 0; i < sortedBlocks.length; i++) {
                 var bt = sortedBlocks[i].ts * 1000;
                 if (bt < minTime && sortedBlocks[i].luck) {
                     lastBlockBeforeWindow = sortedBlocks[i];
-                } else if (bt >= minTime) {
+                } else if (bt >= minTime && sortedBlocks[i].luck && !firstBlockInWindow) {
+                    firstBlockInWindow = sortedBlocks[i];
                     break;
                 }
             }
             
-            // Prepend last block before window to luck trend (to prevent line truncation at window edge)
-            if (lastBlockBeforeWindow && lastBlockBeforeWindow.luck && luckTrendData.length > 0) {
-                luckTrendData.unshift([lastBlockBeforeWindow.ts * 1000, lastBlockBeforeWindow.luck]);
-                validLucks.push(lastBlockBeforeWindow.luck);
+            // Interpolate luck value at minTime to create smooth line start (without marker)
+            if (lastBlockBeforeWindow && firstBlockInWindow && luckTrendData.length > 0) {
+                var t0 = lastBlockBeforeWindow.ts * 1000;
+                var t1 = firstBlockInWindow.ts * 1000;
+                var luck0 = lastBlockBeforeWindow.luck;
+                var luck1 = firstBlockInWindow.luck;
+                // Linear interpolation: luck = luck0 + (luck1 - luck0) * (minTime - t0) / (t1 - t0)
+                var interpolatedLuck = luck0 + (luck1 - luck0) * (minTime - t0) / (t1 - t0);
+                luckTrendData.unshift({x: minTime, y: interpolatedLuck, marker: {enabled: false}});
             }
+            
+            // Convert simple array points to objects (so interpolated point format matches)
+            luckTrendData = luckTrendData.map(function(point) {
+                if (Array.isArray(point)) {
+                    return {x: point[0], y: point[1]};
+                }
+                return point;
+            });
             
             // Update fullscreen stats
             var current = values[values.length - 1] || 0;
