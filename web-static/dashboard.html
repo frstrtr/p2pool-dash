@@ -1905,20 +1905,26 @@
             });
             
             // Parse miner count data (actively mining - submitted work in last 10min)
+            // Filter to match hashrate data time range for proper alignment
             minerData.forEach(function(d) {
                 var timestamp = d[0] * 1000;
-                var count = d[1] || 0;
-                minerCount.push([timestamp, count]);
+                if (timestamp >= minTime && timestamp <= maxTime) {
+                    var count = d[1] || 0;
+                    minerCount.push([timestamp, count]);
+                }
             });
             
             // Parse connected miners data (connected regardless of recent activity)
+            // Filter to match hashrate data time range for proper alignment
             connectedData.forEach(function(d) {
                 var timestamp = d[0] * 1000;
-                var count = d[1] || 0;
-                connectedCount.push([timestamp, count]);
+                if (timestamp >= minTime && timestamp <= maxTime) {
+                    var count = d[1] || 0;
+                    connectedCount.push([timestamp, count]);
+                }
             });
             
-            // Process blocks - show all blocks, not just those in exact time range
+            // Process blocks - filter to exact time range for proper data alignment
             var blockMarkers = [];
             var luckTrendData = [];
             var validLucks = [];
@@ -1929,10 +1935,8 @@
             sortedBlocks.forEach(function(b) {
                 var blockTime = b.ts * 1000;
                 
-                // Check if block is within selected time window
-                var timeRange = maxTime - minTime;
-                var margin = timeRange * 0.05;
-                if (blockTime >= (minTime - margin) && blockTime <= (maxTime + margin)) {
+                // Check if block is within selected time window (exact range for alignment)
+                if (blockTime >= minTime && blockTime <= maxTime) {
                     // For luck trend, collect blocks with luck data within time window
                     if (b.luck) {
                         luckTrendData.push([blockTime, b.luck]);
@@ -1983,36 +1987,41 @@
                 }
             });
             
-            // Extend luck trend line backward by interpolating at the window edge
-            // Find the last block before window and first block in window
-            var timeRange = maxTime - minTime;
-            var margin = timeRange * 0.05;
-            var windowStart = minTime - margin;
-            
-            var lastBlockBeforeWindow = null;
-            var firstBlockInWindow = null;
-            for (var i = 0; i < sortedBlocks.length; i++) {
-                var bt = sortedBlocks[i].ts * 1000;
-                if (bt < windowStart && sortedBlocks[i].luck) {
-                    lastBlockBeforeWindow = sortedBlocks[i];
-                } else if (bt >= windowStart && sortedBlocks[i].luck && !firstBlockInWindow) {
-                    firstBlockInWindow = sortedBlocks[i];
-                    break;
+            // Interpolate luck trend to align with hashrate time boundaries
+            if (luckTrendData.length > 0) {
+                // Sort by time
+                luckTrendData.sort(function(a, b) { return a[0] - b[0]; });
+                
+                // Add interpolated point at minTime if first point is after minTime
+                if (luckTrendData[0][0] > minTime && sortedBlocks.length > 0) {
+                    // Find the last block before minTime for interpolation
+                    var prevBlock = null;
+                    for (var i = 0; i < sortedBlocks.length; i++) {
+                        var bt = sortedBlocks[i].ts * 1000;
+                        if (bt < minTime && sortedBlocks[i].luck) {
+                            prevBlock = sortedBlocks[i];
+                        } else if (bt >= minTime) {
+                            break;
+                        }
+                    }
+                    
+                    if (prevBlock) {
+                        // Use the previous block's luck value at minTime
+                        luckTrendData.unshift([minTime, prevBlock.luck]);
+                    } else {
+                        // No previous block, use first point's value at minTime
+                        luckTrendData.unshift([minTime, luckTrendData[0][1]]);
+                    }
+                }
+                
+                // Add interpolated point at maxTime if last point is before maxTime
+                if (luckTrendData[luckTrendData.length - 1][0] < maxTime) {
+                    // Extend the last value to maxTime
+                    luckTrendData.push([maxTime, luckTrendData[luckTrendData.length - 1][1]]);
                 }
             }
             
-            // Interpolate luck value at windowStart to create smooth line start (without marker)
-            if (lastBlockBeforeWindow && firstBlockInWindow) {
-                var t0 = lastBlockBeforeWindow.ts * 1000;
-                var t1 = firstBlockInWindow.ts * 1000;
-                var luck0 = lastBlockBeforeWindow.luck;
-                var luck1 = firstBlockInWindow.luck;
-                // Linear interpolation: luck = luck0 + (luck1 - luck0) * (windowStart - t0) / (t1 - t0)
-                var interpolatedLuck = luck0 + (luck1 - luck0) * (windowStart - t0) / (t1 - t0);
-                luckTrendData.unshift({x: windowStart, y: interpolatedLuck, marker: {enabled: false}});
-            }
-            
-            // Convert simple array points to objects (so interpolated point format matches)
+            // Convert simple array points to objects for luck trend
             luckTrendData = luckTrendData.map(function(point) {
                 if (Array.isArray(point)) {
                     return {x: point[0], y: point[1]};
@@ -2021,7 +2030,7 @@
             });
             
             // Debug: log processed results
-            console.log('Compact - blockMarkers:', blockMarkers.length, 'luckTrendData:', luckTrendData.length, 'minTime:', new Date(minTime), 'maxTime:', new Date(maxTime), 'windowStart:', new Date(windowStart));
+            console.log('Compact - blockMarkers:', blockMarkers.length, 'luckTrendData:', luckTrendData.length, 'minTime:', new Date(minTime), 'maxTime:', new Date(maxTime));
             if (blocks.length > 0) {
                 console.log('Block time:', new Date(blocks[0].ts * 1000));
             }
@@ -2032,7 +2041,7 @@
             var avg = values.length > 0 ? sum / values.length : 0;
             var peak = Math.max.apply(null, values) || 0;
             
-            // Calculate average luck
+            // Calculate average luck from blocks within exact time range
             var avgLuck = validLucks.length > 0 ? 
                 validLucks.reduce(function(a, b) { return a + b; }, 0) / validLucks.length : null;
             
@@ -2386,7 +2395,7 @@
                 connectedCount.push([timestamp, count]);
             });
             
-            // Process blocks - show all blocks, not just those in exact time range
+            // Process blocks - filter to exact time range for proper data alignment
             var blockMarkers = [];
             var luckTrendData = [];
             var validLucks = [];
@@ -2397,10 +2406,8 @@
             sortedBlocks.forEach(function(b) {
                 var blockTime = b.ts * 1000;
                 
-                // Check if block is within selected time window
-                var timeRange = maxTime - minTime;
-                var margin = timeRange * 0.05;
-                if (blockTime >= (minTime - margin) && blockTime <= (maxTime + margin)) {
+                // Check if block is within selected time window (exact range for alignment)
+                if (blockTime >= minTime && blockTime <= maxTime) {
                     // For luck trend, collect blocks with luck data within time window
                     if (b.luck) {
                         luckTrendData.push([blockTime, b.luck]);
@@ -2451,36 +2458,41 @@
                 }
             });
             
-            // Extend luck trend line backward by interpolating at the window edge
-            // Find the last block before window and first block in window
-            var timeRange = maxTime - minTime;
-            var margin = timeRange * 0.05;
-            var windowStart = minTime - margin;
-            
-            var lastBlockBeforeWindow = null;
-            var firstBlockInWindow = null;
-            for (var i = 0; i < sortedBlocks.length; i++) {
-                var bt = sortedBlocks[i].ts * 1000;
-                if (bt < windowStart && sortedBlocks[i].luck) {
-                    lastBlockBeforeWindow = sortedBlocks[i];
-                } else if (bt >= windowStart && sortedBlocks[i].luck && !firstBlockInWindow) {
-                    firstBlockInWindow = sortedBlocks[i];
-                    break;
+            // Interpolate luck trend to align with hashrate time boundaries
+            if (luckTrendData.length > 0) {
+                // Sort by time
+                luckTrendData.sort(function(a, b) { return a[0] - b[0]; });
+                
+                // Add interpolated point at minTime if first point is after minTime
+                if (luckTrendData[0][0] > minTime && sortedBlocks.length > 0) {
+                    // Find the last block before minTime for interpolation
+                    var prevBlock = null;
+                    for (var i = 0; i < sortedBlocks.length; i++) {
+                        var bt = sortedBlocks[i].ts * 1000;
+                        if (bt < minTime && sortedBlocks[i].luck) {
+                            prevBlock = sortedBlocks[i];
+                        } else if (bt >= minTime) {
+                            break;
+                        }
+                    }
+                    
+                    if (prevBlock) {
+                        // Use the previous block's luck value at minTime
+                        luckTrendData.unshift([minTime, prevBlock.luck]);
+                    } else {
+                        // No previous block, use first point's value at minTime
+                        luckTrendData.unshift([minTime, luckTrendData[0][1]]);
+                    }
+                }
+                
+                // Add interpolated point at maxTime if last point is before maxTime
+                if (luckTrendData[luckTrendData.length - 1][0] < maxTime) {
+                    // Extend the last value to maxTime
+                    luckTrendData.push([maxTime, luckTrendData[luckTrendData.length - 1][1]]);
                 }
             }
             
-            // Interpolate luck value at windowStart to create smooth line start (without marker)
-            if (lastBlockBeforeWindow && firstBlockInWindow) {
-                var t0 = lastBlockBeforeWindow.ts * 1000;
-                var t1 = firstBlockInWindow.ts * 1000;
-                var luck0 = lastBlockBeforeWindow.luck;
-                var luck1 = firstBlockInWindow.luck;
-                // Linear interpolation: luck = luck0 + (luck1 - luck0) * (windowStart - t0) / (t1 - t0)
-                var interpolatedLuck = luck0 + (luck1 - luck0) * (windowStart - t0) / (t1 - t0);
-                luckTrendData.unshift({x: windowStart, y: interpolatedLuck, marker: {enabled: false}});
-            }
-            
-            // Convert simple array points to objects (so interpolated point format matches)
+            // Convert simple array points to objects for luck trend
             luckTrendData = luckTrendData.map(function(point) {
                 if (Array.isArray(point)) {
                     return {x: point[0], y: point[1]};
