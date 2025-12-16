@@ -1721,6 +1721,23 @@
                 }
             });
             
+            // Find the last block before the time window to extend luck trend line backward
+            var lastBlockBeforeWindow = null;
+            for (var i = 0; i < sortedBlocks.length; i++) {
+                var bt = sortedBlocks[i].ts * 1000;
+                if (bt < minTime && sortedBlocks[i].luck) {
+                    lastBlockBeforeWindow = sortedBlocks[i];
+                } else if (bt >= minTime) {
+                    break;
+                }
+            }
+            
+            // Prepend last block before window to luck trend (to prevent line truncation at window edge)
+            if (lastBlockBeforeWindow && lastBlockBeforeWindow.luck && luckTrendData.length > 0) {
+                luckTrendData.unshift([lastBlockBeforeWindow.ts * 1000, lastBlockBeforeWindow.luck]);
+                validLucks.push(lastBlockBeforeWindow.luck);
+            }
+            
             // Debug: log processed results
             console.log('Compact - blockMarkers:', blockMarkers.length, 'luckTrendData:', luckTrendData.length, 'minTime:', new Date(minTime), 'maxTime:', new Date(maxTime));
             if (blocks.length > 0) {
@@ -2135,6 +2152,23 @@
                     });
                 }
             });
+            
+            // Find the last block before the time window to extend luck trend line backward
+            var lastBlockBeforeWindow = null;
+            for (var i = 0; i < sortedBlocks.length; i++) {
+                var bt = sortedBlocks[i].ts * 1000;
+                if (bt < minTime && sortedBlocks[i].luck) {
+                    lastBlockBeforeWindow = sortedBlocks[i];
+                } else if (bt >= minTime) {
+                    break;
+                }
+            }
+            
+            // Prepend last block before window to luck trend (to prevent line truncation at window edge)
+            if (lastBlockBeforeWindow && lastBlockBeforeWindow.luck && luckTrendData.length > 0) {
+                luckTrendData.unshift([lastBlockBeforeWindow.ts * 1000, lastBlockBeforeWindow.luck]);
+                validLucks.push(lastBlockBeforeWindow.luck);
+            }
             
             // Update fullscreen stats
             var current = values[values.length - 1] || 0;
