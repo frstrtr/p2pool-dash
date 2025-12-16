@@ -963,6 +963,35 @@
             </div>
         </div>
         
+        <!-- Active Miners -->
+        <div class="table-section">
+            <div class="section-header">
+                <h2>⛏️ Active Miners on This Node</h2>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <span class="badge" id="active_miners_count">0</span>
+                    <a href="miners.html" style="color: var(--primary); text-decoration: none; font-size: 14px;">View Details →</a>
+                </div>
+            </div>
+            <div class="table-container">
+                <div class="table-scroll">
+                    <table id="active_miners">
+                        <thead>
+                            <tr>
+                                <th>DASH Address</th>
+                                <th>Hashrate</th>
+                                <th>DOA Hashrate</th>
+                                <th>Share Difficulty</th>
+                                <th>Time to Share</th>
+                                <th>Predicted Payout</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+                <div class="loading" id="active_miners_loading">Loading miners</div>
+            </div>
+        </div>
+        
         <div class="two-col">
             <!-- Recent Blocks -->
             <div class="table-container">
@@ -1123,6 +1152,96 @@
         
         function values(o) { var res = []; for(var x in o) res.push(o[x]); return res; }
         
+        function populateActiveMiners(local_stats) {
+            d3.select('#active_miners_loading').style('display', 'none');
+            
+            // Build miner data array
+            var miners = [];
+            for (var addr in local_stats.miner_hash_rates) {
+                var hashrate = local_stats.miner_hash_rates[addr] || 0;
+                var doa_hashrate = local_stats.miner_dead_hash_rates[addr] || 0;
+                
+                miners.push({
+                    address: addr,
+                    hashrate: hashrate,
+                    doa_hashrate: doa_hashrate,
+                    doa_percent: hashrate > 0 ? doa_hashrate / hashrate : 0
+                });
+            }
+            
+            // Sort by hashrate descending
+            miners.sort(function(a, b) { return b.hashrate - a.hashrate; });
+            
+            // Update count badge
+            d3.select('#active_miners_count').text(miners.length);
+            
+            // Show top 10 miners
+            var display = miners.slice(0, 10);
+            
+            if (display.length === 0) {
+                d3.select('#active_miners tbody').append('tr').append('td')
+                    .attr('colspan', '6')
+                    .attr('style', 'text-align: center; color: #888;')
+                    .text('No active miners');
+                return;
+            }
+            
+            // Fetch payout data
+            d3.json('../current_payouts', function(payouts_data) {
+                var payouts = {};
+                if (payouts_data) {
+                    for (var addr in payouts_data) {
+                        payouts[addr] = payouts_data[addr];
+                    }
+                }
+                
+                // Clear existing rows
+                d3.select('#active_miners tbody').selectAll('tr').remove();
+                
+                var tr = d3.select('#active_miners tbody').selectAll('tr').data(display).enter().append('tr');
+                
+                // Address column
+                tr.append('td').append('a')
+                    .attr('class', 'hash-link')
+                    .attr('href', function(m) { return currency_info.address_explorer_url_prefix + m.address; })
+                    .attr('target', '_blank')
+                    .text(function(m) { return m.address; });
+                
+                // Hashrate column
+                tr.append('td').text(function(m) { return format_hashrate(m.hashrate); });
+                
+                // DOA Hashrate column
+                tr.append('td').text(function(m) { 
+                    return format_hashrate(m.doa_hashrate) + ' (' + d3.format('.1%')(m.doa_percent) + ')'; 
+                });
+                
+                // Share Difficulty column (from global stats)
+                tr.append('td').attr('id', function(m, i) { return 'miner_diff_' + i; }).text('...');
+                
+                // Time to Share column (calculated from difficulty and hashrate)
+                tr.append('td').attr('id', function(m, i) { return 'miner_time_' + i; }).text('...');
+                
+                // Predicted Payout column
+                tr.append('td').text(function(m) { 
+                    var payout = payouts[m.address] || 0;
+                    return d3.format('.4f')(payout);
+                });
+                
+                // Fetch global stats for share difficulty calculation
+                d3.json('../global_stats', function(global_stats) {
+                    if (!global_stats) return;
+                    
+                    display.forEach(function(m, i) {
+                        var diff = global_stats.min_difficulty || 0;
+                        d3.select('#miner_diff_' + i).text(d3.format('.3r')(diff));
+                        
+                        var time_to_share = (diff * Math.pow(2, 32)) / m.hashrate;
+                        d3.select('#miner_time_' + i).text(isFinite(time_to_share) ? format_dt(time_to_share) : '∞');
+                    });
+                });
+            });
+        }
+        
         var currency_info = {};
         
         // Load currency info first
@@ -1190,6 +1309,9 @@
                 
                 var time_to_share = local_stats.attempts_to_share / local;
                 d3.select('#time_to_share').text(isFinite(time_to_share) ? format_dt(time_to_share) : '∞');
+                
+                // Populate active miners table
+                populateActiveMiners(local_stats);
                 
                 d3.json('../global_stats', function(global_stats) {
                     if (!global_stats) return;
