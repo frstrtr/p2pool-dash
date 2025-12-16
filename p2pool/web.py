@@ -1517,6 +1517,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         'miner_hash_rates': graph.DataStreamDescription(dataview_descriptions, is_gauge=False, multivalues=True, multivalues_keep=10000),
         'miner_dead_hash_rates': graph.DataStreamDescription(dataview_descriptions, is_gauge=False, multivalues=True, multivalues_keep=10000),
         'miner_count': graph.DataStreamDescription(dataview_descriptions),
+        'connected_miners': graph.DataStreamDescription(dataview_descriptions),
         'desired_version_rates': graph.DataStreamDescription(dataview_descriptions, multivalues=True,
             multivalue_undefined_means_0=True),
         'traffic_rate': graph.DataStreamDescription(dataview_descriptions, is_gauge=False, multivalues=True),
@@ -1576,6 +1577,14 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         hd.datastreams['current_payout'].add_datum(t, my_current_payouts)
         miner_hash_rates, miner_dead_hash_rates = wb.get_local_rates()
         hd.datastreams['miner_count'].add_datum(t, len(miner_hash_rates))
+        # Track connected miners (regardless of recent mining activity)
+        try:
+            from p2pool.dash.stratum import pool_stats
+            connected_count = pool_stats.get_unique_connected_addresses()
+            hd.datastreams['connected_miners'].add_datum(t, connected_count)
+        except:
+            if p2pool.DEBUG:
+                traceback.print_exc()
         # Convert script bytes to address strings for matching with miner_hash_rates
         current_txouts_by_address = dict(
             (bitcoin_data.script2_to_address(script, node.net.PARENT), value)

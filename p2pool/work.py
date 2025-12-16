@@ -39,8 +39,15 @@ class WorkerBridge(worker_interface.WorkerBridge):
         self.running = True
         self.pseudoshare_received = variable.Event()
         self.share_received = variable.Event()
-        self.local_rate_monitor = math.RateMonitor(10*60)
-        self.local_addr_rate_monitor = math.RateMonitor(10*60)
+        # Activity window must account for extreme variance in low-difficulty mining
+        # At minimum difficulty (0.001), miners can have very long gaps between shares
+        # due to Poisson distribution variance (95% CI = ~30x expected time)
+        # Formula: 100 * STRATUM_SHARE_RATE gives safe margin for variance
+        # For mainnet: 100 * 10 sec = 1000 seconds (~16.7 minutes)
+        # This keeps count stable while still being responsive to real disconnects
+        activity_window = 100 * self.node.net.STRATUM_SHARE_RATE
+        self.local_rate_monitor = math.RateMonitor(activity_window)
+        self.local_addr_rate_monitor = math.RateMonitor(activity_window)
 
         self.removed_unstales_var = variable.Variable((0, 0, 0))
         self.removed_doa_unstales_var = variable.Variable(0)

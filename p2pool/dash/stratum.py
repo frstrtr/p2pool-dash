@@ -418,6 +418,14 @@ class PoolStatistics(object):
         # Convert sets to counts for JSON serialization
         return {ip: len(workers) for ip, workers in ip_workers.items()}
     
+    def get_unique_connected_addresses(self):
+        """Get count of unique miner addresses currently connected (not necessarily mining)"""
+        connected_addresses = set()
+        for conn_id, conn in self.connections.items():
+            if hasattr(conn, 'address') and conn.address:
+                connected_addresses.add(conn.address)
+        return len(connected_addresses)
+    
     def get_pool_stats(self):
         """Get overall pool statistics"""
         now = time.time()

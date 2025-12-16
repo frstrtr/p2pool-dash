@@ -928,7 +928,8 @@
                         <div class="legend-item" data-series="good" onclick="toggleSeries('good', this)" title="Click to toggle Good hashrate"><span class="legend-color" style="background: #008de4;"></span><span>Good</span></div>
                         <div class="legend-item" data-series="doa" onclick="toggleSeries('doa', this)" title="Click to toggle DOA hashrate"><span class="legend-color" style="background: #ff6b6b;"></span><span>DOA</span></div>
                         <div class="legend-item" data-series="blocks" onclick="toggleSeries('blocks', this)" title="Click to toggle block markers"><span class="legend-color" style="background: #00ff88;"></span><span>Blocks</span></div>
-                        <div class="legend-item" data-series="miners" onclick="toggleSeries('miners', this)" title="Click to toggle miner count"><span class="legend-color" style="background: #9c27b0;"></span><span>Miners</span></div>
+                        <div class="legend-item" data-series="miners" onclick="toggleSeries('miners', this)" title="Click to toggle active miners (mining in last 10min)"><span class="legend-color" style="background: #9c27b0;"></span><span>Active</span></div>
+                        <div class="legend-item" data-series="connected" onclick="toggleSeries('connected', this)" title="Click to toggle connected miners (all connections)"><span class="legend-color" style="background: #e91e63;"></span><span>Connected</span></div>
                         <div class="legend-item" data-series="lucktrend" onclick="toggleSeries('lucktrend', this)" title="Click to toggle luck trend line"><span class="legend-color" style="background: #ffc107;"></span><span>Luck</span></div>
                     </div>
                     <div class="graph-container compact" id="hashrate-graph"></div>
@@ -1710,7 +1711,7 @@
         var graphBlocks = [];
         var isFullscreen = false;
         var fullscreenChart = null;
-        var seriesVisibility = { good: true, doa: true, blocks: true, miners: true, lucktrend: true };
+        var seriesVisibility = { good: true, doa: true, blocks: true, miners: true, connected: true, lucktrend: true };
         
         function toggleSeries(seriesName, element) {
             seriesVisibility[seriesName] = !seriesVisibility[seriesName];
@@ -1794,15 +1795,17 @@
             var loadCount = 0;
             var hashrateData = null;
             var minerCountData = null;
+            var connectedMinersData = null;
             var blocksData = [];
             
             function tryRender() {
                 loadCount++;
-                if (loadCount === 3) {
+                if (loadCount === 4) {
                     graphData = hashrateData;
                     graphMinerData = minerCountData;
+                    graphConnectedMinersData = connectedMinersData;
                     graphBlocks = blocksData;
-                    renderHashrateGraph(hashrateData, minerCountData, blocksData);
+                    renderHashrateGraph(hashrateData, minerCountData, connectedMinersData, blocksData);
                 }
             }
             
@@ -1824,8 +1827,21 @@
                 'year': '../web/graph_data/miner_count/last_year'
             };
             
+            var connectedMinersEndpoints = {
+                'hour': '../web/graph_data/connected_miners/last_hour',
+                'day': '../web/graph_data/connected_miners/last_day',
+                'week': '../web/graph_data/connected_miners/last_week',
+                'month': '../web/graph_data/connected_miners/last_month',
+                'year': '../web/graph_data/connected_miners/last_year'
+            };
+            
             d3.json(minerEndpoints[currentGraphPeriod], function(data) {
                 minerCountData = data || [];
+                tryRender();
+            });
+            
+            d3.json(connectedMinersEndpoints[currentGraphPeriod], function(data) {
+                connectedMinersData = data || [];
                 tryRender();
             });
             
@@ -1843,10 +1859,11 @@
 
         var hashrateChart = null;
 
-        function renderHashrateGraph(data, minerData, blocks) {
+        function renderHashrateGraph(data, minerData, connectedData, blocks) {
             var container = document.getElementById('hashrate-graph');
             blocks = blocks || [];
             minerData = minerData || [];
+            connectedData = connectedData || [];
             
             // Debug: log blocks info
             console.log('renderHashrateGraph - Blocks received:', blocks.length);
@@ -1866,6 +1883,7 @@
             var hashrate = [];
             var doarate = [];
             var minerCount = [];
+            var connectedCount = [];
             var values = [];
             var doaValues = [];
             
@@ -1886,11 +1904,18 @@
                 doaValues.push(doaVal);
             });
             
-            // Parse miner count data
+            // Parse miner count data (actively mining - submitted work in last 10min)
             minerData.forEach(function(d) {
                 var timestamp = d[0] * 1000;
                 var count = d[1] || 0;
                 minerCount.push([timestamp, count]);
+            });
+            
+            // Parse connected miners data (connected regardless of recent activity)
+            connectedData.forEach(function(d) {
+                var timestamp = d[0] * 1000;
+                var count = d[1] || 0;
+                connectedCount.push([timestamp, count]);
             });
             
             // Process blocks - show all blocks, not just those in exact time range
@@ -2159,6 +2184,9 @@
                             if (point.series.name === 'Luck Trend') {
                                 s += '<br/><span style="color:' + point.color + '">●</span> ' + 
                                      point.series.name + ': <b>' + d3.format('.0f')(point.y) + '%</b>';
+                            } else if (point.series.name === 'Miners' || point.series.name === 'Connected') {
+                                s += '<br/><span style="color:' + point.color + '">●</span> ' + 
+                                     point.series.name + ': <b>' + Math.round(point.y) + '</b>';
                             } else {
                                 s += '<br/><span style="color:' + point.color + '">●</span> ' + 
                                      point.series.name + ': <b>' + format_hashrate(point.y) + '</b>';
@@ -2270,6 +2298,15 @@
                     visible: seriesVisibility.miners
                 }, {
                     type: 'spline',
+                    name: 'Connected',
+                    data: connectedCount,
+                    color: '#e91e63',
+                    lineWidth: 2,
+                    dashStyle: 'Dot',
+                    yAxis: 2,
+                    visible: seriesVisibility.connected
+                }, {
+                    type: 'spline',
                     name: 'Luck Trend',
                     data: luckTrendData,
                     color: '#ffc107',
@@ -2287,14 +2324,15 @@
             
             // Also update fullscreen if open
             if (isFullscreen) {
-                renderFullscreenGraph(data, minerData, blocks);
+                renderFullscreenGraph(data, minerData, connectedData, blocks);
             }
         }
         
-        function renderFullscreenGraph(data, minerData, blocks) {
+        function renderFullscreenGraph(data, minerData, connectedData, blocks) {
             var container = document.getElementById('fullscreen-graph');
             blocks = blocks || graphBlocks || [];
             minerData = minerData || [];
+            connectedData = connectedData || [];
             
             // Debug: log blocks info
             console.log('renderFullscreenGraph - Blocks received:', blocks.length, 'graphBlocks:', graphBlocks ? graphBlocks.length : 0);
@@ -2312,6 +2350,8 @@
             // Parse data
             var hashrate = [];
             var doarate = [];
+            var minerCount = [];
+            var connectedCount = [];
             var values = [];
             var doaValues = [];
             
@@ -2332,12 +2372,18 @@
                 doaValues.push(doaVal);
             });
             
-            // Process miner count data
-            var minerCount = [];
+            // Process miner count data (actively mining)
             minerData.forEach(function(d) {
                 var timestamp = d[0] * 1000;
                 var count = d[1] || 0;
                 minerCount.push([timestamp, count]);
+            });
+            
+            // Process connected miners data
+            connectedData.forEach(function(d) {
+                var timestamp = d[0] * 1000;
+                var count = d[1] || 0;
+                connectedCount.push([timestamp, count]);
             });
             
             // Process blocks - show all blocks, not just those in exact time range
@@ -2591,6 +2637,9 @@
                             if (point.series.name === 'Luck Trend') {
                                 s += '<br/><span style="color:' + point.color + '">●</span> ' + 
                                      point.series.name + ': <b>' + d3.format('.0f')(point.y) + '%</b>';
+                            } else if (point.series.name === 'Miners' || point.series.name === 'Connected') {
+                                s += '<br/><span style="color:' + point.color + '">●</span> ' + 
+                                     point.series.name + ': <b>' + Math.round(point.y) + '</b>';
                             } else {
                                 s += '<br/><span style="color:' + point.color + '">●</span> ' + 
                                      point.series.name + ': <b>' + format_hashrate(point.y) + '</b>';
@@ -2703,6 +2752,15 @@
                     lineWidth: 2,
                     yAxis: 2,
                     visible: seriesVisibility.miners
+                }, {
+                    type: 'spline',
+                    name: 'Connected',
+                    data: connectedCount,
+                    color: '#e91e63',
+                    lineWidth: 2,
+                    dashStyle: 'Dot',
+                    yAxis: 2,
+                    visible: seriesVisibility.connected
                 }, {
                     type: 'spline',
                     name: 'Luck Trend',
