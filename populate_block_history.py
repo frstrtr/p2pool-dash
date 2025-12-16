@@ -77,11 +77,17 @@ def fetch_block_data(dashd, block_height, net):
         target = mant * (1 << (8 * (exp - 3)))
         network_diff = float(0x00000000FFFF0000000000000000000000000000000000000000000000000000) / float(target)
         
+        # Calculate Hash Diff (actual difficulty of the block hash)
+        hash_int = int(block_hash, 16)
+        max_target = 0x00000000FFFF0000000000000000000000000000000000000000000000000000
+        actual_hash_difficulty = float(max_target) / float(hash_int) if hash_int > 0 else 0
+        
         result = {
             'hash': block_hash,
             'block_height': block_height,
             'ts': block_info.get('time', int(time.time())),
             'network_diff': network_diff,
+            'actual_hash_difficulty': actual_hash_difficulty,
             'block_reward': block_reward,
             'miner': miner_address,
             'status': 'confirmed',  # Historical blocks are confirmed

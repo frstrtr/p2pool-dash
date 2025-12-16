@@ -848,7 +848,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                 defer.returnValue('pending')
     
     @defer.inlineCallbacks
-    def get_recent_blocks(limit=None):
+    def get_recent_blocks(limit=50):
         """Get recent blocks from both persistent storage and sharechain.
         
         Returns blocks from block_history.json (persistent) merged with 
@@ -856,7 +856,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         are displayed even after they leave sharechain memory.
         
         Args:
-            limit: Maximum number of blocks to return (default: all blocks)
+            limit: Maximum number of blocks to return (default: 50)
         """
         # Start with all blocks from persistent storage
         blocks_dict = {}  # Use dict to avoid duplicates, keyed by block_hash
@@ -869,6 +869,13 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                     print 'Warning: Skipping block with non-string hash: %r' % (block_hash,)
                     continue
                 
+                # Calculate Hash Diff for historical blocks if not present
+                actual_hash_difficulty = hist_data.get('actual_hash_difficulty')
+                if actual_hash_difficulty is None:
+                    # We need to fetch the actual block hash from blockchain
+                    # This will be done asynchronously later if needed
+                    actual_hash_difficulty = None
+                
                 blocks_dict[block_hash] = {
                     'ts': hist_data.get('ts', 0),
                     'hash': block_hash,
@@ -879,8 +886,10 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                     'network_difficulty': hist_data.get('network_diff'),
                     'block_reward': hist_data.get('block_reward'),
                     'status': hist_data.get('status', 'unknown'),
+                    'actual_hash_difficulty': actual_hash_difficulty,
                     'explorer_url': node.net.PARENT.BLOCK_EXPLORER_URL_PREFIX + block_hash,
                     'from_history': True,
+                    'needs_hash_fetch': actual_hash_difficulty is None,
                 }
         
         # Now merge/update with current sharechain data
@@ -941,9 +950,31 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         # Convert dict to list and sort by timestamp (newest first)
         blocks = sorted(blocks_dict.values(), key=lambda x: x['ts'], reverse=True)
         
-        # Apply limit if specified
+        # Apply limit
         if limit:
             blocks = blocks[:limit]
+        
+        # Fetch Hash Diff for historical blocks that need it
+        for block in blocks:
+            if block.get('needs_hash_fetch') and block.get('number'):
+                try:
+                    # Get block hash from blockchain by height
+                    block_hash_from_chain = yield wb.dashd.rpc_getblockhash(block['number'])
+                    if block_hash_from_chain:
+                        # Calculate Hash Diff from the actual block hash
+                        hash_int = int(block_hash_from_chain, 16)
+                        max_target = 0x00000000FFFF0000000000000000000000000000000000000000000000000000
+                        actual_hash_difficulty = float(max_target) / float(hash_int) if hash_int > 0 else 0
+                        block['actual_hash_difficulty'] = actual_hash_difficulty
+                        # Update persistent storage with Hash Diff
+                        if block['hash'] in block_history:
+                            block_history[block['hash']]['actual_hash_difficulty'] = actual_hash_difficulty
+                except Exception as e:
+                    # Silently skip if we can't fetch - Hash Diff will remain None
+                    pass
+                
+                # Remove the internal flag
+                block.pop('needs_hash_fetch', None)
         
         # Calculate luck for each block using AVERAGE hashrate between blocks
         # Luck = expected_time / actual_time * 100%
