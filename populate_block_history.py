@@ -26,8 +26,7 @@ from twisted.python import log
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from p2pool import networks
-from p2pool.dash import data as dash_data
-from p2pool.bitcoin import data as bitcoin_data
+from dash import data as bitcoin_data
 from p2pool.util import jsonrpc
 
 @defer.inlineCallbacks
