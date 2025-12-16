@@ -25,8 +25,24 @@
         </style>
     </head>
     
-    <body>
-        <h1><a href=".">P2Pool</a> &gt; Graphs</h1>
+    <body style="margin: 0;">
+        <header style="background: #252540; border-bottom: 1px solid #3a3a5a; padding: 15px 0; margin-bottom: 20px;">
+            <div style="max-width: 1400px; margin: 0 auto; padding: 0 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <h1 style="font-size: 1.5rem; font-weight: 600; color: #008de4; margin: 0;">P2Pool Graphs</h1>
+                    </div>
+                    <nav style="display: flex; gap: 10px; flex-wrap: wrap;">
+                        <a href="dashboard.html" style="color: #e0e0e0; text-decoration: none; padding: 8px 16px; border-radius: 6px; font-size: 0.9rem; background: #16162a; transition: all 0.2s;">Dashboard</a>
+                        <a href="graphs.html" style="color: white; text-decoration: none; padding: 8px 16px; border-radius: 6px; font-size: 0.9rem; background: #008de4; transition: all 0.2s;">Graphs</a>
+                        <a href="stratum.html" style="color: #e0e0e0; text-decoration: none; padding: 8px 16px; border-radius: 6px; font-size: 0.9rem; background: #16162a; transition: all 0.2s;">Stratum</a>
+                        <a href="miners.html" style="color: #e0e0e0; text-decoration: none; padding: 8px 16px; border-radius: 6px; font-size: 0.9rem; background: #16162a; transition: all 0.2s;">Miners</a>
+                        <a href="index.html" style="color: #e0e0e0; text-decoration: none; padding: 8px 16px; border-radius: 6px; font-size: 0.9rem; background: #16162a; transition: all 0.2s;">Classic</a>
+                    </nav>
+                </div>
+            </div>
+        </header>
+        <div style="max-width: 1400px; margin: 0 auto; padding: 0 20px;">
         
         <p>Periods: <span id="period_chooser"></span> Current: <span id="period_current"></span></p>
         
@@ -560,5 +576,6 @@
                 });
             }
         </script>
+        </div>
     </body>
 </html>
