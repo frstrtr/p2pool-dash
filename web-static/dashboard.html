@@ -1762,15 +1762,12 @@
                     // Use a minimum y value so block is visible even if hashrate is 0
                     if (yVal === 0 && values.length > 0) {
                         yVal = Math.max.apply(null, values) * 0.1 || 1000000000;
-                    
-                    // Ensure minimum value for log scale
-                    if (yVal < 1) yVal = 1;
                     }
                     
-                    // Position block higher based on difficulty ratio
+                    // Position block higher based on difficulty ratio (softer elevation using square root)
                     if (b.actual_hash_difficulty && b.network_difficulty && b.network_difficulty > 0) {
                         var diffRatio = b.actual_hash_difficulty / b.network_difficulty;
-                        var heightMultiplier = Math.pow(diffRatio, 0.3);
+                        var heightMultiplier = 1 + (Math.sqrt(diffRatio) - 1) * 0.5;
                         yVal = yVal * heightMultiplier;
                     }
                     
@@ -1899,10 +1896,9 @@
                     gridLineWidth: 1
                 },
                 yAxis: [{
-                    // Primary Y-axis for hashrate (logarithmic to handle wide difficulty ranges)
+                    // Primary Y-axis for hashrate (linear with intelligent max)
                     title: { text: null },
-                    type: 'logarithmic',
-                    min: 1,
+                    min: 0,
                     lineColor: '#3a3a5a',
                     tickColor: '#3a3a5a',
                     labels: {
@@ -1914,10 +1910,9 @@
                     gridLineColor: '#2a2a4a',
                     opposite: false
                 }, {
-                    // Secondary Y-axis for luck percentage (logarithmic scale)
+                    // Secondary Y-axis for luck percentage
                     title: { text: null },
-                    type: 'logarithmic',
-                    min: 1,
+                    min: 0,
                     lineColor: '#ffc107',
                     tickColor: '#ffc107',
                     labels: {
@@ -2214,15 +2209,12 @@
                     // Use a minimum y value so block is visible even if hashrate is 0
                     if (yVal === 0 && values.length > 0) {
                         yVal = Math.max.apply(null, values) * 0.1 || 1000000000;
-                    
-                    // Ensure minimum value for log scale
-                    if (yVal < 1) yVal = 1;
                     }
                     
-                    // Position block higher based on difficulty ratio
+                    // Position block higher based on difficulty ratio (softer elevation using square root)
                     if (b.actual_hash_difficulty && b.network_difficulty && b.network_difficulty > 0) {
                         var diffRatio = b.actual_hash_difficulty / b.network_difficulty;
-                        var heightMultiplier = Math.pow(diffRatio, 0.3);
+                        var heightMultiplier = 1 + (Math.sqrt(diffRatio) - 1) * 0.5;
                         yVal = yVal * heightMultiplier;
                     }
                     
@@ -2348,10 +2340,9 @@
                     gridLineColor: '#2a2a4a',
                     opposite: false
                 }, {
-                    // Second Y-axis for luck percentage (logarithmic scale)
+                    // Second Y-axis for luck percentage
                     title: { text: null },
-                    type: 'logarithmic',
-                    min: 1,
+                    min: 0,
                     lineColor: '#ffc107',
                     tickColor: '#ffc107',
                     labels: {
