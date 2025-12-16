@@ -1762,18 +1762,17 @@
                     // Use a minimum y value so block is visible even if hashrate is 0
                     if (yVal === 0 && values.length > 0) {
                         yVal = Math.max.apply(null, values) * 0.1 || 1000000000;
+                    
+                    // Ensure minimum value for log scale
+                    if (yVal < 1) yVal = 1;
                     }
                     
-                    // Position block higher based on difficulty ratio to make it easier to hover
-                    // Higher actual difficulty = block floats higher above hashrate line
-                    // Since block difficulty is ALWAYS higher than network difficulty, baseline is 0%
+                    // Position block higher based on difficulty ratio
                     if (b.actual_hash_difficulty && b.network_difficulty && b.network_difficulty > 0) {
                         var diffRatio = b.actual_hash_difficulty / b.network_difficulty;
-                        // Scale ratio: 1.0 = baseline (0%), 2.0 = 30% higher, 3.0 = 60% higher, etc.
-                        var heightMultiplier = 1.0 + (diffRatio - 1.0) * 0.3;
+                        var heightMultiplier = Math.pow(diffRatio, 0.3);
                         yVal = yVal * heightMultiplier;
                     }
-                    // No else needed - if no difficulty data, keep at hashrate level
                     
                     // Determine color based on luck
                     var color = '#10b981'; // Default green (good luck >= 100%)
@@ -1900,9 +1899,11 @@
                     gridLineWidth: 1
                 },
                 yAxis: [{
-                    // Primary Y-axis for hashrate
+                    // Primary Y-axis for hashrate (logarithmic to handle wide difficulty ranges)
                     title: { text: null },
-                    min: 0,
+                    type: 'logarithmic',
+                    min: 1,logarithmic',
+                    min: 1,
                     lineColor: '#3a3a5a',
                     tickColor: '#3a3a5a',
                     labels: {
@@ -2214,18 +2215,17 @@
                     // Use a minimum y value so block is visible even if hashrate is 0
                     if (yVal === 0 && values.length > 0) {
                         yVal = Math.max.apply(null, values) * 0.1 || 1000000000;
+                    
+                    // Ensure minimum value for log scale
+                    if (yVal < 1) yVal = 1;
                     }
                     
-                    // Position block higher based on difficulty ratio to make it easier to hover
-                    // Higher actual difficulty = block floats higher above hashrate line
-                    // Since block difficulty is ALWAYS higher than network difficulty, baseline is 0%
+                    // Position block higher based on difficulty ratio
                     if (b.actual_hash_difficulty && b.network_difficulty && b.network_difficulty > 0) {
                         var diffRatio = b.actual_hash_difficulty / b.network_difficulty;
-                        // Scale ratio: 1.0 = baseline (0%), 2.0 = 30% higher, 3.0 = 60% higher, etc.
-                        var heightMultiplier = 1.0 + (diffRatio - 1.0) * 0.3;
+                        var heightMultiplier = Math.pow(diffRatio, 0.3);
                         yVal = yVal * heightMultiplier;
                     }
-                    // No else needed - if no difficulty data, keep at hashrate level
                     
                     // Determine color based on luck
                     var color = '#10b981'; // Default green (good luck >= 100%)
