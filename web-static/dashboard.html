@@ -957,9 +957,10 @@
                             <th>Height</th>
                             <th>Block Hash</th>
                             <th>Luck</th>
+                            <th title="Time to find block (expected/actual)">Round</th>
                             <th title="Network difficulty target">Net Diff</th>
                             <th title="Actual hash difficulty">Hash Diff</th>
-                            <th>Status</th>
+                            <th title="Block status">✓</th>
                         </tr>
                     </thead>
                     <tbody></tbody>
@@ -1245,6 +1246,29 @@
                         return tip;
                     });
                 tr.append('td')
+                    .attr('style', 'font-family: monospace; font-size: 11px;')
+                    .text(function(b) {
+                        if (!b.expected_time && !b.time_to_find) return '-';
+                        var expected = b.expected_time || 0;
+                        var actual = b.time_to_find || 0;
+                        
+                        var formatTime = function(seconds) {
+                            var hours = Math.floor(seconds / 3600);
+                            var mins = Math.floor((seconds % 3600) / 60);
+                            return ('0' + hours).slice(-2) + ':' + ('0' + mins).slice(-2);
+                        };
+                        
+                        var exp = expected > 0 ? formatTime(expected) : '--:--';
+                        var act = actual > 0 ? formatTime(actual) : '--:--';
+                        return exp + '/' + act;
+                    })
+                    .attr('title', function(b) {
+                        if (!b.expected_time && !b.time_to_find) return '';
+                        var exp = b.expected_time ? format_dt(b.expected_time) : 'unknown';
+                        var act = b.time_to_find ? format_dt(b.time_to_find) : 'unknown';
+                        return 'Expected: ' + exp + '\nActual: ' + act;
+                    });
+                tr.append('td')
                     .text(function(b) {
                         if (!b.network_difficulty) return '-';
                         var hashrate = Math.floor(b.network_difficulty * Math.pow(2, 32) / 150);
@@ -1272,10 +1296,16 @@
                         if (b.status === 'orphaned') return 'status-orphaned';
                         return 'status-pending';
                     })
+                    .attr('style', 'text-align: center; font-size: 18px;')
+                    .attr('title', function(b) {
+                        if (b.status === 'confirmed') return 'Confirmed';
+                        if (b.status === 'orphaned') return 'Orphaned';
+                        return 'Pending';
+                    })
                     .text(function(b) {
-                        if (b.status === 'confirmed') return '✓ Confirmed';
-                        if (b.status === 'orphaned') return '✗ Orphaned';
-                        return '⏳ Pending';
+                        if (b.status === 'confirmed') return '✓';
+                        if (b.status === 'orphaned') return '✗';
+                        return '⏳';
                     });
             });
         }
