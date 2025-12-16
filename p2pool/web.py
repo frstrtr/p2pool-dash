@@ -805,6 +805,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         # Validate block_hash is a string
         # Silently return unknown for non-string hashes (expected from sharechain)
         if not isinstance(block_hash, (str, unicode)):
+            #print 'Error: get_block_status called with non-string hash: %r (type: %s)' % (block_hash, type(block_hash).__name__)
             defer.returnValue('unknown')
         
         now = time.time()
