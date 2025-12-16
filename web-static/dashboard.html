@@ -984,7 +984,7 @@
                                 <th>Height</th>
                                 <th>Block Hash</th>
                                 <th>Luck</th>
-                                <th title="Time to find block (expected/actual)">Round</th>
+                                <th title="Time to find block (actual/expected)">Round</th>
                                 <th title="Network difficulty target">Net Diff</th>
                                 <th title="Actual hash difficulty">Hash Diff</th>
                                 <th title="Block status">✓</th>
@@ -1292,13 +1292,12 @@
                         
                         // Calculate expected time from network difficulty and pool hashrate
                         var expected = 0;
-                        if (b.network_difficulty && b.pool_hashrate_at_find && b.pool_hashrate_at_find > 0) {
-                            // Expected shares to find block = network_diff / share_diff (assume share_diff = 1)
-                            // Expected time = expected_shares * share_time (150 seconds)
-                            // Simplified: expected_time = network_diff * 150 * 2^32 / pool_hashrate
-                            expected = (b.network_difficulty * Math.pow(2, 32) * 150) / b.pool_hashrate_at_find;
-                        } else if (b.expected_time) {
+                        if (b.expected_time) {
+                            // Use backend-calculated expected time (most accurate)
                             expected = b.expected_time;
+                        } else if (b.network_difficulty && b.pool_hashrate_at_find && b.pool_hashrate_at_find > 0) {
+                            // Fallback calculation: expected_hashes / hashrate = time
+                            expected = (b.network_difficulty * Math.pow(2, 32)) / b.pool_hashrate_at_find;
                         }
                         
                         var formatTime = function(seconds) {
@@ -1309,15 +1308,16 @@
                         
                         var exp = expected > 0 ? formatTime(expected) : '--:--';
                         var act = actual > 0 ? formatTime(actual) : '--:--';
-                        return exp + '/' + act;
+                        // Display as actual/expected since that's more intuitive (time taken vs time expected)
+                        return act + '/' + exp;
                     })
                     .attr('title', function(b) {
                         var actual = b.time_to_find || 0;
                         var expected = 0;
-                        if (b.network_difficulty && b.pool_hashrate_at_find && b.pool_hashrate_at_find > 0) {
-                            expected = (b.network_difficulty * Math.pow(2, 32) * 150) / b.pool_hashrate_at_find;
-                        } else if (b.expected_time) {
+                        if (b.expected_time) {
                             expected = b.expected_time;
+                        } else if (b.network_difficulty && b.pool_hashrate_at_find && b.pool_hashrate_at_find > 0) {
+                            expected = (b.network_difficulty * Math.pow(2, 32)) / b.pool_hashrate_at_find;
                         }
                         
                         var exp = expected > 0 ? format_dt(expected) : 'unknown';
