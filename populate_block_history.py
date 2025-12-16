@@ -23,7 +23,9 @@ from twisted.internet import defer, reactor
 from twisted.python import log
 
 # Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+script_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, script_dir)
+sys.path.insert(0, os.path.join(script_dir, 'p2pool'))
 
 from p2pool import networks
 from dash import data as bitcoin_data
