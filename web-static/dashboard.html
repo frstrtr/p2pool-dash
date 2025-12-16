@@ -313,6 +313,14 @@
             max-height: 500px;
             overflow-y: auto;
             overflow-x: hidden;
+            position: relative;
+        }
+        
+        .table-scroll thead th {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background: var(--darker);
         }
         
         .table-scroll::-webkit-scrollbar {
