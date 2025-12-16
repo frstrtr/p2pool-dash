@@ -65,7 +65,12 @@ def fetch_block_data(dashd, block_height, net):
                 log.err(e, 'Error fetching coinbase transaction for block %d:' % block_height)
         
         # Calculate difficulty from bits
-        bits = int(block_info['bits'], 16) if isinstance(block_info['bits'], str) else block_info['bits']
+        # Handle both string (hex) and integer bits values
+        if isinstance(block_info['bits'], (str, unicode)):
+            bits = int(block_info['bits'], 16)
+        else:
+            bits = int(block_info['bits'])
+        
         # Convert bits to target
         exp = bits >> 24
         mant = bits & 0xffffff
