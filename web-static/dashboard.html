@@ -1290,11 +1290,14 @@
                     .text(function(b) {
                         var actual = b.time_to_find || 0;
                         
-                        // Calculate expected time from network difficulty and pool hashrate
+                        // Calculate expected time - prioritize backend value, then derive from luck
                         var expected = 0;
                         if (b.expected_time) {
                             // Use backend-calculated expected time (most accurate)
                             expected = b.expected_time;
+                        } else if (b.luck && b.luck > 0 && actual > 0) {
+                            // Derive from luck: luck = (expected / actual) * 100
+                            expected = (actual * b.luck) / 100;
                         } else if (b.network_difficulty && b.pool_hashrate_at_find && b.pool_hashrate_at_find > 0) {
                             // Fallback calculation: expected_hashes / hashrate = time
                             expected = (b.network_difficulty * Math.pow(2, 32)) / b.pool_hashrate_at_find;
@@ -1316,13 +1319,16 @@
                         var expected = 0;
                         if (b.expected_time) {
                             expected = b.expected_time;
+                        } else if (b.luck && b.luck > 0 && actual > 0) {
+                            // Derive from luck: luck = (expected / actual) * 100
+                            expected = (actual * b.luck) / 100;
                         } else if (b.network_difficulty && b.pool_hashrate_at_find && b.pool_hashrate_at_find > 0) {
                             expected = (b.network_difficulty * Math.pow(2, 32)) / b.pool_hashrate_at_find;
                         }
                         
                         var exp = expected > 0 ? format_dt(expected) : 'unknown';
                         var act = actual > 0 ? format_dt(actual) : 'unknown';
-                        return 'Expected: ' + exp + '\nActual: ' + act;
+                        return 'Actual: ' + act + '\nExpected: ' + exp;
                     });
                 tr.append('td')
                     .text(function(b) {
