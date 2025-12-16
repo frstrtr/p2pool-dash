@@ -1228,6 +1228,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                 ts=b['ts'],
                 luck=b.get('luck'),
                 time_to_find=b.get('time_to_find'),
+                expected_time=b.get('expected_time'),
                 status=b.get('status'),
             ) for b in sorted(blocks, key=lambda x: x['ts'], reverse=True)]
         ))
