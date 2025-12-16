@@ -948,7 +948,12 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             current_expected_time = None
             current_network_diff = None
             try:
-                lookbehind = min(height, 3600 // node.net.SHARE_PERIOD)
+                if node.best_share_var.value is not None:
+                    height = node.tracker.get_height(node.best_share_var.value)
+                    lookbehind = min(height, 3600 // node.net.SHARE_PERIOD)
+                else:
+                    lookbehind = 0
+                    
                 if lookbehind >= 2:
                     pool_hashrate = p2pool_data.get_pool_attempts_per_second(
                         node.tracker, node.best_share_var.value, lookbehind)
