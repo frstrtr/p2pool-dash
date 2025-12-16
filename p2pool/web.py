@@ -802,6 +802,11 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     @defer.inlineCallbacks
     def get_block_status(block_hash):
         """Check if a block is confirmed, orphaned, or pending."""
+        # Validate block_hash is a string
+        if not isinstance(block_hash, (str, unicode)):
+            print 'Error: get_block_status called with non-string hash: %r (type: %s)' % (block_hash, type(block_hash).__name__)
+            defer.returnValue('unknown')
+        
         now = time.time()
         
         # Check cache first
@@ -859,6 +864,11 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         # Add all blocks from persistent history
         for block_hash, hist_data in block_history.items():
             if hist_data:
+                # Ensure block_hash is a string (not a number)
+                if not isinstance(block_hash, (str, unicode)):
+                    print 'Warning: Skipping block with non-string hash: %r' % (block_hash,)
+                    continue
+                
                 blocks_dict[block_hash] = {
                     'ts': hist_data.get('ts', 0),
                     'hash': block_hash,
