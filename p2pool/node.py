@@ -214,7 +214,15 @@ class Node(object):
         def poll_header():
             if self.factory.conn.value is None:
                 return
-            handle_header((yield self.factory.conn.value.get_block_header(self.dashd_work.value['previous_block'])))
+            try:
+                header = yield self.factory.conn.value.get_block_header(self.dashd_work.value['previous_block'])
+                handle_header(header)
+            except defer.TimeoutError:
+                # Dashd didn't respond in time, will retry on next call
+                print 'Warning: Timeout while requesting block header from dashd'
+            except Exception as e:
+                # Log other errors but don't crash
+                print 'Warning: Error while requesting block header:', str(e)
         self.dashd_work.changed.watch(lambda _: poll_header())
         yield deferral.retry('Error while requesting best block header:')(poll_header)()
         
