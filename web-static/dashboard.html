@@ -966,6 +966,7 @@
                     <tbody></tbody>
                 </table>
                 <div class="loading" id="blocks_loading">Loading blocks</div>
+                <button id="blocks_show_more" style="display: none; width: 100%; padding: 10px; margin-top: 10px; background: var(--card-bg); color: var(--text-secondary); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 14px;">Show 5 more...</button>
             </div>
             
             <!-- Payouts -->
@@ -1210,7 +1211,16 @@
                     }
                 }
                 
-                var tr = d3.select('#blocks tbody').selectAll('tr').data(blocks).enter().append('tr');
+                // Store all blocks and current display count
+                window.allBlocks = blocks;
+                window.blocksDisplayCount = Math.min(5, blocks.length);
+                
+                // Function to render blocks
+                function renderBlocks() {
+                    var displayBlocks = window.allBlocks.slice(0, window.blocksDisplayCount);
+                    
+                    d3.select('#blocks tbody').selectAll('tr').remove();
+                    var tr = d3.select('#blocks tbody').selectAll('tr').data(displayBlocks).enter().append('tr');
                 tr.append('td').text(function(b) { return format_time_short(b.ts); });
                 tr.append('td').text(function(b) { return b.number; });
                 tr.append('td').append('a')
@@ -1248,9 +1258,18 @@
                 tr.append('td')
                     .attr('style', 'font-family: monospace; font-size: 11px;')
                     .text(function(b) {
-                        if (!b.expected_time && !b.time_to_find) return '-';
-                        var expected = b.expected_time || 0;
                         var actual = b.time_to_find || 0;
+                        
+                        // Calculate expected time from network difficulty and pool hashrate
+                        var expected = 0;
+                        if (b.network_difficulty && b.pool_hashrate_at_find && b.pool_hashrate_at_find > 0) {
+                            // Expected shares to find block = network_diff / share_diff (assume share_diff = 1)
+                            // Expected time = expected_shares * share_time (150 seconds)
+                            // Simplified: expected_time = network_diff * 150 * 2^32 / pool_hashrate
+                            expected = (b.network_difficulty * Math.pow(2, 32) * 150) / b.pool_hashrate_at_find;
+                        } else if (b.expected_time) {
+                            expected = b.expected_time;
+                        }
                         
                         var formatTime = function(seconds) {
                             var hours = Math.floor(seconds / 3600);
@@ -1263,9 +1282,16 @@
                         return exp + '/' + act;
                     })
                     .attr('title', function(b) {
-                        if (!b.expected_time && !b.time_to_find) return '';
-                        var exp = b.expected_time ? format_dt(b.expected_time) : 'unknown';
-                        var act = b.time_to_find ? format_dt(b.time_to_find) : 'unknown';
+                        var actual = b.time_to_find || 0;
+                        var expected = 0;
+                        if (b.network_difficulty && b.pool_hashrate_at_find && b.pool_hashrate_at_find > 0) {
+                            expected = (b.network_difficulty * Math.pow(2, 32) * 150) / b.pool_hashrate_at_find;
+                        } else if (b.expected_time) {
+                            expected = b.expected_time;
+                        }
+                        
+                        var exp = expected > 0 ? format_dt(expected) : 'unknown';
+                        var act = actual > 0 ? format_dt(actual) : 'unknown';
                         return 'Expected: ' + exp + '\nActual: ' + act;
                     });
                 tr.append('td')
@@ -1307,6 +1333,25 @@
                         if (b.status === 'orphaned') return '✗';
                         return '⏳';
                     });
+                    
+                    // Update show more button
+                    var showMoreBtn = d3.select('#blocks_show_more');
+                    if (window.blocksDisplayCount < window.allBlocks.length) {
+                        showMoreBtn.style('display', 'block')
+                            .text('Show 5 more... (' + (window.allBlocks.length - window.blocksDisplayCount) + ' remaining)');
+                    } else {
+                        showMoreBtn.style('display', 'none');
+                    }
+                }
+                
+                // Initial render
+                renderBlocks();
+                
+                // Show more button handler
+                d3.select('#blocks_show_more').on('click', function() {
+                    window.blocksDisplayCount = Math.min(window.blocksDisplayCount + 5, window.allBlocks.length);
+                    renderBlocks();
+                });
             });
         }
         
