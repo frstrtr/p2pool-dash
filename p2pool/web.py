@@ -882,54 +882,53 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         try:
             height = node.tracker.get_height(node.best_share_var.value)
             if height >= 1:
-                
-            for s in node.tracker.get_chain(node.best_share_var.value, min(height, node.net.CHAIN_LENGTH)):
-                if s.pow_hash <= s.header['bits'].target:
-                    block_hash = '%064x' % s.header_hash
-                    try:
-                        block_number = p2pool_data.parse_bip0034(s.share_data['coinbase'])[0]
-                    except Exception:
-                        block_number = 0
-                    
-                    # Check block status
-                    status = yield get_block_status(block_hash)
-                    
-                    # Calculate actual hash difficulty (based on the hash value itself)
-                    hash_int = int(block_hash, 16)
-                    max_target = 0x00000000FFFF0000000000000000000000000000000000000000000000000000
-                    actual_hash_difficulty = float(max_target) / float(hash_int) if hash_int > 0 else 0
-                    
-                    # Get network difficulty at the time of this block
-                    network_difficulty = bitcoin_data.target_to_difficulty(s.header['bits'].target)
-                    
-                    # Update or create block entry
-                    if block_hash in blocks_dict:
-                        # Update existing entry from history with fresh sharechain data
-                        blocks_dict[block_hash].update({
-                            'ts': s.timestamp,
-                            'number': block_number,
-                            'share': '%064x' % s.hash,
-                            'status': status,
-                            'actual_hash_difficulty': actual_hash_difficulty,
-                            'network_difficulty': network_difficulty,
-                            'from_history': False,  # Has fresh sharechain data
-                        })
-                        # Update persistent storage with latest status
-                        if block_hash in block_history:
-                            block_history[block_hash]['status'] = status
-                    else:
-                        # New block not in history yet
-                        blocks_dict[block_hash] = {
-                            'ts': s.timestamp,
-                            'hash': block_hash,
-                            'number': block_number,
-                            'share': '%064x' % s.hash,
-                            'explorer_url': node.net.PARENT.BLOCK_EXPLORER_URL_PREFIX + block_hash,
-                            'status': status,
-                            'actual_hash_difficulty': actual_hash_difficulty,
-                            'network_difficulty': network_difficulty,
-                            'from_history': False,
-                        }
+                for s in node.tracker.get_chain(node.best_share_var.value, min(height, node.net.CHAIN_LENGTH)):
+                    if s.pow_hash <= s.header['bits'].target:
+                        block_hash = '%064x' % s.header_hash
+                        try:
+                            block_number = p2pool_data.parse_bip0034(s.share_data['coinbase'])[0]
+                        except Exception:
+                            block_number = 0
+                        
+                        # Check block status
+                        status = yield get_block_status(block_hash)
+                        
+                        # Calculate actual hash difficulty (based on the hash value itself)
+                        hash_int = int(block_hash, 16)
+                        max_target = 0x00000000FFFF0000000000000000000000000000000000000000000000000000
+                        actual_hash_difficulty = float(max_target) / float(hash_int) if hash_int > 0 else 0
+                        
+                        # Get network difficulty at the time of this block
+                        network_difficulty = bitcoin_data.target_to_difficulty(s.header['bits'].target)
+                        
+                        # Update or create block entry
+                        if block_hash in blocks_dict:
+                            # Update existing entry from history with fresh sharechain data
+                            blocks_dict[block_hash].update({
+                                'ts': s.timestamp,
+                                'number': block_number,
+                                'share': '%064x' % s.hash,
+                                'status': status,
+                                'actual_hash_difficulty': actual_hash_difficulty,
+                                'network_difficulty': network_difficulty,
+                                'from_history': False,  # Has fresh sharechain data
+                            })
+                            # Update persistent storage with latest status
+                            if block_hash in block_history:
+                                block_history[block_hash]['status'] = status
+                        else:
+                            # New block not in history yet
+                            blocks_dict[block_hash] = {
+                                'ts': s.timestamp,
+                                'hash': block_hash,
+                                'number': block_number,
+                                'share': '%064x' % s.hash,
+                                'explorer_url': node.net.PARENT.BLOCK_EXPLORER_URL_PREFIX + block_hash,
+                                'status': status,
+                                'actual_hash_difficulty': actual_hash_difficulty,
+                                'network_difficulty': network_difficulty,
+                                'from_history': False,
+                            }
         except Exception as e:
             log.err(e, 'Error getting recent blocks from sharechain:')
         
