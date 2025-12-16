@@ -1669,49 +1669,45 @@
                     validLucks.push(b.luck);
                 }
                 
-                // For block markers, show blocks within time range + 5% margin
-                var timeRange = maxTime - minTime;
-                var margin = timeRange * 0.05;
-                if (blockTime >= (minTime - margin) && blockTime <= (maxTime + margin)) {
-                    // Find closest hashrate value for y position
-                    var closestIdx = 0;
-                    var closestDiff = Math.abs(data[0][0] * 1000 - blockTime);
-                    for (var i = 1; i < data.length; i++) {
-                        var diff = Math.abs(data[i][0] * 1000 - blockTime);
-                        if (diff < closestDiff) {
-                            closestDiff = diff;
-                            closestIdx = i;
-                        }
+                // For block markers, show ALL blocks (including historical persistent blocks)
+                // Find closest hashrate value for y position (or use peak if block is outside range)
+                var closestIdx = 0;
+                var closestDiff = Math.abs(data[0][0] * 1000 - blockTime);
+                for (var i = 1; i < data.length; i++) {
+                    var diff = Math.abs(data[i][0] * 1000 - blockTime);
+                    if (diff < closestDiff) {
+                        closestDiff = diff;
+                        closestIdx = i;
                     }
-                    var yVal = (data[closestIdx][1] && data[closestIdx][1].good) ? data[closestIdx][1].good : 0;
-                    // Use a minimum y value so block is visible even if hashrate is 0
-                    if (yVal === 0 && values.length > 0) {
-                        yVal = Math.max.apply(null, values) * 0.1 || 1000000000;
-                    }
-                    
-                    // Position block higher based on difficulty ratio to make it easier to hover
-                    // Higher actual difficulty = block floats higher above hashrate line
-                    // Since block difficulty is ALWAYS higher than network difficulty, baseline is 0%
-                    if (b.actual_hash_difficulty && b.network_difficulty && b.network_difficulty > 0) {
-                        var diffRatio = b.actual_hash_difficulty / b.network_difficulty;
-                        // Scale ratio: 1.0 = baseline (0%), 2.0 = 30% higher, 3.0 = 60% higher, etc.
-                        var heightMultiplier = 1.0 + (diffRatio - 1.0) * 0.3;
-                        yVal = yVal * heightMultiplier;
-                    }
-                    // No else needed - if no difficulty data, keep at hashrate level
-                    
-                    blockMarkers.push({
-                        x: blockTime,
-                        y: yVal,
-                        block: b
-                    });
                 }
+                var yVal = (data[closestIdx][1] && data[closestIdx][1].good) ? data[closestIdx][1].good : 0;
+                // Use a minimum y value so block is visible even if hashrate is 0
+                if (yVal === 0 && values.length > 0) {
+                    yVal = Math.max.apply(null, values) * 0.1 || 1000000000;
+                }
+                
+                // Position block higher based on difficulty ratio to make it easier to hover
+                // Higher actual difficulty = block floats higher above hashrate line
+                // Since block difficulty is ALWAYS higher than network difficulty, baseline is 0%
+                if (b.actual_hash_difficulty && b.network_difficulty && b.network_difficulty > 0) {
+                    var diffRatio = b.actual_hash_difficulty / b.network_difficulty;
+                    // Scale ratio: 1.0 = baseline (0%), 2.0 = 30% higher, 3.0 = 60% higher, etc.
+                    var heightMultiplier = 1.0 + (diffRatio - 1.0) * 0.3;
+                    yVal = yVal * heightMultiplier;
+                }
+                // No else needed - if no difficulty data, keep at hashrate level
+                
+                blockMarkers.push({
+                    x: blockTime,
+                    y: yVal,
+                    block: b
+                });
             });
             
             // Debug: log processed results
             console.log('Compact - blockMarkers:', blockMarkers.length, 'luckTrendData:', luckTrendData.length, 'minTime:', new Date(minTime), 'maxTime:', new Date(maxTime));
             if (blocks.length > 0) {
-                console.log('Block time:', new Date(blocks[0].ts * 1000), 'in range:', (blocks[0].ts * 1000 >= minTime && blocks[0].ts * 1000 <= maxTime));
+                console.log('Block time:', new Date(blocks[0].ts * 1000));
             }
             
             // Update stats
@@ -2071,43 +2067,39 @@
                     validLucks.push(b.luck);
                 }
                 
-                // For block markers, show blocks within time range + 5% margin
-                var timeRange = maxTime - minTime;
-                var margin = timeRange * 0.05;
-                if (blockTime >= (minTime - margin) && blockTime <= (maxTime + margin)) {
-                    // Find closest hashrate value for y position
-                    var closestIdx = 0;
-                    var closestDiff = Math.abs(data[0][0] * 1000 - blockTime);
-                    for (var i = 1; i < data.length; i++) {
-                        var diff = Math.abs(data[i][0] * 1000 - blockTime);
-                        if (diff < closestDiff) {
-                            closestDiff = diff;
-                            closestIdx = i;
-                        }
+                // For block markers, show ALL blocks (including historical persistent blocks)
+                // Find closest hashrate value for y position (or use peak if block is outside range)
+                var closestIdx = 0;
+                var closestDiff = Math.abs(data[0][0] * 1000 - blockTime);
+                for (var i = 1; i < data.length; i++) {
+                    var diff = Math.abs(data[i][0] * 1000 - blockTime);
+                    if (diff < closestDiff) {
+                        closestDiff = diff;
+                        closestIdx = i;
                     }
-                    var yVal = (data[closestIdx][1] && data[closestIdx][1].good) ? data[closestIdx][1].good : 0;
-                    // Use a minimum y value so block is visible even if hashrate is 0
-                    if (yVal === 0 && values.length > 0) {
-                        yVal = Math.max.apply(null, values) * 0.1 || 1000000000;
-                    }
-                    
-                    // Position block higher based on difficulty ratio to make it easier to hover
-                    // Higher actual difficulty = block floats higher above hashrate line
-                    // Since block difficulty is ALWAYS higher than network difficulty, baseline is 0%
-                    if (b.actual_hash_difficulty && b.network_difficulty && b.network_difficulty > 0) {
-                        var diffRatio = b.actual_hash_difficulty / b.network_difficulty;
-                        // Scale ratio: 1.0 = baseline (0%), 2.0 = 30% higher, 3.0 = 60% higher, etc.
-                        var heightMultiplier = 1.0 + (diffRatio - 1.0) * 0.3;
-                        yVal = yVal * heightMultiplier;
-                    }
-                    // No else needed - if no difficulty data, keep at hashrate level
-                    
-                    blockMarkers.push({
-                        x: blockTime,
-                        y: yVal,
-                        block: b
-                    });
                 }
+                var yVal = (data[closestIdx][1] && data[closestIdx][1].good) ? data[closestIdx][1].good : 0;
+                // Use a minimum y value so block is visible even if hashrate is 0
+                if (yVal === 0 && values.length > 0) {
+                    yVal = Math.max.apply(null, values) * 0.1 || 1000000000;
+                }
+                
+                // Position block higher based on difficulty ratio to make it easier to hover
+                // Higher actual difficulty = block floats higher above hashrate line
+                // Since block difficulty is ALWAYS higher than network difficulty, baseline is 0%
+                if (b.actual_hash_difficulty && b.network_difficulty && b.network_difficulty > 0) {
+                    var diffRatio = b.actual_hash_difficulty / b.network_difficulty;
+                    // Scale ratio: 1.0 = baseline (0%), 2.0 = 30% higher, 3.0 = 60% higher, etc.
+                    var heightMultiplier = 1.0 + (diffRatio - 1.0) * 0.3;
+                    yVal = yVal * heightMultiplier;
+                }
+                // No else needed - if no difficulty data, keep at hashrate level
+                
+                blockMarkers.push({
+                    x: blockTime,
+                    y: yVal,
+                    block: b
+                });
             });
             
             // Update fullscreen stats
