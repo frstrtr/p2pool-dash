@@ -524,9 +524,9 @@
                     <div class="stat-label">Confirmed payouts</div>
                 </div>
                 <div class="stat-card">
-                    <h3>Pending Rewards</h3>
+                    <h3>Maturing Rewards</h3>
                     <div class="stat-value warning" id="pending_rewards">0 DASH</div>
-                    <div class="stat-label">Awaiting confirmation</div>
+                    <div class="stat-label">Coinbase maturity (100 blocks)</div>
                 </div>
             </div>
             
@@ -669,7 +669,7 @@
                 document.getElementById('blocks_found').textContent = payouts.blocks_found || 0;
                 document.getElementById('total_rewards').textContent = d3.format('.4f')(payouts.total_estimated_rewards || 0) + ' DASH';
                 document.getElementById('confirmed_rewards').textContent = d3.format('.4f')(payouts.confirmed_rewards || 0) + ' DASH';
-                document.getElementById('pending_rewards').textContent = d3.format('.4f')(payouts.pending_rewards || 0) + ' DASH';
+                document.getElementById('pending_rewards').textContent = d3.format('.4f')(payouts.maturing_rewards || 0) + ' DASH';
                 
                 // Render blocks table
                 if (!payouts.blocks || payouts.blocks.length === 0) {

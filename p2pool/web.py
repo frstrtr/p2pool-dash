@@ -537,7 +537,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             'blocks_found': len(miner_blocks),
             'total_estimated_rewards': total_rewards,
             'confirmed_rewards': confirmed_rewards,
-            'pending_rewards': pending_rewards,
+            'maturing_rewards': pending_rewards,  # Rewards in coinbase maturity period
             'blocks': miner_blocks[:50],  # Limit to 50 most recent
         })
     
