@@ -803,8 +803,8 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     def get_block_status(block_hash):
         """Check if a block is confirmed, orphaned, or pending."""
         # Validate block_hash is a string
+        # Silently return unknown for non-string hashes (expected from sharechain)
         if not isinstance(block_hash, (str, unicode)):
-            print 'Error: get_block_status called with non-string hash: %r (type: %s)' % (block_hash, type(block_hash).__name__)
             defer.returnValue('unknown')
         
         now = time.time()
@@ -865,8 +865,8 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         for block_hash, hist_data in block_history.items():
             if hist_data:
                 # Ensure block_hash is a string (not a number)
+                # Silently skip non-string hashes (can happen from sharechain iteration)
                 if not isinstance(block_hash, (str, unicode)):
-                    print 'Warning: Skipping block with non-string hash: %r' % (block_hash,)
                     continue
                 
                 # Calculate Hash Diff for historical blocks if not present
