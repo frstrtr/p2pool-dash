@@ -1018,15 +1018,14 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                 
                 # Determine hashrate to use for this block's luck calculation
                 block_hashrate = None
-                block_network_diff = None
+                # Use the block's actual network difficulty (from share header), not current
+                block_network_diff = block.get('network_difficulty', current_network_diff)
                 
                 if hist_data and hist_data.get('pool_hashrate'):
                     block_hashrate = hist_data['pool_hashrate']
-                    block_network_diff = hist_data.get('network_diff', current_network_diff)
                     block['luck_approximate'] = False
                 else:
                     block_hashrate = current_pool_hashrate
-                    block_network_diff = current_network_diff
                     block['luck_approximate'] = True
                 
                 block['pool_hashrate_at_find'] = block_hashrate
