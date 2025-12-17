@@ -1569,7 +1569,8 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         'peers': graph.DataStreamDescription(dataview_descriptions, multivalues=True, default_func=graph.make_multivalue_migrator(dict(incoming='incoming_peers', outgoing='outgoing_peers'))),
         'miner_hash_rates': graph.DataStreamDescription(dataview_descriptions, is_gauge=False, multivalues=True, multivalues_keep=10000),
         'miner_dead_hash_rates': graph.DataStreamDescription(dataview_descriptions, is_gauge=False, multivalues=True, multivalues_keep=10000),
-        'miner_count': graph.DataStreamDescription(dataview_descriptions),
+        'worker_count': graph.DataStreamDescription(dataview_descriptions),
+        'unique_miner_count': graph.DataStreamDescription(dataview_descriptions),
         'connected_miners': graph.DataStreamDescription(dataview_descriptions),
         'desired_version_rates': graph.DataStreamDescription(dataview_descriptions, multivalues=True,
             multivalue_undefined_means_0=True),
@@ -1629,7 +1630,9 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                     pubkey_hash, 0) * 1e-8
         hd.datastreams['current_payout'].add_datum(t, my_current_payouts)
         miner_hash_rates, miner_dead_hash_rates = wb.get_local_rates()
-        hd.datastreams['miner_count'].add_datum(t, len(miner_hash_rates))
+        addr_hash_rates = wb.get_local_addr_rates()
+        hd.datastreams['worker_count'].add_datum(t, len(miner_hash_rates))
+        hd.datastreams['unique_miner_count'].add_datum(t, len(addr_hash_rates))
         # Track connected miners (regardless of recent mining activity)
         try:
             from p2pool.dash.stratum import pool_stats
