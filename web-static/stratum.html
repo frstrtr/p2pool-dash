@@ -1054,10 +1054,10 @@
                 var staleProps = localData.my_stale_proportions_in_last_hour || {};
                 
                 var totalShares = shareCounts.shares || shares.total || 0;
-                var validShares = shareCounts.unstale_shares || (totalShares - (shareCounts.stale_shares || 0));
-                var staleShares = shareCounts.stale_shares || 0;
                 var orphanShares = shareCounts.orphan_stale_shares || shares.orphan || 0;
                 var deadShares = shareCounts.doa_stale_shares || shares.dead || 0;
+                var staleShares = shareCounts.stale_shares || (orphanShares + deadShares);
+                var validShares = shareCounts.unstale_shares || (totalShares - staleShares);
                 
                 // Update displays
                 d3.select('#shares_total').text(d3.format(',')(totalShares));
