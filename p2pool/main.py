@@ -419,6 +419,37 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
         
         startup_archive_done = [False]  # Mutable flag to track if startup archival happened
         
+        def rebuild_share_storage():
+            """Force complete rebuild of share storage files (removes archived shares from disk)"""
+            import glob
+            
+            current_height = node.tracker.get_height(node.best_share_var.value) if node.best_share_var.value else 0
+            save_height = min(current_height, 2*net.CHAIN_LENGTH)
+            
+            # Get shares we want to keep
+            shares_to_keep = []
+            for share in node.tracker.get_chain(node.best_share_var.value, save_height):
+                shares_to_keep.append(share)
+            
+            # Delete all existing pickle files
+            pickle_pattern = os.path.join(datadir_path, net.NAME, 'shares.*')
+            pickle_files = glob.glob(pickle_pattern)
+            for pickle_file in pickle_files:
+                try:
+                    os.remove(pickle_file)
+                except Exception as e:
+                    print 'Warning: Failed to remove %s: %s' % (pickle_file, e)
+            
+            # Clear ShareStore internal state
+            ss.known.clear()
+            ss.known_desired.clear()
+            
+            # Rebuild with only desired shares
+            for share in shares_to_keep:
+                ss.add_share(share)
+                if share.hash in node.tracker.verified.items:
+                    ss.add_verified_hash(share.hash)
+        
         def persist_shares():
             """Save current shares to disk without archiving"""
             current_height = node.tracker.get_height(node.best_share_var.value) if node.best_share_var.value else 0
@@ -455,10 +486,11 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
             if archived > 0:
                 print 'Startup optimization: removed %d old shares from active storage' % archived
                 
-                # Immediately rewrite pickle files to persist the removal
+                # Immediately rebuild pickle files to remove archived shares
                 # This ensures next startup won't load the archived shares
-                print 'Rewriting share storage to persist changes...'
-                persist_shares()  # Use persist_shares() instead of save_shares() to avoid double-archival
+                print 'Rebuilding share storage files...'
+                rebuild_share_storage()
+                print 'Share storage rebuilt successfully'
                 
                 startup_archive_done[0] = True  # Set flag to skip next periodic call
         else:
