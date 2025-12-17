@@ -1914,7 +1914,7 @@
             
             function tryRender() {
                 loadCount++;
-                if (loadCount === 4) {
+                if (loadCount === 5) {  // Now loading 5 resources: hashrate, worker_count, unique_miner_count, connected_miners, blocks
                     graphData = hashrateData;
                     graphMinerData = minerCountData;
                     graphConnectedMinersData = connectedMinersData;
@@ -1957,9 +1957,6 @@
                 'year': '../web/graph_data/connected_miners/last_year'
             };
             
-            var workerCountData = null;
-            var uniqueMinerCountData = null;
-            
             d3.json(workerEndpoints[currentGraphPeriod], function(data) {
                 workerCountData = data || [];
                 minerCountData = workerCountData; // Keep for compatibility
@@ -1989,6 +1986,8 @@
         });
 
         var hashrateChart = null;
+        var workerCountData = null;
+        var uniqueMinerCountData = null;
 
         function renderHashrateGraph(data, minerData, connectedData, blocks) {
             var container = document.getElementById('hashrate-graph');
