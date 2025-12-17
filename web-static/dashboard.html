@@ -984,6 +984,7 @@
                         <div class="legend-item" data-series="miners" onclick="toggleSeries('miners', this)" title="Click to toggle unique miner addresses"><span class="legend-color" style="background: #673ab7;"></span><span>Miners</span></div>
                         <div class="legend-item" data-series="connected" onclick="toggleSeries('connected', this)" title="Click to toggle connected miners (all connections)"><span class="legend-color" style="background: #e91e63;"></span><span>Connected</span></div>
                         <div class="legend-item" data-series="lucktrend" onclick="toggleSeries('lucktrend', this)" title="Click to toggle luck trend line"><span class="legend-color" style="background: #ffc107;"></span><span>Luck</span></div>
+                        <div class="legend-item active" title="Network difficulty as hashrate equivalent"><span class="legend-color" style="background: #8b5cf6;"></span><span>Net Diff</span></div>
                     </div>
                     <div class="graph-container compact" id="hashrate-graph"></div>
                     <div class="graph-stats compact">
@@ -1014,6 +1015,7 @@
                     <div class="legend-item" data-series="workers" onclick="toggleSeries('workers', this)" title="Click to toggle worker connections" style="font-size: 14px; padding: 6px 12px;"><span class="legend-color" style="background: #9c27b0; width: 14px; height: 14px;"></span><span>Workers</span></div>
                     <div class="legend-item" data-series="miners" onclick="toggleSeries('miners', this)" title="Click to toggle unique miner addresses" style="font-size: 14px; padding: 6px 12px;"><span class="legend-color" style="background: #673ab7; width: 14px; height: 14px;"></span><span>Miners</span></div>
                     <div class="legend-item" data-series="lucktrend" onclick="toggleSeries('lucktrend', this)" title="Click to toggle luck trend line" style="font-size: 14px; padding: 6px 12px;"><span class="legend-color" style="background: #ffc107; width: 14px; height: 14px;"></span><span>Luck</span></div>
+                    <div class="legend-item active" title="Network difficulty as hashrate equivalent" style="font-size: 14px; padding: 6px 12px;"><span class="legend-color" style="background: #8b5cf6; width: 14px; height: 14px;"></span><span>Net Diff</span></div>
                 </div>
                 <button class="fullscreen-close" onclick="toggleGraphFullscreen()">✕ Close</button>
             </div>
@@ -2077,12 +2079,20 @@
             var blockMarkers = [];
             var luckTrendData = [];
             var validLucks = [];
+            var netDiffData = [];
             
             // Sort blocks by timestamp
             var sortedBlocks = blocks.slice().sort(function(a, b) { return a.ts - b.ts; });
             
             sortedBlocks.forEach(function(b) {
                 var blockTime = b.ts * 1000;
+                
+                // Collect network difficulty data for graph line
+                if (b.network_difficulty && blockTime >= minTime && blockTime <= maxTime) {
+                    // Convert difficulty to hashrate equivalent (difficulty * 2^32 / block_time)
+                    var netHashrate = b.network_difficulty * Math.pow(2, 32) / 150; // 150s avg block time for Dash
+                    netDiffData.push([blockTime, netHashrate]);
+                }
                 
                 // Check if block is within selected time window (exact range for alignment)
                 if (blockTime >= minTime && blockTime <= maxTime) {
@@ -2496,6 +2506,20 @@
                     },
                     visible: seriesVisibility.lucktrend,
                     yAxis: 1
+                }, {
+                    type: 'spline',
+                    name: 'Net Diff',
+                    data: netDiffData,
+                    color: '#8b5cf6',
+                    lineWidth: 2,
+                    marker: {
+                        enabled: true,
+                        radius: 3,
+                        fillColor: '#8b5cf6',
+                        symbol: 'circle'
+                    },
+                    visible: true,
+                    yAxis: 0
                 }]
             });
             
@@ -2577,12 +2601,20 @@
             var blockMarkers = [];
             var luckTrendData = [];
             var validLucks = [];
+            var netDiffData = [];
             
             // Sort blocks by timestamp
             var sortedBlocks = blocks.slice().sort(function(a, b) { return a.ts - b.ts; });
             
             sortedBlocks.forEach(function(b) {
                 var blockTime = b.ts * 1000;
+                
+                // Collect network difficulty data for graph line
+                if (b.network_difficulty && blockTime >= minTime && blockTime <= maxTime) {
+                    // Convert difficulty to hashrate equivalent (difficulty * 2^32 / block_time)
+                    var netHashrate = b.network_difficulty * Math.pow(2, 32) / 150; // 150s avg block time for Dash
+                    netDiffData.push([blockTime, netHashrate]);
+                }
                 
                 // Check if block is within selected time window (exact range for alignment)
                 if (blockTime >= minTime && blockTime <= maxTime) {
@@ -2983,6 +3015,20 @@
                     },
                     visible: seriesVisibility.lucktrend,
                     yAxis: 1
+                }, {
+                    type: 'spline',
+                    name: 'Net Diff',
+                    data: netDiffData,
+                    color: '#8b5cf6',
+                    lineWidth: 2,
+                    marker: {
+                        enabled: true,
+                        radius: 3,
+                        fillColor: '#8b5cf6',
+                        symbol: 'circle'
+                    },
+                    visible: true,
+                    yAxis: 0
                 }]
             });
         }
