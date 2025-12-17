@@ -78,11 +78,9 @@ case "$1" in
         ;;
     stop)
         stop_graceful
-        echo "P2Pool testnet stopped gracefully."
         ;;
     kill)
         kill_force
-        echo "P2Pool testnet killed."
         ;;
     *)
         # Foreground mode with console output

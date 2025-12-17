@@ -48,12 +48,10 @@ kill_force() {
 case "$1" in
     stop)
         stop_graceful
-        echo "P2Pool regtest stopped gracefully."
         exit 0
         ;;
     kill)
         kill_force
-        echo "P2Pool regtest killed."
         exit 0
         ;;
 esac

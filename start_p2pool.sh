@@ -100,12 +100,10 @@ for arg in "$@"; do
             ;;
         --stop)
             stop_graceful
-            echo "P2Pool stopped gracefully."
             exit 0
             ;;
         --kill|-k)
             kill_force
-            echo "P2Pool killed."
             exit 0
             ;;
         --status|-s)
