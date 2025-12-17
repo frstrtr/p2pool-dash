@@ -989,11 +989,27 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                     continue
                 
                 # Only refresh status if currently pending (confirmed/orphaned are final)
+                # Exception: Recheck "confirmed" blocks that might be from old 6-confirmation logic
                 old_status = hist_data.get('status', 'unknown')
+                block_height = hist_data.get('block_height', 0)
+                
+                # Get current blockchain height to calculate confirmations
+                current_height = 0
+                if node.dashd_work.value and 'height' in node.dashd_work.value:
+                    current_height = node.dashd_work.value['height']
+                
+                # Recheck if pending, or if "confirmed" but might have < 100 confirmations
                 if old_status == 'pending':
                     status = yield get_block_status(block_hash)
+                elif old_status == 'confirmed' and block_height > 0 and current_height > 0:
+                    confirmations = current_height - block_height
+                    # Recheck if less than 100 confirmations (might be from old 6-conf logic)
+                    if confirmations < 100:
+                        status = yield get_block_status(block_hash)
+                    else:
+                        status = old_status  # Definitely confirmed with 100+
                 else:
-                    # Use cached status for confirmed/orphaned blocks (no need to recheck)
+                    # Use cached status for orphaned or confirmed blocks without height info
                     status = old_status
                 
                 # Calculate Hash Diff for historical blocks if not present
