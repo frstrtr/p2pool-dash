@@ -2092,15 +2092,14 @@
             // Process network difficulty samples - convert to hashrate equivalent
             var netDiffData = [];
             networkDiffSamples = networkDiffSamples || [];
-            console.log('Compact - Processing network difficulty:', networkDiffSamples.length, 'samples, time range:', new Date(minTime), 'to', new Date(maxTime));
+            console.log('Compact - Processing network difficulty:', networkDiffSamples.length, 'samples');
             networkDiffSamples.forEach(function(sample) {
                 var sampleTime = sample.ts * 1000;
-                if (sampleTime >= minTime && sampleTime <= maxTime) {
-                    // Convert difficulty to hashrate equivalent (difficulty * 2^32 / block_time)
-                    var netHashrate = sample.network_diff * Math.pow(2, 32) / 150; // 150s avg block time for Dash
-                    netDiffData.push([sampleTime, netHashrate]);
-                }
+                // Don't filter - backend already provides correctly bounded data with gap filling
+                var netHashrate = sample.network_diff * Math.pow(2, 32) / 150; // 150s avg block time for Dash
+                netDiffData.push([sampleTime, netHashrate]);
             });
+            console.log('Net Diff data points:', netDiffData.length);
             
             // Sort blocks by timestamp
             var sortedBlocks = blocks.slice().sort(function(a, b) { return a.ts - b.ts; });
@@ -2621,11 +2620,9 @@
             networkDiffSamples = networkDiffSamples || [];
             networkDiffSamples.forEach(function(sample) {
                 var sampleTime = sample.ts * 1000;
-                if (sampleTime >= minTime && sampleTime <= maxTime) {
-                    // Convert difficulty to hashrate equivalent (difficulty * 2^32 / block_time)
-                    var netHashrate = sample.network_diff * Math.pow(2, 32) / 150; // 150s avg block time for Dash
-                    netDiffData.push([sampleTime, netHashrate]);
-                }
+                // Don't filter - backend already provides correctly bounded data with gap filling
+                var netHashrate = sample.network_diff * Math.pow(2, 32) / 150; // 150s avg block time for Dash
+                netDiffData.push([sampleTime, netHashrate]);
             });
             
             // Sort blocks by timestamp
