@@ -8,7 +8,7 @@ import sys
 import time
 import traceback
 
-from twisted.internet import defer, reactor
+from twisted.internet import defer, reactor, task
 from twisted.python import log
 from twisted.web import resource, static
 
@@ -925,10 +925,10 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         'sample_interval': SAMPLE_INTERVAL,
     }))
     
-    # Expose network difficulty history from hashrate samples
-    # Returns last N samples with timestamp and network difficulty
+    # Expose network difficulty history from blocks and current difficulty
+    # Returns network difficulty data points for graphing with gap filling
     def get_network_difficulty_samples(period='day'):
-        """Get network difficulty samples for a time period."""
+        """Get network difficulty samples using blocks, including prior blocks for gap filling."""
         now = time.time()
         period_seconds = {
             'hour': 60 * 60,
@@ -940,18 +940,67 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         
         min_time = now - period_seconds
         
-        # Filter samples by time period and extract network difficulty
-        result = []
-        for sample in hashrate_samples:
-            if sample['ts'] >= min_time and sample.get('network_diff') is not None:
-                result.append({
-                    'ts': sample['ts'],
-                    'network_diff': sample['network_diff']
+        # Get ALL blocks with network difficulty (including before time window)
+        all_blocks = []
+        for block_hash, block_data in block_history.items():
+            if block_data.get('network_diff') is not None:
+                all_blocks.append({
+                    'ts': block_data['ts'],
+                    'network_diff': block_data['network_diff']
                 })
+        
+        # Sort by timestamp
+        all_blocks.sort(key=lambda x: x['ts'])
+        
+        # Find the last block before the time window starts (for gap filling at start)
+        prior_diff = None
+        for block in all_blocks:
+            if block['ts'] < min_time:
+                prior_diff = block['network_diff']
+            else:
+                break
+        
+        # Get blocks within the time window
+        blocks_in_window = [b for b in all_blocks if b['ts'] >= min_time]
+        
+        # Add current network difficulty as the most recent point
+        current_diff = None
+        try:
+            if wb.current_work.value and 'bits' in wb.current_work.value:
+                current_diff = bitcoin_data.target_to_difficulty(wb.current_work.value['bits'].target)
+        except:
+            pass
+        
+        # Build result with gap filling
+        result = []
+        
+        # Add starting point using prior block's difficulty (or first in window, or current)
+        start_diff = prior_diff or (blocks_in_window[0]['network_diff'] if blocks_in_window else current_diff)
+        if start_diff:
+            result.append({'ts': min_time, 'network_diff': start_diff})
+        
+        # Add all blocks in window
+        result.extend(blocks_in_window)
+        
+        # Add current difficulty at end
+        if current_diff:
+            result.append({'ts': now, 'network_diff': current_diff})
         
         return result
     
     web_root.putChild('network_difficulty', WebInterface(get_network_difficulty_samples))
+    
+    # Fallback: Get current network difficulty from node (always available)
+    def get_current_network_difficulty():
+        """Get current network difficulty from the node."""
+        try:
+            if wb.current_work.value and 'bits' in wb.current_work.value:
+                return bitcoin_data.target_to_difficulty(wb.current_work.value['bits'].target)
+        except:
+            pass
+        return None
+    
+    web_root.putChild('current_network_difficulty', WebInterface(get_current_network_difficulty))
     
     # Save hashrate samples on shutdown
     def save_samples_on_shutdown():
