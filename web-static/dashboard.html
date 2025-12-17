@@ -1829,6 +1829,7 @@
         var graphMinerData = [];
         var graphUniqueMinersData = [];
         var graphBlocks = [];
+        var graphNetworkDiffData = [];
         var isFullscreen = false;
         var fullscreenChart = null;
         var seriesVisibility = { good: true, doa: true, blocks: true, workers: true, miners: true, connected: true, lucktrend: true, netdiff: true };
@@ -1874,7 +1875,7 @@
                 overlay.classList.add('active');
                 document.body.style.overflow = 'hidden';
                 // Render fullscreen chart
-                renderFullscreenGraph(graphData, graphMinerData, graphUniqueMinersData, graphConnectedMinersData, graphBlocks, networkDiffData);
+                renderFullscreenGraph(graphData, graphMinerData, graphUniqueMinersData, graphConnectedMinersData, graphBlocks, graphNetworkDiffData);
                 // Update button states
                 updatePeriodButtons();
             } else {
@@ -1927,6 +1928,7 @@
                     graphUniqueMinersData = uniqueMinerCountData;
                     graphConnectedMinersData = connectedMinersData;
                     graphBlocks = blocksData;
+                    graphNetworkDiffData = networkDiffData;
                     renderHashrateGraph(hashrateData, minerCountData, uniqueMinerCountData, connectedMinersData, blocksData, networkDiffData);
                 }
             }
@@ -2535,7 +2537,7 @@
             
             // Also update fullscreen if open
             if (isFullscreen) {
-                renderFullscreenGraph(data, minerData, uniqueMinersData, connectedData, blocks, networkDiffData);
+                renderFullscreenGraph(data, minerData, uniqueMinersData, connectedData, blocks, networkDiffSamples);
             }
         }
         
