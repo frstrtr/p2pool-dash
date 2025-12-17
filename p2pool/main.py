@@ -376,9 +376,6 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
             if not shares_to_archive:
                 return 0
             
-            # SAFETY: Backup pickle files before modifying
-            backup_pickle_files('before_archival_%s' % reason)
-            
             # Create archive file with timestamp
             archive_filename = os.path.join(archive_dir, 'shares_%d.txt' % int(time.time()))
             
