@@ -244,12 +244,101 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
         node.tracker.removed.watch(lambda share: ss.forget_share(share.hash))
         node.tracker.verified.removed.watch(lambda share: ss.forget_verified_share(share.hash))
         
+        # Create archive directory for old shares
+        archive_dir = os.path.join(datadir_path, 'share_archive')
+        if not os.path.exists(archive_dir):
+            os.makedirs(archive_dir)
+        
+        def archive_old_shares(reason='periodic'):
+            """Archive old shares to file and remove from storage"""
+            import time
+            
+            current_height = node.tracker.get_height(node.best_share_var.value) if node.best_share_var.value else 0
+            save_height = min(current_height, 2*net.CHAIN_LENGTH)
+            
+            # Build set of shares we want to keep
+            shares_to_keep = set()
+            for share in node.tracker.get_chain(node.best_share_var.value, save_height):
+                shares_to_keep.add(share.hash)
+            
+            # Find old shares to archive
+            all_stored_hashes = set(ss.known.keys())
+            shares_to_archive = all_stored_hashes - shares_to_keep
+            
+            if not shares_to_archive:
+                return 0
+            
+            # Create archive file with timestamp
+            archive_filename = os.path.join(archive_dir, 'shares_%d.txt' % int(time.time()))
+            
+            archived_count = 0
+            try:
+                with open(archive_filename, 'w') as archive_file:
+                    archive_file.write('# P2Pool Share Archive - Created: %s\n' % time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime()))
+                    archive_file.write('# Reason: %s\n' % reason)
+                    archive_file.write('# Chain height: %d, Shares in active chain: %d\n' % (current_height, len(shares_to_keep)))
+                    archive_file.write('# Format: share_hash timestamp verified\n\n')
+                    
+                    for share_hash in shares_to_archive:
+                        # Get share from tracker if available (has metadata)
+                        if share_hash in node.tracker.items:
+                            share = node.tracker.items[share_hash]
+                            verified = 'verified' if share_hash in node.tracker.verified.items else 'unverified'
+                            archive_file.write('%064x %d %s\n' % (share_hash, share.timestamp, verified))
+                        else:
+                            # Share not in tracker, just record the hash
+                            archive_file.write('%064x - unknown\n' % share_hash)
+                        archived_count += 1
+                        
+                        # Remove from active storage
+                        ss.forget_share(share_hash)
+                
+                if archived_count > 0:
+                    print 'Archived %d old shares to %s (%s)' % (archived_count, os.path.basename(archive_filename), reason)
+            except Exception as e:
+                print 'Warning: Failed to archive shares: %s' % str(e)
+            
+            return archived_count
+        
         def save_shares():
-            for share in node.tracker.get_chain(node.best_share_var.value, min(node.tracker.get_height(node.best_share_var.value), 2*net.CHAIN_LENGTH)):
+            """Save current shares and archive old ones"""
+            current_height = node.tracker.get_height(node.best_share_var.value) if node.best_share_var.value else 0
+            save_height = min(current_height, 2*net.CHAIN_LENGTH)
+            
+            # Build set of shares we want to keep and save them
+            shares_to_keep = set()
+            for share in node.tracker.get_chain(node.best_share_var.value, save_height):
+                shares_to_keep.add(share.hash)
                 ss.add_share(share)
                 if share.hash in node.tracker.verified.items:
                     ss.add_verified_hash(share.hash)
+            
+            # Archive old shares
+            archive_old_shares('periodic')
+        
+        # STARTUP OPTIMIZATION: Archive old shares immediately
+        # This prevents keeping orphaned/old shares in memory that will be archived anyway
+        print 'Checking for old shares to archive on startup...'
+        current_height = node.tracker.get_height(node.best_share_var.value) if node.best_share_var.value else 0
+        if current_height > 2*net.CHAIN_LENGTH:
+            archived = archive_old_shares('startup cleanup')
+            if archived > 0:
+                print 'Startup optimization: removed %d old shares from active storage' % archived
+        
         deferral.RobustLoopingCall(save_shares).start(60)
+        
+        # Register graceful shutdown handler
+        def shutdown_handler():
+            """Archive shares on graceful shutdown"""
+            print 'Graceful shutdown: archiving shares...'
+            try:
+                save_shares()  # Final save and archive
+                print 'Shutdown archival complete'
+            except Exception as e:
+                print 'Warning: Shutdown archival failed: %s' % str(e)
+        
+        # Register with reactor stop event
+        reactor.addSystemEventTrigger('before', 'shutdown', shutdown_handler)
         
         print '    ...success!'
         print
