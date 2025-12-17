@@ -399,16 +399,8 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
                         archived_count += 1
                         
                         # Remove from active storage (disk)
+                        # Note: Shares remain in tracker memory until clean_tracker() prunes them
                         ss.forget_share(share_hash)
-                        
-                        # Remove from memory (tracker) if present
-                        if share_hash in node.tracker.items:
-                            try:
-                                if share_hash in node.tracker.verified.items:
-                                    node.tracker.verified.remove(share_hash)
-                                node.tracker.remove(share_hash)
-                            except (KeyError, NotImplementedError):
-                                pass  # Share already removed or can't be removed safely
                 
                 if archived_count > 0:
                     print 'Archived %d old shares to %s (%s)' % (archived_count, os.path.basename(archive_filename), reason)
@@ -494,12 +486,9 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
             
             archived = archive_old_shares('startup cleanup')
             if archived > 0:
-                print 'Startup optimization: removed %d old shares from active storage' % archived
-                
-                # Immediately rebuild pickle files to persist changes
-                print 'Rebuilding share storage files...'
-                rebuild_share_storage()
-                print 'Share storage rebuilt successfully'
+                print 'Startup optimization: archived %d old shares' % archived
+                print 'Note: Shares removed from disk storage (pickle files will be cleaned by periodic saves)'
+                print 'Note: Shares remain in memory until naturally pruned by clean_tracker()'
                 
                 startup_archive_done[0] = True  # Set flag to skip next periodic call
         else:
