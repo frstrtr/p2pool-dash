@@ -249,6 +249,111 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
         if not os.path.exists(archive_dir):
             os.makedirs(archive_dir)
         
+        # Migration backup directory (one-time use)
+        migration_backup_dir = os.path.join(datadir_path, 'pre_archival_backup')
+        migration_flag = os.path.join(datadir_path, '.archival_migration_done')
+        
+        def create_migration_backup():
+            """One-time backup before first archival operation"""
+            import time
+            import shutil
+            import glob
+            
+            # Check if migration already done
+            if os.path.exists(migration_flag):
+                return True  # Already migrated
+            
+            try:
+                print 'Creating one-time migration backup before archival...'
+                
+                # Create backup directory
+                if not os.path.exists(migration_backup_dir):
+                    os.makedirs(migration_backup_dir)
+                
+                # Find all pickle files
+                pickle_pattern = os.path.join(datadir_path, net.NAME, 'shares.*')
+                pickle_files = glob.glob(pickle_pattern)
+                
+                if not pickle_files:
+                    print '  No pickle files to backup'
+                    # Still mark as done
+                    with open(migration_flag, 'w') as f:
+                        f.write('Migration completed: %s\n' % time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime()))
+                        f.write('No pickle files found\n')
+                    return True
+                
+                # Copy each pickle file
+                backed_up = 0
+                total_size = 0
+                for pickle_file in pickle_files:
+                    if os.path.exists(pickle_file):
+                        backup_path = os.path.join(migration_backup_dir, os.path.basename(pickle_file))
+                        shutil.copy2(pickle_file, backup_path)
+                        backed_up += 1
+                        total_size += os.path.getsize(pickle_file)
+                
+                # Create restoration script
+                restore_script = os.path.join(migration_backup_dir, 'restore_backup.sh')
+                with open(restore_script, 'w') as f:
+                    f.write('#!/bin/bash\n')
+                    f.write('# P2Pool Share Backup Restoration Script\n')
+                    f.write('# Created: %s\n\n' % time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime()))
+                    f.write('set -e\n\n')
+                    f.write('echo "WARNING: This will restore your shares to pre-archival state"\n')
+                    f.write('echo "Press Ctrl+C to cancel, or Enter to continue..."\n')
+                    f.write('read\n\n')
+                    f.write('# Stop p2pool if running\n')
+                    f.write('echo "Stopping p2pool..."\n')
+                    f.write('pkill -f "python.*run_p2pool.py" || true\n')
+                    f.write('sleep 2\n\n')
+                    f.write('# Restore files\n')
+                    f.write('echo "Restoring pickle files..."\n')
+                    f.write('cp -v "$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"/shares.* "%s/"\n\n' % os.path.join(datadir_path, net.NAME))
+                    f.write('# Remove migration flag to allow re-migration\n')
+                    f.write('rm -f "%s"\n\n' % migration_flag)
+                    f.write('echo "Restoration complete! You can now restart p2pool."\n')
+                os.chmod(restore_script, 0755)
+                
+                # Create manifest
+                manifest_path = os.path.join(migration_backup_dir, 'BACKUP_INFO.txt')
+                with open(manifest_path, 'w') as f:
+                    f.write('P2Pool Pre-Archival Migration Backup\n')
+                    f.write('====================================\n\n')
+                    f.write('Created: %s\n' % time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime()))
+                    f.write('Files backed up: %d\n' % backed_up)
+                    f.write('Total size: %.2f MB\n' % (total_size / 1048576.0))
+                    f.write('Chain height: %d\n' % (node.tracker.get_height(node.best_share_var.value) if node.best_share_var.value else 0))
+                    f.write('Shares in tracker: %d\n\n' % len(node.tracker.items))
+                    f.write('Backup files:\n')
+                    for pickle_file in sorted(pickle_files):
+                        if os.path.exists(pickle_file):
+                            f.write('  %s (%d bytes)\n' % (os.path.basename(pickle_file), os.path.getsize(pickle_file)))
+                    f.write('\nTo restore this backup:\n')
+                    f.write('  1. Stop p2pool\n')
+                    f.write('  2. Run: %s\n' % restore_script)
+                    f.write('  3. Restart p2pool\n\n')
+                    f.write('Or manually:\n')
+                    f.write('  cp %s/shares.* %s/\n' % (migration_backup_dir, os.path.join(datadir_path, net.NAME)))
+                    f.write('  rm %s\n' % migration_flag)
+                
+                print '  Backup created: %s' % migration_backup_dir
+                print '  Files: %d (%.2f MB)' % (backed_up, total_size / 1048576.0)
+                print '  Restore script: %s' % restore_script
+                
+                # Mark migration as done
+                with open(migration_flag, 'w') as f:
+                    f.write('Archival migration completed: %s\n' % time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime()))
+                    f.write('Backup location: %s\n' % migration_backup_dir)
+                    f.write('Files backed up: %d\n' % backed_up)
+                    f.write('Total size: %.2f MB\n' % (total_size / 1048576.0))
+                
+                print '  Migration backup complete!'
+                return True
+            except Exception as e:
+                print 'Warning: Failed to create migration backup: %s' % str(e)
+                print '  Continuing anyway - archival will proceed without backup'
+                return False
+        
         def archive_old_shares(reason='periodic'):
             """Archive old shares to file and remove from storage"""
             import time
@@ -270,6 +375,9 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
             
             if not shares_to_archive:
                 return 0
+            
+            # SAFETY: Backup pickle files before modifying
+            backup_pickle_files('before_archival_%s' % reason)
             
             # Create archive file with timestamp
             archive_filename = os.path.join(archive_dir, 'shares_%d.txt' % int(time.time()))
@@ -293,8 +401,17 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
                             archive_file.write('%064x - unknown\n' % share_hash)
                         archived_count += 1
                         
-                        # Remove from active storage
+                        # Remove from active storage (disk)
                         ss.forget_share(share_hash)
+                        
+                        # Remove from memory (tracker) if present
+                        if share_hash in node.tracker.items:
+                            try:
+                                if share_hash in node.tracker.verified.items:
+                                    node.tracker.verified.remove(share_hash)
+                                node.tracker.remove(share_hash)
+                            except (KeyError, NotImplementedError):
+                                pass  # Share already removed or can't be removed safely
                 
                 if archived_count > 0:
                     print 'Archived %d old shares to %s (%s)' % (archived_count, os.path.basename(archive_filename), reason)
@@ -329,10 +446,18 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
         print 'Checking for old shares to archive on startup...'
         current_height = node.tracker.get_height(node.best_share_var.value) if node.best_share_var.value else 0
         if current_height > 2*net.CHAIN_LENGTH:
+            # ONE-TIME MIGRATION BACKUP: Create backup before first archival
+            create_migration_backup()
+            
             archived = archive_old_shares('startup cleanup')
             if archived > 0:
                 print 'Startup optimization: removed %d old shares from active storage' % archived
                 startup_archive_done[0] = True  # Set flag to skip next periodic call
+                
+                # Immediately rewrite pickle files to persist the removal
+                # This ensures next startup won't load the archived shares
+                print 'Rewriting share storage to persist changes...'
+                save_shares()
         else:
             print 'Chain height %d <= 2*CHAIN_LENGTH (%d), no archival needed yet' % (current_height, 2*net.CHAIN_LENGTH)
         
