@@ -980,13 +980,21 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         # Start with all blocks from persistent storage
         blocks_dict = {}  # Use dict to avoid duplicates, keyed by block_hash
         
-        # Add all blocks from persistent history
+        # Add all blocks from persistent history and refresh their status
         for block_hash, hist_data in block_history.items():
             if hist_data:
                 # Ensure block_hash is a string (not a number)
                 # Silently skip non-string hashes (can happen from sharechain iteration)
                 if not isinstance(block_hash, (str, unicode)):
                     continue
+                
+                # Only refresh status if currently pending (confirmed/orphaned are final)
+                old_status = hist_data.get('status', 'unknown')
+                if old_status == 'pending':
+                    status = yield get_block_status(block_hash)
+                else:
+                    # Use cached status for confirmed/orphaned blocks (no need to recheck)
+                    status = old_status
                 
                 # Calculate Hash Diff for historical blocks if not present
                 actual_hash_difficulty = hist_data.get('actual_hash_difficulty')
@@ -1004,12 +1012,16 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                     'pool_hashrate_at_find': hist_data.get('pool_hashrate'),
                     'network_difficulty': hist_data.get('network_diff'),
                     'block_reward': hist_data.get('block_reward'),
-                    'status': hist_data.get('status', 'unknown'),
+                    'status': status,  # Use fresh status from blockchain
                     'actual_hash_difficulty': actual_hash_difficulty,
                     'explorer_url': node.net.PARENT.BLOCK_EXPLORER_URL_PREFIX + block_hash,
                     'from_history': True,
                     'needs_hash_fetch': actual_hash_difficulty is None,
                 }
+                
+                # Update persistent storage with latest status
+                if status in ('confirmed', 'orphaned'):
+                    block_history[block_hash]['status'] = status
         
         # Now merge/update with current sharechain data
         if node.best_share_var.value is not None:
