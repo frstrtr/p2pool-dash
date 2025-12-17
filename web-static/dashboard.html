@@ -2352,7 +2352,7 @@
                             if (point.series.name === 'Luck Trend') {
                                 s += '<br/><span style="color:' + point.color + '">●</span> ' + 
                                      point.series.name + ': <b>' + d3.format('.0f')(point.y) + '%</b>';
-                            } else if (point.series.name === 'Miners' || point.series.name === 'Connected') {
+                            } else if (point.series.name === 'Workers' || point.series.name === 'Miners' || point.series.name === 'Connected') {
                                 s += '<br/><span style="color:' + point.color + '">●</span> ' + 
                                      point.series.name + ': <b>' + Math.round(point.y) + '</b>';
                             } else {
@@ -2827,7 +2827,7 @@
                             if (point.series.name === 'Luck Trend') {
                                 s += '<br/><span style="color:' + point.color + '">●</span> ' + 
                                      point.series.name + ': <b>' + d3.format('.0f')(point.y) + '%</b>';
-                            } else if (point.series.name === 'Miners' || point.series.name === 'Connected') {
+                            } else if (point.series.name === 'Workers' || point.series.name === 'Miners' || point.series.name === 'Connected') {
                                 s += '<br/><span style="color:' + point.color + '">●</span> ' + 
                                      point.series.name + ': <b>' + Math.round(point.y) + '</b>';
                             } else {
