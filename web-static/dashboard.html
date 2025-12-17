@@ -984,7 +984,7 @@
                         <div class="legend-item" data-series="miners" onclick="toggleSeries('miners', this)" title="Click to toggle unique miner addresses"><span class="legend-color" style="background: #673ab7;"></span><span>Miners</span></div>
                         <div class="legend-item" data-series="connected" onclick="toggleSeries('connected', this)" title="Click to toggle connected miners (all connections)"><span class="legend-color" style="background: #e91e63;"></span><span>Connected</span></div>
                         <div class="legend-item" data-series="lucktrend" onclick="toggleSeries('lucktrend', this)" title="Click to toggle luck trend line"><span class="legend-color" style="background: #ffc107;"></span><span>Luck</span></div>
-                        <div class="legend-item active" title="Network difficulty as hashrate equivalent"><span class="legend-color" style="background: #8b5cf6;"></span><span>Net Diff</span></div>
+                        <div class="legend-item" data-series="netdiff" onclick="toggleSeries('netdiff', this)" title="Click to toggle network difficulty"><span class="legend-color" style="background: #8b5cf6;"></span><span>Net Diff</span></div>
                     </div>
                     <div class="graph-container compact" id="hashrate-graph"></div>
                     <div class="graph-stats compact">
@@ -1015,7 +1015,7 @@
                     <div class="legend-item" data-series="workers" onclick="toggleSeries('workers', this)" title="Click to toggle worker connections" style="font-size: 14px; padding: 6px 12px;"><span class="legend-color" style="background: #9c27b0; width: 14px; height: 14px;"></span><span>Workers</span></div>
                     <div class="legend-item" data-series="miners" onclick="toggleSeries('miners', this)" title="Click to toggle unique miner addresses" style="font-size: 14px; padding: 6px 12px;"><span class="legend-color" style="background: #673ab7; width: 14px; height: 14px;"></span><span>Miners</span></div>
                     <div class="legend-item" data-series="lucktrend" onclick="toggleSeries('lucktrend', this)" title="Click to toggle luck trend line" style="font-size: 14px; padding: 6px 12px;"><span class="legend-color" style="background: #ffc107; width: 14px; height: 14px;"></span><span>Luck</span></div>
-                    <div class="legend-item active" title="Network difficulty as hashrate equivalent" style="font-size: 14px; padding: 6px 12px;"><span class="legend-color" style="background: #8b5cf6; width: 14px; height: 14px;"></span><span>Net Diff</span></div>
+                    <div class="legend-item" data-series="netdiff" onclick="toggleSeries('netdiff', this)" title="Click to toggle network difficulty" style="font-size: 14px; padding: 6px 12px;"><span class="legend-color" style="background: #8b5cf6; width: 14px; height: 14px;"></span><span>Net Diff</span></div>
                 </div>
                 <button class="fullscreen-close" onclick="toggleGraphFullscreen()">✕ Close</button>
             </div>
@@ -1831,7 +1831,7 @@
         var graphBlocks = [];
         var isFullscreen = false;
         var fullscreenChart = null;
-        var seriesVisibility = { good: true, doa: true, blocks: true, workers: true, miners: true, connected: true, lucktrend: true };
+        var seriesVisibility = { good: true, doa: true, blocks: true, workers: true, miners: true, connected: true, lucktrend: true, netdiff: true };
         
         function toggleSeries(seriesName, element) {
             seriesVisibility[seriesName] = !seriesVisibility[seriesName];
@@ -1846,7 +1846,7 @@
             });
             
             // Map series names to indices
-            var seriesIndexMap = { good: 0, doa: 1, blocks: 2, miners: 3, lucktrend: 4 };
+            var seriesIndexMap = { good: 0, doa: 1, blocks: 2, miners: 3, lucktrend: 4, netdiff: 8 };
             var seriesIndex = seriesIndexMap[seriesName];
             
             if (hashrateChart && hashrateChart.series[seriesIndex]) {
@@ -1874,7 +1874,7 @@
                 overlay.classList.add('active');
                 document.body.style.overflow = 'hidden';
                 // Render fullscreen chart
-                renderFullscreenGraph(graphData, graphMinerData, graphUniqueMinersData, graphConnectedMinersData, graphBlocks);
+                renderFullscreenGraph(graphData, graphMinerData, graphUniqueMinersData, graphConnectedMinersData, graphBlocks, networkDiffData);
                 // Update button states
                 updatePeriodButtons();
             } else {
@@ -1917,16 +1917,17 @@
             var minerCountData = null;
             var connectedMinersData = null;
             var blocksData = [];
+            var networkDiffData = [];
             
             function tryRender() {
                 loadCount++;
-                if (loadCount === 5) {  // Now loading 5 resources: hashrate, worker_count, unique_miner_count, connected_miners, blocks
+                if (loadCount === 6) {  // Now loading 6 resources: hashrate, worker_count, unique_miner_count, connected_miners, blocks, network_difficulty
                     graphData = hashrateData;
                     graphMinerData = minerCountData;
                     graphUniqueMinersData = uniqueMinerCountData;
                     graphConnectedMinersData = connectedMinersData;
                     graphBlocks = blocksData;
-                    renderHashrateGraph(hashrateData, minerCountData, uniqueMinerCountData, connectedMinersData, blocksData);
+                    renderHashrateGraph(hashrateData, minerCountData, uniqueMinerCountData, connectedMinersData, blocksData, networkDiffData);
                 }
             }
             
@@ -1984,6 +1985,11 @@
                 blocksData = blocks || [];
                 tryRender();
             });
+            
+            d3.json('../network_difficulty?period=' + currentGraphPeriod, function(data) {
+                networkDiffData = data || [];
+                tryRender();
+            });
         }
         
         // Configure Highcharts global options
@@ -1996,7 +2002,7 @@
         var workerCountData = null;
         var uniqueMinerCountData = null;
 
-        function renderHashrateGraph(data, minerData, uniqueMinersData, connectedData, blocks) {
+        function renderHashrateGraph(data, minerData, uniqueMinersData, connectedData, blocks, networkDiffSamples) {
             var container = document.getElementById('hashrate-graph');
             blocks = blocks || [];
             minerData = minerData || [];
@@ -2079,20 +2085,24 @@
             var blockMarkers = [];
             var luckTrendData = [];
             var validLucks = [];
+            
+            // Process network difficulty samples - convert to hashrate equivalent
             var netDiffData = [];
+            networkDiffSamples = networkDiffSamples || [];
+            networkDiffSamples.forEach(function(sample) {
+                var sampleTime = sample.ts * 1000;
+                if (sampleTime >= minTime && sampleTime <= maxTime) {
+                    // Convert difficulty to hashrate equivalent (difficulty * 2^32 / block_time)
+                    var netHashrate = sample.network_diff * Math.pow(2, 32) / 150; // 150s avg block time for Dash
+                    netDiffData.push([sampleTime, netHashrate]);
+                }
+            });
             
             // Sort blocks by timestamp
             var sortedBlocks = blocks.slice().sort(function(a, b) { return a.ts - b.ts; });
             
             sortedBlocks.forEach(function(b) {
                 var blockTime = b.ts * 1000;
-                
-                // Collect network difficulty data for graph line
-                if (b.network_difficulty && blockTime >= minTime && blockTime <= maxTime) {
-                    // Convert difficulty to hashrate equivalent (difficulty * 2^32 / block_time)
-                    var netHashrate = b.network_difficulty * Math.pow(2, 32) / 150; // 150s avg block time for Dash
-                    netDiffData.push([blockTime, netHashrate]);
-                }
                 
                 // Check if block is within selected time window (exact range for alignment)
                 if (blockTime >= minTime && blockTime <= maxTime) {
@@ -2518,18 +2528,18 @@
                         fillColor: '#8b5cf6',
                         symbol: 'circle'
                     },
-                    visible: true,
+                    visible: seriesVisibility.netdiff,
                     yAxis: 0
                 }]
             });
             
             // Also update fullscreen if open
             if (isFullscreen) {
-                renderFullscreenGraph(data, minerData, uniqueMinersData, connectedData, blocks);
+                renderFullscreenGraph(data, minerData, uniqueMinersData, connectedData, blocks, networkDiffData);
             }
         }
         
-        function renderFullscreenGraph(data, minerData, uniqueMinersData, connectedData, blocks) {
+        function renderFullscreenGraph(data, minerData, uniqueMinersData, connectedData, blocks, networkDiffSamples) {
             var container = document.getElementById('fullscreen-graph');
             blocks = blocks || graphBlocks || [];
             minerData = minerData || [];
@@ -2601,20 +2611,24 @@
             var blockMarkers = [];
             var luckTrendData = [];
             var validLucks = [];
+            
+            // Process network difficulty samples - convert to hashrate equivalent
             var netDiffData = [];
+            networkDiffSamples = networkDiffSamples || [];
+            networkDiffSamples.forEach(function(sample) {
+                var sampleTime = sample.ts * 1000;
+                if (sampleTime >= minTime && sampleTime <= maxTime) {
+                    // Convert difficulty to hashrate equivalent (difficulty * 2^32 / block_time)
+                    var netHashrate = sample.network_diff * Math.pow(2, 32) / 150; // 150s avg block time for Dash
+                    netDiffData.push([sampleTime, netHashrate]);
+                }
+            });
             
             // Sort blocks by timestamp
             var sortedBlocks = blocks.slice().sort(function(a, b) { return a.ts - b.ts; });
             
             sortedBlocks.forEach(function(b) {
                 var blockTime = b.ts * 1000;
-                
-                // Collect network difficulty data for graph line
-                if (b.network_difficulty && blockTime >= minTime && blockTime <= maxTime) {
-                    // Convert difficulty to hashrate equivalent (difficulty * 2^32 / block_time)
-                    var netHashrate = b.network_difficulty * Math.pow(2, 32) / 150; // 150s avg block time for Dash
-                    netDiffData.push([blockTime, netHashrate]);
-                }
                 
                 // Check if block is within selected time window (exact range for alignment)
                 if (blockTime >= minTime && blockTime <= maxTime) {
@@ -3027,7 +3041,7 @@
                         fillColor: '#8b5cf6',
                         symbol: 'circle'
                     },
-                    visible: true,
+                    visible: seriesVisibility.netdiff,
                     yAxis: 0
                 }]
             });

@@ -925,6 +925,34 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         'sample_interval': SAMPLE_INTERVAL,
     }))
     
+    # Expose network difficulty history from hashrate samples
+    # Returns last N samples with timestamp and network difficulty
+    def get_network_difficulty_samples(period='day'):
+        """Get network difficulty samples for a time period."""
+        now = time.time()
+        period_seconds = {
+            'hour': 60 * 60,
+            'day': 60 * 60 * 24,
+            'week': 60 * 60 * 24 * 7,
+            'month': 60 * 60 * 24 * 30,
+            'year': 60 * 60 * 24 * 365,
+        }.get(period, 60 * 60 * 24)
+        
+        min_time = now - period_seconds
+        
+        # Filter samples by time period and extract network difficulty
+        result = []
+        for sample in hashrate_samples:
+            if sample['ts'] >= min_time and sample.get('network_diff') is not None:
+                result.append({
+                    'ts': sample['ts'],
+                    'network_diff': sample['network_diff']
+                })
+        
+        return result
+    
+    web_root.putChild('network_difficulty', WebInterface(get_network_difficulty_samples))
+    
     # Save hashrate samples on shutdown
     def save_samples_on_shutdown():
         if hashrate_samples:
