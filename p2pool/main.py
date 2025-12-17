@@ -303,6 +303,8 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
             
             return archived_count
         
+        startup_archive_done = [False]  # Mutable flag to track if startup archival happened
+        
         def save_shares():
             """Save current shares and archive old ones"""
             current_height = node.tracker.get_height(node.best_share_var.value) if node.best_share_var.value else 0
@@ -316,7 +318,10 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
                 if share.hash in node.tracker.verified.items:
                     ss.add_verified_hash(share.hash)
             
-            # Archive old shares
+            # Archive old shares (skip first call if startup archival just ran)
+            if startup_archive_done[0]:
+                startup_archive_done[0] = False  # Reset flag
+                return  # Skip first periodic call to avoid double-archival
             archive_old_shares('periodic')
         
         # STARTUP OPTIMIZATION: Archive old shares immediately
@@ -327,7 +332,11 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
             archived = archive_old_shares('startup cleanup')
             if archived > 0:
                 print 'Startup optimization: removed %d old shares from active storage' % archived
+                startup_archive_done[0] = True  # Set flag to skip next periodic call
+        else:
+            print 'Chain height %d <= 2*CHAIN_LENGTH (%d), no archival needed yet' % (current_height, 2*net.CHAIN_LENGTH)
         
+        # Start periodic save (every 60 seconds)
         deferral.RobustLoopingCall(save_shares).start(60)
         
         # Register graceful shutdown handler
