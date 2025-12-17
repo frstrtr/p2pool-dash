@@ -367,6 +367,58 @@
             font-weight: 600;
         }
         
+        /* Collapsible Miner Rows */
+        .miner-row {
+            cursor: pointer;
+            background: var(--darker);
+            font-weight: 600;
+        }
+        
+        .miner-row:hover {
+            background: rgba(33, 150, 243, 0.1);
+        }
+        
+        .miner-row td:first-child {
+            padding-left: 12px;
+        }
+        
+        .folder-icon {
+            display: inline-block;
+            margin-right: 8px;
+            font-size: 0.9em;
+            transition: transform 0.2s;
+            color: var(--primary);
+        }
+        
+        .folder-icon.collapsed {
+            transform: rotate(-90deg);
+        }
+        
+        .worker-row {
+            background: var(--card-bg);
+            font-size: 0.9em;
+        }
+        
+        .worker-row td:first-child {
+            padding-left: 40px;
+            color: var(--text-muted);
+        }
+        
+        .worker-row.hidden {
+            display: none;
+        }
+        
+        .worker-count-badge {
+            display: inline-block;
+            background: var(--primary);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.75em;
+            margin-left: 8px;
+            font-weight: normal;
+        }
+        
         /* Shares Explorer */
         .shares-section {
             background: var(--card-bg);
@@ -937,7 +989,7 @@
                         <div class="graph-stat"><div class="graph-stat-label">Current</div><div class="graph-stat-value" id="graph-current">-</div></div>
                         <div class="graph-stat"><div class="graph-stat-label">Average</div><div class="graph-stat-value" id="graph-average">-</div></div>
                         <div class="graph-stat"><div class="graph-stat-label">Peak</div><div class="graph-stat-value" id="graph-peak">-</div></div>
-                        <div class="graph-stat"><div class="graph-stat-label">Miners</div><div class="graph-stat-value" id="graph-miners">-</div></div>
+                        <div class="graph-stat" title="Worker connections / Unique payout addresses"><div class="graph-stat-label">Workers/Miners</div><div class="graph-stat-value" id="graph-miners">-</div></div>
                         <div class="graph-stat"><div class="graph-stat-label">Avg Luck</div><div class="graph-stat-value" id="graph-luck">-</div></div>
                     </div>
                 </div>
@@ -968,7 +1020,7 @@
                 <div class="fullscreen-stat"><div class="fullscreen-stat-label">Current</div><div class="fullscreen-stat-value" id="fs-graph-current">-</div></div>
                 <div class="fullscreen-stat"><div class="fullscreen-stat-label">Average</div><div class="fullscreen-stat-value" id="fs-graph-average">-</div></div>
                 <div class="fullscreen-stat"><div class="fullscreen-stat-label">Peak</div><div class="fullscreen-stat-value" id="fs-graph-peak">-</div></div>
-                <div class="fullscreen-stat"><div class="fullscreen-stat-label">Miners</div><div class="fullscreen-stat-value" id="fs-graph-miners">-</div></div>
+                <div class="fullscreen-stat" title="Worker connections / Unique payout addresses"><div class="fullscreen-stat-label">Workers/Miners</div><div class="fullscreen-stat-value" id="fs-graph-miners">-</div></div>
                 <div class="fullscreen-stat"><div class="fullscreen-stat-label">Avg Luck</div><div class="fullscreen-stat-value" id="fs-graph-luck">-</div></div>
             </div>
         </div>
@@ -976,7 +1028,7 @@
         <!-- Active Miners -->
         <div class="table-section">
             <div class="section-header">
-                <h2>⛏️ Active Miners on This Node</h2>
+                <h2>⛏️ Active Miners on This Node <span style="font-size: 14px; color: var(--muted); font-weight: normal;">(Unique Payout Addresses)</span></h2>
                 <div style="display: flex; gap: 10px; align-items: center;">
                     <span class="badge" id="active_miners_count">0</span>
                     <a href="miners.html" style="color: var(--primary); text-decoration: none; font-size: 14px;">View Details →</a>
@@ -987,7 +1039,7 @@
                     <table id="active_miners">
                         <thead>
                             <tr>
-                                <th>DASH Address</th>
+                                <th>DASH Address / Worker</th>
                                 <th>Hashrate</th>
                                 <th>DOA Hashrate</th>
                                 <th>Share Difficulty</th>
@@ -1165,24 +1217,51 @@
         function populateActiveMiners(local_stats) {
             d3.select('#active_miners_loading').style('display', 'none');
             
-            // Build miner data array
-            var miners = [];
-            for (var addr in local_stats.miner_hash_rates) {
-                var hashrate = local_stats.miner_hash_rates[addr] || 0;
-                var doa_hashrate = local_stats.miner_dead_hash_rates[addr] || 0;
-                
-                miners.push({
-                    address: addr,
-                    hashrate: hashrate,
-                    doa_hashrate: doa_hashrate,
-                    doa_percent: hashrate > 0 ? doa_hashrate / hashrate : 0
-                });
+            // Parse worker names and extract base addresses
+            // Supported formats: address.worker, address_worker, address+diff, address/diff
+            function extractAddress(workerName) {
+                return workerName.split('+')[0].split('/')[0].split('.')[0].split('_')[0];
             }
             
-            // Sort by hashrate descending
-            miners.sort(function(a, b) { return b.hashrate - a.hashrate; });
+            // Group workers by base address
+            var minerGroups = {}; // {baseAddress: {workers: [...], totalHashrate: 0, totalDoa: 0}}
             
-            // Update count badge
+            for (var workerName in local_stats.miner_hash_rates) {
+                var hashrate = local_stats.miner_hash_rates[workerName] || 0;
+                var doa_hashrate = local_stats.miner_dead_hash_rates[workerName] || 0;
+                var baseAddress = extractAddress(workerName);
+                
+                if (!minerGroups[baseAddress]) {
+                    minerGroups[baseAddress] = {
+                        address: baseAddress,
+                        workers: [],
+                        totalHashrate: 0,
+                        totalDoa: 0
+                    };
+                }
+                
+                minerGroups[baseAddress].workers.push({
+                    name: workerName,
+                    hashrate: hashrate,
+                    doa_hashrate: doa_hashrate
+                });
+                minerGroups[baseAddress].totalHashrate += hashrate;
+                minerGroups[baseAddress].totalDoa += doa_hashrate;
+            }
+            
+            // Convert to array and sort by total hashrate
+            var miners = [];
+            for (var addr in minerGroups) {
+                var group = minerGroups[addr];
+                group.doa_percent = group.totalHashrate > 0 ? group.totalDoa / group.totalHashrate : 0;
+                // Sort workers within group by hashrate
+                group.workers.sort(function(a, b) { return b.hashrate - a.hashrate; });
+                miners.push(group);
+            }
+            
+            miners.sort(function(a, b) { return b.totalHashrate - a.totalHashrate; });
+            
+            // Update count badge to show unique miners
             d3.select('#active_miners_count').text(miners.length);
             
             // Show top 10 miners
@@ -1208,44 +1287,79 @@
                 // Clear existing rows
                 d3.select('#active_miners tbody').selectAll('tr').remove();
                 
-                var tr = d3.select('#active_miners tbody').selectAll('tr').data(display).enter().append('tr');
+                var tbody = d3.select('#active_miners tbody');
                 
-                // Address column with link to miner detail page
-                tr.append('td').append('a')
-                    .attr('class', 'hash-link')
-                    .attr('href', function(m) { return 'miner.html?address=' + m.address; })
-                    .text(function(m) { return m.address; });
-                
-                // Hashrate column
-                tr.append('td').text(function(m) { return format_hashrate(m.hashrate); });
-                
-                // DOA Hashrate column
-                tr.append('td').text(function(m) { 
-                    return format_hashrate(m.doa_hashrate) + ' (' + d3.format('.1%')(m.doa_percent) + ')'; 
+                // Create miner rows and worker rows
+                display.forEach(function(miner, idx) {
+                    var minerId = 'miner_' + idx;
+                    
+                    // Create miner summary row (collapsible)
+                    var minerRow = tbody.append('tr')
+                        .attr('class', 'miner-row')
+                        .attr('data-miner-id', minerId)
+                        .on('click', function() {
+                            var icon = d3.select(this).select('.folder-icon');
+                            var isCollapsed = icon.classed('collapsed');
+                            icon.classed('collapsed', !isCollapsed);
+                            
+                            // Toggle worker rows
+                            d3.selectAll('.worker-row[data-parent="' + minerId + '"]')
+                                .classed('hidden', isCollapsed);
+                        });
+                    
+                    // Address column with folder icon and worker count
+                    var addressCell = minerRow.append('td');
+                    addressCell.append('span')
+                        .attr('class', 'folder-icon' + (miner.workers.length > 1 ? '' : ' collapsed'))
+                        .html('▼');
+                    addressCell.append('a')
+                        .attr('class', 'hash-link')
+                        .attr('href', 'miner.html?address=' + miner.address)
+                        .attr('onclick', 'event.stopPropagation()')
+                        .text(miner.address);
+                    if (miner.workers.length > 1) {
+                        addressCell.append('span')
+                            .attr('class', 'worker-count-badge')
+                            .text(miner.workers.length + ' workers');
+                    }
+                    
+                    // Miner totals
+                    minerRow.append('td').text(format_hashrate(miner.totalHashrate));
+                    minerRow.append('td').text(format_hashrate(miner.totalDoa) + ' (' + d3.format('.1%')(miner.doa_percent) + ')');
+                    minerRow.append('td').attr('id', 'miner_diff_' + idx).text('...');
+                    minerRow.append('td').attr('id', 'miner_time_' + idx).text('...');
+                    minerRow.append('td').attr('id', 'miner_payout_' + idx).text('...');
+                    
+                    // Create worker rows (initially hidden if only 1 worker, shown if multiple)
+                    miner.workers.forEach(function(worker, widx) {
+                        var workerRow = tbody.append('tr')
+                            .attr('class', 'worker-row' + (miner.workers.length === 1 ? ' hidden' : ''))
+                            .attr('data-parent', minerId);
+                        
+                        workerRow.append('td').text('↳ ' + worker.name);
+                        workerRow.append('td').text(format_hashrate(worker.hashrate));
+                        var doaPercent = worker.hashrate > 0 ? worker.doa_hashrate / worker.hashrate : 0;
+                        workerRow.append('td').text(format_hashrate(worker.doa_hashrate) + ' (' + d3.format('.1%')(doaPercent) + ')');
+                        workerRow.append('td').text('-');
+                        workerRow.append('td').text('-');
+                        workerRow.append('td').text('-');
+                    });
                 });
                 
-                // Share Difficulty column (from global stats)
-                tr.append('td').attr('id', function(m, i) { return 'miner_diff_' + i; }).text('...');
-                
-                // Time to Share column (calculated from difficulty and hashrate)
-                tr.append('td').attr('id', function(m, i) { return 'miner_time_' + i; }).text('...');
-                
-                // Predicted Payout column
-                tr.append('td').text(function(m) { 
-                    var payout = payouts[m.address] || 0;
-                    return d3.format('.4f')(payout);
-                });
-                
-                // Fetch global stats for share difficulty calculation
+                // Fetch global stats for share difficulty calculation and fill in remaining data
                 d3.json('../global_stats', function(global_stats) {
                     if (!global_stats) return;
                     
-                    display.forEach(function(m, i) {
+                    display.forEach(function(miner, i) {
                         var diff = global_stats.min_difficulty || 0;
                         d3.select('#miner_diff_' + i).text(d3.format('.3r')(diff));
                         
-                        var time_to_share = (diff * Math.pow(2, 32)) / m.hashrate;
+                        var time_to_share = (diff * Math.pow(2, 32)) / miner.totalHashrate;
                         d3.select('#miner_time_' + i).text(isFinite(time_to_share) ? format_dt(time_to_share) : '∞');
+                        
+                        // Payout for this miner
+                        var payout = payouts[miner.address] || 0;
+                        d3.select('#miner_payout_' + i).text(d3.format('.4f')(payout));
                     });
                 });
             });
@@ -1819,12 +1933,20 @@
                 tryRender();
             });
             
-            var minerEndpoints = {
-                'hour': '../web/graph_data/miner_count/last_hour',
-                'day': '../web/graph_data/miner_count/last_day',
-                'week': '../web/graph_data/miner_count/last_week',
-                'month': '../web/graph_data/miner_count/last_month',
-                'year': '../web/graph_data/miner_count/last_year'
+            var workerEndpoints = {
+                'hour': '../web/graph_data/worker_count/last_hour',
+                'day': '../web/graph_data/worker_count/last_day',
+                'week': '../web/graph_data/worker_count/last_week',
+                'month': '../web/graph_data/worker_count/last_month',
+                'year': '../web/graph_data/worker_count/last_year'
+            };
+            
+            var uniqueMinerEndpoints = {
+                'hour': '../web/graph_data/unique_miner_count/last_hour',
+                'day': '../web/graph_data/unique_miner_count/last_day',
+                'week': '../web/graph_data/unique_miner_count/last_week',
+                'month': '../web/graph_data/unique_miner_count/last_month',
+                'year': '../web/graph_data/unique_miner_count/last_year'
             };
             
             var connectedMinersEndpoints = {
@@ -1835,8 +1957,17 @@
                 'year': '../web/graph_data/connected_miners/last_year'
             };
             
-            d3.json(minerEndpoints[currentGraphPeriod], function(data) {
-                minerCountData = data || [];
+            var workerCountData = null;
+            var uniqueMinerCountData = null;
+            
+            d3.json(workerEndpoints[currentGraphPeriod], function(data) {
+                workerCountData = data || [];
+                minerCountData = workerCountData; // Keep for compatibility
+                tryRender();
+            });
+            
+            d3.json(uniqueMinerEndpoints[currentGraphPeriod], function(data) {
+                uniqueMinerCountData = data || [];
                 tryRender();
             });
             
@@ -2049,9 +2180,20 @@
             document.getElementById('graph-average').textContent = format_hashrate(avg);
             document.getElementById('graph-peak').textContent = format_hashrate(peak);
             
-            // Display current miner count
-            var currentMinerCount = minerCount.length > 0 ? minerCount[minerCount.length - 1][1] : 0;
-            document.getElementById('graph-miners').textContent = currentMinerCount;
+            // Display current worker count and unique miner count
+            var currentWorkerCount = minerCount.length > 0 ? minerCount[minerCount.length - 1][1] : 0;
+            var uniqueMiners = [];
+            if (uniqueMinerCountData && uniqueMinerCountData.length > 0) {
+                for (var i = 0; i < uniqueMinerCountData.length; i++) {
+                    var timestamp = uniqueMinerCountData[i][0] * 1000;
+                    var count = uniqueMinerCountData[i][1];
+                    if (timestamp >= startTime && timestamp <= endTime) {
+                        uniqueMiners.push([timestamp, count]);
+                    }
+                }
+            }
+            var currentUniqueMinerCount = uniqueMiners.length > 0 ? uniqueMiners[uniqueMiners.length - 1][1] : 0;
+            document.getElementById('graph-miners').textContent = currentWorkerCount + '/' + currentUniqueMinerCount;
             
             if (avgLuck !== null) {
                 var luckEl = document.getElementById('graph-luck');
@@ -2517,9 +2659,10 @@
             document.getElementById('fs-graph-average').textContent = format_hashrate(avg);
             document.getElementById('fs-graph-peak').textContent = format_hashrate(peak);
             
-            // Display current miner count in fullscreen
-            var fsMinerCount = minerCount.length > 0 ? minerCount[minerCount.length - 1][1] : 0;
-            document.getElementById('fs-graph-miners').textContent = fsMinerCount;
+            // Display current worker count and unique miner count in fullscreen
+            var fsWorkerCount = minerCount.length > 0 ? minerCount[minerCount.length - 1][1] : 0;
+            var fsUniqueMinerCount = uniqueMiners.length > 0 ? uniqueMiners[uniqueMiners.length - 1][1] : 0;
+            document.getElementById('fs-graph-miners').textContent = fsWorkerCount + '/' + fsUniqueMinerCount;
             
             if (fsAvgLuck !== null) {
                 var luckEl = document.getElementById('fs-graph-luck');
