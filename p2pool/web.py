@@ -445,10 +445,18 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         dead_hashrate = miner_dead_hash_rates.get(address, 0)
         doa_rate = dead_hashrate / hashrate if hashrate > 0 else 0
         
-        # Current payout
-        current_txouts = node.get_current_txouts()
-        address_script = bitcoin_data.address_to_script2(address, node.net.PARENT)
-        current_payout = current_txouts.get(address_script, 0) / 1e8 if address_script else 0
+        # Current payout - extract address from extended format
+        # Supported formats: address.worker, address_worker, address+diff, address/diff
+        current_payout = 0
+        try:
+            # Use same parsing logic as stratum.py line 673
+            payout_address = address.split('+')[0].split('/')[0].split('.')[0].split('_')[0]
+            current_txouts = node.get_current_txouts()
+            address_script = bitcoin_data.address_to_script2(payout_address, node.net.PARENT)
+            current_payout = current_txouts.get(address_script, 0) / 1e8 if address_script else 0
+        except (ValueError, KeyError, IndexError):
+            # Invalid address format - continue with 0 payout
+            pass
         
         # Share difficulty
         miner_last_diff = 0
