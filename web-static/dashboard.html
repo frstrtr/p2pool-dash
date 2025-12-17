@@ -1845,8 +1845,8 @@
                 }
             });
             
-            // Map series names to indices
-            var seriesIndexMap = { good: 0, doa: 1, blocks: 2, miners: 3, lucktrend: 4, netdiff: 8 };
+            // Map series names to indices (order: good, doa, blocks, workers, miners, connected, lucktrend, netdiff)
+            var seriesIndexMap = { good: 0, doa: 1, blocks: 2, workers: 3, miners: 4, connected: 5, lucktrend: 6, netdiff: 7 };
             var seriesIndex = seriesIndexMap[seriesName];
             
             if (hashrateChart && hashrateChart.series[seriesIndex]) {
