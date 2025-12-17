@@ -1302,11 +1302,12 @@
                         .on('click', function() {
                             var icon = d3.select(this).select('.folder-icon');
                             var isCollapsed = icon.classed('collapsed');
-                            icon.classed('collapsed', !isCollapsed);
+                            var newCollapsed = !isCollapsed;
+                            icon.classed('collapsed', newCollapsed);
                             
                             // Toggle worker rows
                             d3.selectAll('.worker-row[data-parent="' + minerId + '"]')
-                                .classed('hidden', isCollapsed);
+                                .classed('hidden', newCollapsed);
                         });
                     
                     // Address column with folder icon and worker count

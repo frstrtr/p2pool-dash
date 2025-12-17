@@ -762,16 +762,36 @@
             const hashrateData = [];
             const doaData = [];
             
+            // Helper to extract base address from worker name
+            function extractBaseAddress(workerName) {
+                return workerName.split('+')[0].split('/')[0].split('.')[0].split('_')[0];
+            }
+            
             for (let i = 0; i < data.length; i++) {
                 const point = data[i];
-                if (point && point[1] && point[1][minerAddress] !== undefined) {
+                if (point && point[1]) {
                     const timestamp = point[0] * 1000;
-                    const hashrate = point[1][minerAddress] / (point[2] || 1);
-                    hashrateData.push([timestamp, hashrate]);
+                    let hashrate = 0;
+                    let dead_hashrate = 0;
+                    
+                    // Aggregate all workers for this address
+                    for (const workerName in point[1]) {
+                        if (extractBaseAddress(workerName) === minerAddress) {
+                            hashrate += point[1][workerName] / (point[2] || 1);
+                        }
+                    }
                     
                     // DOA data
-                    if (dead_data && dead_data[i] && dead_data[i][1] && dead_data[i][1][minerAddress] !== undefined) {
-                        const dead_hashrate = dead_data[i][1][minerAddress] / (dead_data[i][2] || 1);
+                    if (dead_data && dead_data[i] && dead_data[i][1]) {
+                        for (const workerName in dead_data[i][1]) {
+                            if (extractBaseAddress(workerName) === minerAddress) {
+                                dead_hashrate += dead_data[i][1][workerName] / (dead_data[i][2] || 1);
+                            }
+                        }
+                    }
+                    
+                    if (hashrate > 0) {
+                        hashrateData.push([timestamp, hashrate]);
                         const doa_rate = hashrate > 0 ? (dead_hashrate / hashrate) * 100 : 0;
                         doaData.push([timestamp, doa_rate]);
                     }

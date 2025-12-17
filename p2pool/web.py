@@ -437,12 +437,26 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         
         miner_hash_rates, miner_dead_hash_rates = wb.get_local_rates()
         
-        if address not in miner_hash_rates:
+        # Extract base address and find all matching workers
+        # Supported formats: address.worker, address_worker, address+diff, address/diff
+        def extract_base_address(worker_name):
+            return worker_name.split('+')[0].split('/')[0].split('.')[0].split('_')[0]
+        
+        # Aggregate stats for all workers belonging to this address
+        hashrate = 0
+        dead_hashrate = 0
+        found_workers = False
+        
+        for worker_name in miner_hash_rates:
+            if extract_base_address(worker_name) == address:
+                found_workers = True
+                hashrate += miner_hash_rates.get(worker_name, 0)
+                dead_hashrate += miner_dead_hash_rates.get(worker_name, 0)
+        
+        if not found_workers:
             return {'error': 'Miner not found', 'active': False}
         
         # Current rates
-        hashrate = miner_hash_rates.get(address, 0)
-        dead_hashrate = miner_dead_hash_rates.get(address, 0)
         doa_rate = dead_hashrate / hashrate if hashrate > 0 else 0
         
         # Current payout - extract address from extended format
@@ -458,10 +472,12 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             # Invalid address format - continue with 0 payout
             pass
         
-        # Share difficulty
+        # Share difficulty - check all workers for this address
         miner_last_diff = 0
-        if address in wb.last_work_shares.value:
-            miner_last_diff = bitcoin_data.target_to_difficulty(wb.last_work_shares.value[address].target)
+        for worker_name in wb.last_work_shares.value:
+            if extract_base_address(worker_name) == address:
+                worker_diff = bitcoin_data.target_to_difficulty(wb.last_work_shares.value[worker_name].target)
+                miner_last_diff = max(miner_last_diff, worker_diff)  # Use highest difficulty among workers
         
         # Time to share
         attempts_to_share = node.net.PARENT.DUMB_SCRYPT_DIFF if not hasattr(node.net, 'DASH_DIFF') else node.net.DASH_DIFF

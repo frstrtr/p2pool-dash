@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Active Miners - P2Pool</title>
+    <title>Active Workers - P2Pool</title>
     <link rel="shortcut icon" type="image/x-icon" href="favicon.ico" />
     <script src="d3.v2.min.js"></script>
     <style>
@@ -447,9 +447,9 @@
             </div>
         </div>
         
-        <!-- Miners List -->
+        <!-- Workers List -->
         <div class="section-header">
-            <h2>Active Miners <span class="badge" id="miners_count">0</span></h2>
+            <h2>Active Workers <span class="badge" id="miners_count">0</span></h2>
         </div>
         
         <div id="miners_loading" class="loading">
@@ -519,31 +519,56 @@
             }
         });
         
-        // Load miners data
+        // Load miners data (grouped by address)
         function loadMiners() {
             d3.json('../local_stats', function(local_stats) {
                 if (!local_stats) return;
                 
-                // Build miners array
-                var miners = [];
-                for (var addr in local_stats.miner_hash_rates) {
-                    var hashrate = local_stats.miner_hash_rates[addr] || 0;
-                    var doa_hashrate = local_stats.miner_dead_hash_rates[addr] || 0;
-                    
-                    miners.push({
-                        address: addr,
-                        hashrate: hashrate,
-                        doa_hashrate: doa_hashrate,
-                        doa_percent: hashrate > 0 ? doa_hashrate / hashrate : 0
-                    });
+                // Extract base address helper
+                function extractAddress(workerName) {
+                    return workerName.split('+')[0].split('/')[0].split('.')[0].split('_')[0];
                 }
                 
-                // Sort by hashrate descending
-                miners.sort(function(a, b) { return b.hashrate - a.hashrate; });
+                // Group workers by base address
+                var minerGroups = {};
+                for (var workerName in local_stats.miner_hash_rates) {
+                    var hashrate = local_stats.miner_hash_rates[workerName] || 0;
+                    var doa_hashrate = local_stats.miner_dead_hash_rates[workerName] || 0;
+                    var baseAddress = extractAddress(workerName);
+                    
+                    if (!minerGroups[baseAddress]) {
+                        minerGroups[baseAddress] = {
+                            address: baseAddress,
+                            workers: [],
+                            totalHashrate: 0,
+                            totalDoa: 0
+                        };
+                    }
+                    
+                    minerGroups[baseAddress].workers.push({
+                        name: workerName,
+                        hashrate: hashrate,
+                        doa_hashrate: doa_hashrate
+                    });
+                    minerGroups[baseAddress].totalHashrate += hashrate;
+                    minerGroups[baseAddress].totalDoa += doa_hashrate;
+                }
+                
+                // Convert to array and calculate aggregates
+                var miners = [];
+                for (var addr in minerGroups) {
+                    var group = minerGroups[addr];
+                    group.doa_percent = group.totalHashrate > 0 ? group.totalDoa / group.totalHashrate : 0;
+                    group.workers.sort(function(a, b) { return b.hashrate - a.hashrate; });
+                    miners.push(group);
+                }
+                
+                // Sort by total hashrate descending
+                miners.sort(function(a, b) { return b.totalHashrate - a.totalHashrate; });
                 
                 // Calculate totals
-                var total_hashrate = d3.sum(miners, function(m) { return m.hashrate; });
-                var total_doa_hashrate = d3.sum(miners, function(m) { return m.doa_hashrate; });
+                var total_hashrate = d3.sum(miners, function(m) { return m.totalHashrate; });
+                var total_doa_hashrate = d3.sum(miners, function(m) { return m.totalDoa; });
                 var total_doa_percent = total_hashrate > 0 ? total_doa_hashrate / total_hashrate : 0;
                 
                 // Update overview stats
@@ -556,30 +581,53 @@
                 d3.select('#miners_loading').style('display', 'none');
                 d3.select('#miners_grid').style('display', 'grid');
                 
-                // Fetch additional data
-                d3.json('../global_stats', function(global_stats) {
+                // Fetch 24h hashrate data
+                d3.json('../web/graph_data/miner_hash_rates/last_day', function(graph_data) {
                     d3.json('../current_payouts', function(payouts_data) {
                         var payouts = payouts_data || {};
-                        var min_difficulty = (global_stats && global_stats.min_difficulty) || 0;
                         
-                        // Calculate average share time
-                        var avg_share_time = 0;
-                        if (miners.length > 0 && min_difficulty > 0) {
-                            var total_time = d3.sum(miners, function(m) {
-                                return (min_difficulty * Math.pow(2, 32)) / m.hashrate;
+                        // Calculate 24h average hashrates per worker
+                        var avg_24h = {};
+                        if (graph_data && graph_data.length > 0) {
+                            var worker_totals = {};
+                            var worker_counts = {};
+                            
+                            graph_data.forEach(function(point) {
+                                if (point[1]) {
+                                    for (var workerName in point[1]) {
+                                        if (!worker_totals[workerName]) {
+                                            worker_totals[workerName] = 0;
+                                            worker_counts[workerName] = 0;
+                                        }
+                                        worker_totals[workerName] += point[1][workerName];
+                                        worker_counts[workerName]++;
+                                    }
+                                }
                             });
-                            avg_share_time = total_time / miners.length;
+                            
+                            for (var workerName in worker_totals) {
+                                avg_24h[workerName] = worker_totals[workerName] / worker_counts[workerName];
+                            }
+                        }
+                        
+                        // Calculate average share time (using current hashrate)
+                        var avg_share_time = 0;
+                        if (miners.length > 0) {
+                            var total_time = d3.sum(miners, function(m) {
+                                return m.totalHashrate > 0 ? 1 / m.totalHashrate : 0;
+                            });
+                            avg_share_time = total_time / miners.length * Math.pow(2, 32);
                         }
                         d3.select('#avg_share_time').text(format_dt(avg_share_time));
                         
-                        // Render miner cards
-                        renderMiners(miners, min_difficulty, payouts);
+                        // Render miner cards with workers
+                        renderMiners(miners, avg_24h, payouts);
                     });
                 });
             });
         }
         
-        function renderMiners(miners, min_difficulty, payouts) {
+        function renderMiners(miners, avg_24h, payouts) {
             var container = d3.select('#miners_grid');
             container.selectAll('*').remove();
             
@@ -610,14 +658,21 @@
                     .attr('style', 'margin-left: 10px; font-size: 0.8rem;')
                     .text('↗');
                 
-                // Stats
+                // Worker count badge
+                if (miner.workers.length > 1) {
+                    addr_div.append('span')
+                        .attr('style', 'display: inline-block; margin-left: 10px; background: var(--primary); color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem;')
+                        .text(miner.workers.length + ' workers');
+                }
+                
+                // Stats (aggregated)
                 var stats = card.append('div').attr('class', 'miner-stats');
                 
-                // Hashrate
+                // Total Hashrate
                 var hr_stat = stats.append('div').attr('class', 'miner-stat');
-                hr_stat.append('div').attr('class', 'miner-stat-label').text('Hashrate');
+                hr_stat.append('div').attr('class', 'miner-stat-label').text('Total Hashrate');
                 hr_stat.append('div').attr('class', 'miner-stat-value success')
-                    .text(format_hashrate(miner.hashrate));
+                    .text(format_hashrate(miner.totalHashrate));
                 
                 // DOA Rate
                 var doa_stat = stats.append('div').attr('class', 'miner-stat');
@@ -626,18 +681,15 @@
                 doa_stat.append('div').attr('class', 'miner-stat-value ' + doa_class)
                     .text(d3.format('.2%')(miner.doa_percent));
                 
-                // Share Difficulty
-                var diff_stat = stats.append('div').attr('class', 'miner-stat');
-                diff_stat.append('div').attr('class', 'miner-stat-label').text('Share Difficulty');
-                diff_stat.append('div').attr('class', 'miner-stat-value')
-                    .text(d3.format('.3r')(min_difficulty));
-                
-                // Time to Share
-                var time_stat = stats.append('div').attr('class', 'miner-stat');
-                time_stat.append('div').attr('class', 'miner-stat-label').text('Time to Share');
-                var time_to_share = (min_difficulty * Math.pow(2, 32)) / miner.hashrate;
-                time_stat.append('div').attr('class', 'miner-stat-value')
-                    .text(isFinite(time_to_share) ? format_dt(time_to_share) : '∞');
+                // 24h Average Hashrate (aggregated)
+                var avg_stat = stats.append('div').attr('class', 'miner-stat');
+                avg_stat.append('div').attr('class', 'miner-stat-label').text('24h Avg Hashrate');
+                var total_avg = 0;
+                miner.workers.forEach(function(w) {
+                    total_avg += avg_24h[w.name] || 0;
+                });
+                avg_stat.append('div').attr('class', 'miner-stat-value')
+                    .text(format_hashrate(total_avg));
                 
                 // Predicted Payout
                 var payout_stat = stats.append('div').attr('class', 'miner-stat');
@@ -650,7 +702,34 @@
                 var doa_hr_stat = stats.append('div').attr('class', 'miner-stat');
                 doa_hr_stat.append('div').attr('class', 'miner-stat-label').text('DOA Hashrate');
                 doa_hr_stat.append('div').attr('class', 'miner-stat-value')
-                    .text(format_hashrate(miner.doa_hashrate));
+                    .text(format_hashrate(miner.totalDoa));
+                
+                // Workers section (if multiple workers)
+                if (miner.workers.length > 1) {
+                    var workers_section = card.append('div').attr('class', 'workers-section');
+                    workers_section.append('div')
+                        .attr('class', 'workers-header')
+                        .html('👷 Workers (' + miner.workers.length + ')');
+                    
+                    var table = workers_section.append('table');
+                    var thead = table.append('thead').append('tr');
+                    thead.append('th').text('Worker Name');
+                    thead.append('th').text('Hashrate');
+                    thead.append('th').text('DOA Rate');
+                    thead.append('th').text('24h Avg');
+                    
+                    var tbody = table.append('tbody');
+                    miner.workers.forEach(function(worker) {
+                        var row = tbody.append('tr');
+                        row.append('td')
+                            .attr('class', 'worker-name')
+                            .text(worker.name);
+                        row.append('td').text(format_hashrate(worker.hashrate));
+                        var worker_doa_percent = worker.hashrate > 0 ? worker.doa_hashrate / worker.hashrate : 0;
+                        row.append('td').text(d3.format('.2%')(worker_doa_percent));
+                        row.append('td').text(format_hashrate(avg_24h[worker.name] || 0));
+                    });
+                }
             });
         }
         
