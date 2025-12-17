@@ -261,8 +261,11 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
             for share in node.tracker.get_chain(node.best_share_var.value, save_height):
                 shares_to_keep.add(share.hash)
             
-            # Find old shares to archive
-            all_stored_hashes = set(ss.known.keys())
+            # Find old shares to archive - ss.known is dict of filename -> (share_hashes, verified_hashes)
+            all_stored_hashes = set()
+            for filename, (share_hashes, verified_hashes) in ss.known.iteritems():
+                all_stored_hashes.update(share_hashes)
+            
             shares_to_archive = all_stored_hashes - shares_to_keep
             
             if not shares_to_archive:
