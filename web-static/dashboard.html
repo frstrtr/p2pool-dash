@@ -1824,6 +1824,7 @@
         var currentGraphPeriod = 'day';
         var graphData = [];
         var graphMinerData = [];
+        var graphUniqueMinersData = [];
         var graphBlocks = [];
         var isFullscreen = false;
         var fullscreenChart = null;
@@ -1870,7 +1871,7 @@
                 overlay.classList.add('active');
                 document.body.style.overflow = 'hidden';
                 // Render fullscreen chart
-                renderFullscreenGraph(graphData, graphMinerData, graphBlocks);
+                renderFullscreenGraph(graphData, graphMinerData, graphUniqueMinersData, graphConnectedMinersData, graphBlocks);
                 // Update button states
                 updatePeriodButtons();
             } else {
@@ -1919,9 +1920,10 @@
                 if (loadCount === 5) {  // Now loading 5 resources: hashrate, worker_count, unique_miner_count, connected_miners, blocks
                     graphData = hashrateData;
                     graphMinerData = minerCountData;
+                    graphUniqueMinersData = uniqueMinerCountData;
                     graphConnectedMinersData = connectedMinersData;
                     graphBlocks = blocksData;
-                    renderHashrateGraph(hashrateData, minerCountData, connectedMinersData, blocksData);
+                    renderHashrateGraph(hashrateData, minerCountData, uniqueMinerCountData, connectedMinersData, blocksData);
                 }
             }
             
@@ -1991,10 +1993,11 @@
         var workerCountData = null;
         var uniqueMinerCountData = null;
 
-        function renderHashrateGraph(data, minerData, connectedData, blocks) {
+        function renderHashrateGraph(data, minerData, uniqueMinersData, connectedData, blocks) {
             var container = document.getElementById('hashrate-graph');
             blocks = blocks || [];
             minerData = minerData || [];
+            uniqueMinersData = uniqueMinersData || [];
             connectedData = connectedData || [];
             
             // Debug: log blocks info
@@ -2049,8 +2052,8 @@
             // Parse unique miner count data (unique payout addresses)
             // Filter to match hashrate data time range for proper alignment
             var uniqueMinerCount = [];
-            if (uniqueMinerCountData && uniqueMinerCountData.length > 0) {
-                uniqueMinerCountData.forEach(function(d) {
+            if (uniqueMinersData && uniqueMinersData.length > 0) {
+                uniqueMinersData.forEach(function(d) {
                     var timestamp = d[0] * 1000;
                     if (timestamp >= minTime && timestamp <= maxTime) {
                         var count = d[1] || 0;
@@ -2497,11 +2500,11 @@
             
             // Also update fullscreen if open
             if (isFullscreen) {
-                renderFullscreenGraph(data, minerData, connectedData, blocks);
+                renderFullscreenGraph(data, minerData, uniqueMinersData, connectedData, blocks);
             }
         }
         
-        function renderFullscreenGraph(data, minerData, connectedData, blocks) {
+        function renderFullscreenGraph(data, minerData, uniqueMinersData, connectedData, blocks) {
             var container = document.getElementById('fullscreen-graph');
             blocks = blocks || graphBlocks || [];
             minerData = minerData || [];
@@ -2551,6 +2554,16 @@
                 var count = d[1] || 0;
                 minerCount.push([timestamp, count]);
             });
+            
+            // Process unique miner count data
+            var uniqueMinerCount = [];
+            if (uniqueMinersData && uniqueMinersData.length > 0) {
+                uniqueMinersData.forEach(function(d) {
+                    var timestamp = d[0] * 1000;
+                    var count = d[1] || 0;
+                    uniqueMinerCount.push([timestamp, count]);
+                });
+            }
             
             // Process connected miners data
             connectedData.forEach(function(d) {
