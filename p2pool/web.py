@@ -909,9 +909,10 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     stop_event.watch(save_samples_on_shutdown)
     
     # Cache for block status to avoid repeated RPC calls
-    block_status_cache = {}  # {block_hash: {'status': 'confirmed'|'orphaned'|'pending', 'checked': timestamp}}
-    BLOCK_CACHE_TTL = 60  # 1 minute cache for pending/orphaned status
+    block_status_cache = {}  # {block_hash: {'status': 'confirmed'|'orphaned'|'pending', 'checked': timestamp, 'confirmations': N}}
+    BLOCK_CACHE_TTL = 60  # 1 minute cache for pending status
     BLOCK_ORPHAN_RECHECK_TTL = 300  # 5 minutes before re-checking orphaned blocks
+    BLOCK_CONFIRMED_CACHE_TTL = 600  # 10 minutes cache for confirmed (until block is old enough)
     
     @defer.inlineCallbacks
     def get_block_status(block_hash):
@@ -927,9 +928,16 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         # Check cache first
         if block_hash in block_status_cache:
             cached = block_status_cache[block_hash]
-            # Confirmed blocks are cached forever
+            # Confirmed blocks with 100+ confirmations are cached longer
+            # But blocks with < 150 confirmations should be rechecked periodically
             if cached['status'] == 'confirmed':
-                defer.returnValue(cached['status'])
+                cached_confirmations = cached.get('confirmations', 999)
+                # If block had 150+ confirmations when cached, it's permanently confirmed
+                if cached_confirmations >= 150:
+                    defer.returnValue(cached['status'])
+                # Otherwise, recheck after TTL (might have been confirmed with old 6-conf logic)
+                elif now - cached['checked'] < BLOCK_CONFIRMED_CACHE_TTL:
+                    defer.returnValue(cached['status'])
             # Orphaned blocks get rechecked periodically (in case of false positive)
             elif cached['status'] == 'orphaned':
                 if now - cached['checked'] < BLOCK_ORPHAN_RECHECK_TTL:
@@ -954,7 +962,12 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             else:
                 status = 'orphaned'  # Negative confirmations = orphaned/replaced
             
-            block_status_cache[block_hash] = {'status': status, 'checked': now}
+            # Cache with confirmation count for smart TTL
+            block_status_cache[block_hash] = {
+                'status': status, 
+                'checked': now,
+                'confirmations': confirmations
+            }
             defer.returnValue(status)
         except Exception as e:
             # RPC error - don't mark as orphaned, keep as pending or use cached status
