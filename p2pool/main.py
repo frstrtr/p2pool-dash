@@ -221,18 +221,25 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
         shares = {}
         known_verified = set()
         last_print_time = [time.time()]
+        last_count = [0]
         def share_cb(share):
             share.time_seen = 0 # XXX
             shares[share.hash] = share
             count = len(shares)
             now = time.time()
+            elapsed = now - last_print_time[0]
             # Print every 1000 shares, OR every 100 shares if >10000 loaded, OR every 5 seconds
             if (count % 1000 == 0 or 
                 (count > 10000 and count % 100 == 0) or 
-                (now - last_print_time[0] > 5.0)):
+                (elapsed > 5.0)):
                 if count > 0:
-                    print "    %i" % (count,)
+                    # If triggered by timeout and very few shares loaded, indicate slow processing
+                    if elapsed > 5.0 and (count - last_count[0]) < 50:
+                        print "    %i (validating complex shares...)" % (count,)
+                    else:
+                        print "    %i" % (count,)
                     last_print_time[0] = now
+                    last_count[0] = count
         ss = p2pool_data.ShareStore(os.path.join(datadir_path, 'shares.'), net, share_cb, known_verified.add)
         print "    ...done loading %i shares (%i verified)!" % (len(shares), len(known_verified))
         print
