@@ -10,13 +10,40 @@ PID_FILE="$SCRIPT_DIR/p2pool_testnet.pid"
 # Testnet address (generate one with: dash-cli -testnet getnewaddress)
 TESTNET_ADDRESS="yZkx49ksZKSmFK6caVA2dAK61JsQJqceD8"
 
-# Function to kill existing testnet instances
-kill_existing() {
+# Function to gracefully stop existing testnet instances (SIGTERM)
+stop_graceful() {
     echo "Checking for existing P2Pool testnet instances..."
     if pgrep -f "pypy.*run_p2pool.*testnet" > /dev/null; then
-        echo "Killing existing P2Pool testnet instance(s)..."
+        echo "Gracefully stopping P2Pool testnet instance(s)..."
+        pkill -TERM -f "pypy.*run_p2pool.*testnet"
+        
+        # Wait up to 10 seconds for graceful shutdown
+        for i in {1..10}; do
+            if ! pgrep -f "pypy.*run_p2pool.*testnet" > /dev/null; then
+                echo "P2Pool testnet stopped gracefully"
+                [ -f "$PID_FILE" ] && rm -f "$PID_FILE"
+                return 0
+            fi
+            sleep 1
+        done
+        
+        # Force kill if still running
+        if pgrep -f "pypy.*run_p2pool.*testnet" > /dev/null; then
+            echo "Warning: Graceful shutdown timed out, forcing kill..."
+            pkill -9 -f "pypy.*run_p2pool.*testnet"
+            sleep 1
+        fi
+    fi
+    [ -f "$PID_FILE" ] && rm -f "$PID_FILE"
+}
+
+# Function to force kill existing testnet instances (SIGKILL)
+kill_force() {
+    echo "Checking for existing P2Pool testnet instances..."
+    if pgrep -f "pypy.*run_p2pool.*testnet" > /dev/null; then
+        echo "Force killing P2Pool testnet instance(s)..."
         pkill -9 -f "pypy.*run_p2pool.*testnet"
-        sleep 2
+        sleep 1
     fi
     [ -f "$PID_FILE" ] && rm -f "$PID_FILE"
 }
@@ -24,7 +51,7 @@ kill_existing() {
 # Parse arguments
 case "$1" in
     restart)
-        kill_existing
+        stop_graceful
         echo "Starting P2Pool in TESTNET daemon mode..."
         echo "Log file: $LOG_FILE"
         
@@ -50,12 +77,16 @@ case "$1" in
         fi
         ;;
     stop)
-        kill_existing
-        echo "P2Pool testnet stopped."
+        stop_graceful
+        echo "P2Pool testnet stopped gracefully."
+        ;;
+    kill)
+        kill_force
+        echo "P2Pool testnet killed."
         ;;
     *)
         # Foreground mode with console output
-        kill_existing
+        stop_graceful
         echo "Starting P2Pool in TESTNET foreground mode..."
         echo "Log file: $LOG_FILE"
         

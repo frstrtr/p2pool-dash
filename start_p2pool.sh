@@ -8,15 +8,43 @@ cd "$SCRIPT_DIR"
 LOG_FILE="$SCRIPT_DIR/p2pool.log"
 PID_FILE="$SCRIPT_DIR/p2pool.pid"
 
-# Function to kill existing instances
-kill_existing() {
+# Function to gracefully stop existing instances (SIGTERM)
+stop_graceful() {
     echo "Checking for existing P2Pool instances..."
     if pgrep -f "pypy.*run_p2pool" > /dev/null; then
-        echo "Killing existing P2Pool instance(s)..."
-        pkill -9 -f "pypy.*run_p2pool"
-        sleep 2
+        echo "Gracefully stopping P2Pool instance(s)..."
+        # Send SIGTERM for graceful shutdown (allows cleanup/archival)
+        pkill -TERM -f "pypy.*run_p2pool"
+        
+        # Wait up to 10 seconds for graceful shutdown
+        for i in {1..10}; do
+            if ! pgrep -f "pypy.*run_p2pool" > /dev/null; then
+                echo "P2Pool stopped gracefully"
+                [ -f "$PID_FILE" ] && rm -f "$PID_FILE"
+                return 0
+            fi
+            sleep 1
+        done
+        
+        # Force kill if still running after 10 seconds
+        if pgrep -f "pypy.*run_p2pool" > /dev/null; then
+            echo "Warning: Graceful shutdown timed out, forcing kill..."
+            pkill -9 -f "pypy.*run_p2pool"
+            sleep 1
+        fi
     fi
     # Clean up stale PID file
+    [ -f "$PID_FILE" ] && rm -f "$PID_FILE"
+}
+
+# Function to force kill existing instances (SIGKILL)
+kill_force() {
+    echo "Checking for existing P2Pool instances..."
+    if pgrep -f "pypy.*run_p2pool" > /dev/null; then
+        echo "Force killing P2Pool instance(s)..."
+        pkill -9 -f "pypy.*run_p2pool"
+        sleep 1
+    fi
     [ -f "$PID_FILE" ] && rm -f "$PID_FILE"
 }
 
@@ -50,7 +78,7 @@ for arg in "$@"; do
             ;;
         --restart|-r|restart)
             # Restart in daemon mode
-            kill_existing
+            stop_graceful
             rotate_log
             echo "Starting P2Pool in daemon mode (logging to $LOG_FILE)..."
             nohup bash -c "cd '$SCRIPT_DIR' && pypy run_p2pool.py --net dash \
@@ -70,9 +98,14 @@ for arg in "$@"; do
             fi
             exit 0
             ;;
+        --stop)
+            stop_graceful
+            echo "P2Pool stopped gracefully."
+            exit 0
+            ;;
         --kill|-k)
-            kill_existing
-            echo "P2Pool stopped."
+            kill_force
+            echo "P2Pool killed."
             exit 0
             ;;
         --status|-s)
@@ -88,8 +121,9 @@ for arg in "$@"; do
             echo "Usage: $0 [OPTIONS]"
             echo "Options:"
             echo "  --daemon, -d    Run in background (daemon mode)"
-            echo "  --restart, -r   Restart in daemon mode"
-            echo "  --kill, -k      Kill existing P2Pool instances"
+            echo "  --restart, -r   Restart in daemon mode (graceful stop)"
+            echo "  --stop          Gracefully stop P2Pool (allows archival)"
+            echo "  --kill, -k      Force kill P2Pool (immediate termination)"
             echo "  --status, -s    Check if P2Pool is running"
             echo "  --help, -h      Show this help"
             exit 0
@@ -97,8 +131,8 @@ for arg in "$@"; do
     esac
 done
 
-# Kill existing instances
-kill_existing
+# Gracefully stop existing instances before starting
+stop_graceful
 
 # Rotate log if needed
 rotate_log
