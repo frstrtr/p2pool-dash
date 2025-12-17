@@ -220,11 +220,19 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
         print "Loading shares..."
         shares = {}
         known_verified = set()
+        last_print_time = [time.time()]
         def share_cb(share):
             share.time_seen = 0 # XXX
             shares[share.hash] = share
-            if len(shares) % 1000 == 0 and shares:
-                print "    %i" % (len(shares),)
+            count = len(shares)
+            now = time.time()
+            # Print every 1000 shares, OR every 100 shares if >10000 loaded, OR every 5 seconds
+            if (count % 1000 == 0 or 
+                (count > 10000 and count % 100 == 0) or 
+                (now - last_print_time[0] > 5.0)):
+                if count > 0:
+                    print "    %i" % (count,)
+                    last_print_time[0] = now
         ss = p2pool_data.ShareStore(os.path.join(datadir_path, 'shares.'), net, share_cb, known_verified.add)
         print "    ...done loading %i shares (%i verified)!" % (len(shares), len(known_verified))
         print
