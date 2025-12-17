@@ -426,10 +426,18 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
             current_height = node.tracker.get_height(node.best_share_var.value) if node.best_share_var.value else 0
             save_height = min(current_height, 2*net.CHAIN_LENGTH)
             
-            # Get shares we want to keep
+            # Get ALL shares from tracker that are within depth limit
+            # This includes main chain + orphans/side chains
             shares_to_keep = []
-            for share in node.tracker.get_chain(node.best_share_var.value, save_height):
-                shares_to_keep.append(share)
+            for share_hash, share in node.tracker.items.iteritems():
+                # Check if share is within reasonable depth from best share
+                try:
+                    height = node.tracker.get_height(share_hash)
+                    if height >= current_height - save_height:
+                        shares_to_keep.append(share)
+                except:
+                    # If we can't get height, it's disconnected - skip it
+                    pass
             
             # Delete all existing pickle files
             pickle_pattern = os.path.join(datadir_path, net.NAME, 'shares.*')
@@ -444,11 +452,13 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
             ss.known.clear()
             ss.known_desired.clear()
             
-            # Rebuild with only desired shares
+            # Rebuild with all active shares (main chain + recent orphans)
             for share in shares_to_keep:
                 ss.add_share(share)
                 if share.hash in node.tracker.verified.items:
                     ss.add_verified_hash(share.hash)
+            
+            print 'Rebuilt storage with %d shares (from %d in tracker)' % (len(shares_to_keep), len(node.tracker.items))
         
         def persist_shares():
             """Save current shares to disk without archiving"""
@@ -486,8 +496,7 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
             if archived > 0:
                 print 'Startup optimization: removed %d old shares from active storage' % archived
                 
-                # Immediately rebuild pickle files to remove archived shares
-                # This ensures next startup won't load the archived shares
+                # Immediately rebuild pickle files to persist changes
                 print 'Rebuilding share storage files...'
                 rebuild_share_storage()
                 print 'Share storage rebuilt successfully'
