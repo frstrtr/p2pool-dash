@@ -2013,6 +2013,7 @@
             
             // Debug: log blocks info
             console.log('renderHashrateGraph - Blocks received:', blocks.length);
+            console.log('renderHashrateGraph - Network diff samples received:', (networkDiffSamples || []).length);
             if (blocks.length > 0) {
                 console.log('First block:', JSON.stringify(blocks[0]));
             }
@@ -2091,6 +2092,7 @@
             // Process network difficulty samples - convert to hashrate equivalent
             var netDiffData = [];
             networkDiffSamples = networkDiffSamples || [];
+            console.log('Compact - Processing network difficulty:', networkDiffSamples.length, 'samples, time range:', new Date(minTime), 'to', new Date(maxTime));
             networkDiffSamples.forEach(function(sample) {
                 var sampleTime = sample.ts * 1000;
                 if (sampleTime >= minTime && sampleTime <= maxTime) {
