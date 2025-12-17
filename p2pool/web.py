@@ -943,12 +943,16 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             confirmations = block_info.get('confirmations', 0)
             chainlock = block_info.get('chainlock', False)
             
-            if chainlock or confirmations >= 6:
+            # Dash coinbase maturity is 100 blocks
+            # ChainLocked blocks are considered immediately confirmed
+            if chainlock or confirmations >= 100:
                 status = 'confirmed'
-            elif confirmations >= 0:
-                status = 'pending'  # Not yet confirmed, but not orphaned
+            elif confirmations >= 1:
+                status = 'pending'  # Maturing (waiting for 100 confirmations)
+            elif confirmations == 0:
+                status = 'pending'  # Just mined, in mempool or first confirmation
             else:
-                status = 'orphaned'  # Negative confirmations = orphaned
+                status = 'orphaned'  # Negative confirmations = orphaned/replaced
             
             block_status_cache[block_hash] = {'status': status, 'checked': now}
             defer.returnValue(status)
