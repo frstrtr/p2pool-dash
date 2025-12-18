@@ -29,18 +29,26 @@
             box-sizing: border-box;
         }
         
+        html {
+            overflow-x: hidden;
+        }
+        
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
             background: linear-gradient(135deg, var(--dark) 0%, var(--darker) 100%);
             color: var(--text);
             min-height: 100vh;
             line-height: 1.6;
+            overflow-x: hidden;
+            width: 100%;
         }
         
         .container {
             max-width: 1400px;
             margin: 0 auto;
             padding: 20px;
+            width: 100%;
+            overflow-x: hidden;
         }
         
         /* Header */
@@ -503,6 +511,25 @@
             nav { width: 100%; justify-content: flex-start; }
             table { font-size: 0.8rem; }
             th, td { padding: 8px 10px; }
+            
+            /* Ensure all cards have consistent width on mobile */
+            .table-container,
+            .shares-section,
+            .graph-section,
+            .stat-card {
+                width: 100%;
+                max-width: 100%;
+                box-sizing: border-box;
+            }
+            
+            .two-col {
+                grid-template-columns: 1fr;
+            }
+            
+            .two-col > * {
+                width: 100%;
+                max-width: 100%;
+            }
         }
         
         /* Two-column layout for sections */
@@ -556,6 +583,8 @@
         @media (max-width: 768px) {
             .main-layout {
                 grid-template-columns: 1fr;
+                width: 100%;
+                max-width: 100%;
             }
             .right-column .graph-section {
                 grid-column: 1;
