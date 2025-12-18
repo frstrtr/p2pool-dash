@@ -601,6 +601,10 @@
             padding: 20px;
             border: 1px solid var(--border);
             margin-bottom: 30px;
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
+            overflow: hidden;
         }
         
         .graph-header {
@@ -649,6 +653,9 @@
         .graph-container {
             height: 300px;
             position: relative;
+            width: 100%;
+            max-width: 100%;
+            overflow: hidden;
         }
         
         .graph-container .highcharts-container {
@@ -1107,7 +1114,6 @@
                         <thead>
                             <tr>
                                 <th>Time</th>
-                                <th title="Time elapsed since previous block">Δ Time</th>
                                 <th>Height</th>
                                 <th>Block Hash</th>
                                 <th>Luck</th>
@@ -1534,32 +1540,6 @@
                     d3.select('#blocks tbody').selectAll('tr').remove();
                     var tr = d3.select('#blocks tbody').selectAll('tr').data(displayBlocks).enter().append('tr');
                 tr.append('td').text(function(b) { return format_time_short(b.ts); });
-                tr.append('td')
-                    .attr('style', 'font-family: monospace; font-size: 12px;')
-                    .text(function(b, i) {
-                        // Always show time between blocks
-                        if (i < displayBlocks.length - 1) {
-                            var prevBlock = displayBlocks[i + 1];
-                            var timeBetween = b.ts - prevBlock.ts;
-                            var betweenHours = Math.floor(timeBetween / 3600);
-                            var betweenMins = Math.floor((timeBetween % 3600) / 60);
-                            return ('0' + betweenHours).slice(-2) + ':' + ('0' + betweenMins).slice(-2);
-                        }
-                        
-                        // First/oldest block - show dash
-                        return '--:--';
-                    })
-                    .attr('title', function(b, i) {
-                        var ageSeconds = Date.now() / 1000 - b.ts;
-                        
-                        if (i < displayBlocks.length - 1) {
-                            var prevBlock = displayBlocks[i + 1];
-                            var timeBetween = b.ts - prevBlock.ts;
-                            return 'Time since previous block: ' + format_dt(timeBetween) + '\nFound ' + format_dt(ageSeconds) + ' ago';
-                        }
-                        
-                        return 'Found ' + format_dt(ageSeconds) + ' ago';
-                    });
                 tr.append('td').text(function(b) { return b.number; });
                 tr.append('td').append('a')
                     .attr('class', 'hash-link')
