@@ -279,7 +279,7 @@
         
         th {
             text-align: left;
-            padding: 10px 12px;
+            padding: 8px 10px;
             background: var(--darker);
             color: var(--text-muted);
             font-size: 0.8rem;
@@ -292,7 +292,7 @@
         th:last-child { border-radius: 0 8px 8px 0; }
         
         td {
-            padding: 10px 12px;
+            padding: 8px 10px;
             border-bottom: 1px solid var(--border);
             font-size: 0.9rem;
         }
@@ -510,7 +510,7 @@
             .stat-value { font-size: 1.5rem; }
             nav { width: 100%; justify-content: flex-start; }
             table { font-size: 0.8rem; }
-            th, td { padding: 8px 8px; }
+            th, td { padding: 6px 6px; }
             
             /* Ensure all cards have consistent width on mobile */
             .table-container,
@@ -1105,7 +1105,7 @@
                         <thead>
                             <tr>
                                 <th>Time</th>
-                                <th title="Time since block was found">Age</th>
+                                <th title="Time elapsed since previous block">Δ Time</th>
                                 <th>Height</th>
                                 <th>Block Hash</th>
                                 <th>Luck</th>
@@ -1535,11 +1535,8 @@
                 tr.append('td')
                     .attr('style', 'font-family: monospace; font-size: 12px;')
                     .text(function(b, i) {
-                        var ageSeconds = Date.now() / 1000 - b.ts;
-                        var hours = Math.floor(ageSeconds / 3600);
-                        
-                        // If age > 100 hours, show time between blocks instead
-                        if (hours >= 100 && i < displayBlocks.length - 1) {
+                        // Always show time between blocks
+                        if (i < displayBlocks.length - 1) {
                             var prevBlock = displayBlocks[i + 1];
                             var timeBetween = b.ts - prevBlock.ts;
                             var betweenHours = Math.floor(timeBetween / 3600);
@@ -1547,15 +1544,13 @@
                             return ('0' + betweenHours).slice(-2) + ':' + ('0' + betweenMins).slice(-2);
                         }
                         
-                        // Normal age display for recent blocks
-                        var mins = Math.floor((ageSeconds % 3600) / 60);
-                        return ('0' + hours).slice(-2) + ':' + ('0' + mins).slice(-2);
+                        // First/oldest block - show dash
+                        return '--:--';
                     })
                     .attr('title', function(b, i) {
                         var ageSeconds = Date.now() / 1000 - b.ts;
-                        var hours = Math.floor(ageSeconds / 3600);
                         
-                        if (hours >= 100 && i < displayBlocks.length - 1) {
+                        if (i < displayBlocks.length - 1) {
                             var prevBlock = displayBlocks[i + 1];
                             var timeBetween = b.ts - prevBlock.ts;
                             return 'Time since previous block: ' + format_dt(timeBetween) + '\nFound ' + format_dt(ageSeconds) + ' ago';
