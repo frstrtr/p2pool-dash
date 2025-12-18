@@ -1076,6 +1076,7 @@
                         <thead>
                             <tr>
                                 <th>Time</th>
+                                <th title="Time since block was found">Age</th>
                                 <th>Height</th>
                                 <th>Block Hash</th>
                                 <th>Luck</th>
@@ -1502,6 +1503,17 @@
                     d3.select('#blocks tbody').selectAll('tr').remove();
                     var tr = d3.select('#blocks tbody').selectAll('tr').data(displayBlocks).enter().append('tr');
                 tr.append('td').text(function(b) { return format_time_short(b.ts); });
+                tr.append('td')
+                    .attr('style', 'font-family: monospace; font-size: 12px;')
+                    .text(function(b) {
+                        var ageSeconds = Date.now() / 1000 - b.ts;
+                        var hours = Math.floor(ageSeconds / 3600);
+                        var mins = Math.floor((ageSeconds % 3600) / 60);
+                        return ('0' + hours).slice(-2) + ':' + ('0' + mins).slice(-2);
+                    })
+                    .attr('title', function(b) {
+                        return 'Found ' + format_dt(Date.now() / 1000 - b.ts) + ' ago';
+                    });
                 tr.append('td').text(function(b) { return b.number; });
                 tr.append('td').append('a')
                     .attr('class', 'hash-link')
