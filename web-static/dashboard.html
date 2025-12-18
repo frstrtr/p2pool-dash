@@ -510,6 +510,17 @@
             table { font-size: 0.8rem; }
             th, td { padding: 6px 6px; }
             
+            /* Make graph legend wrap better on mobile */
+            .graph-legend,
+            .graph-legend.compact {
+                gap: 8px;
+                font-size: 0.7rem;
+            }
+            
+            .legend-item {
+                flex: 0 0 auto;
+            }
+            
             /* Ensure all cards match the main-layout width on mobile */
             .main-layout,
             .table-section,
@@ -732,6 +743,7 @@
         
         .graph-legend {
             display: flex;
+            flex-wrap: wrap;
             gap: 20px;
             margin-bottom: 10px;
             font-size: 0.85rem;
@@ -800,6 +812,7 @@
         }
         
         .graph-legend.compact {
+            flex-wrap: wrap;
             gap: 12px;
             margin-bottom: 6px;
             font-size: 0.75rem;
