@@ -456,9 +456,9 @@
                     <div class="stat-label">Current share target</div>
                 </div>
                 <div class="stat-card">
-                    <h3>Time to Share</h3>
-                    <div class="stat-value" id="time_to_share">0s</div>
-                    <div class="stat-label">Expected submit interval</div>
+                    <h3>24h Avg Hashrate</h3>
+                    <div class="stat-value" id="avg_24h_hashrate">0 H/s</div>
+                    <div class="stat-label">24-hour average</div>
                 </div>
                 <div class="stat-card">
                     <h3>Current Payout</h3>
@@ -636,9 +636,41 @@
                 doaElement.className = 'stat-value ' + (doaRate > 5 ? 'danger' : (doaRate > 2 ? 'warning' : 'success'));
                 
                 document.getElementById('share_difficulty').textContent = d3.format('.3r')(stats.share_difficulty);
-                document.getElementById('time_to_share').textContent = format_dt(stats.time_to_share);
                 document.getElementById('current_payout').textContent = d3.format('.4f')(stats.current_payout);
                 document.getElementById('doa_hashrate').textContent = format_hashrate(stats.dead_hashrate);
+                
+                // Calculate 24h average hashrate
+                d3.json('../web/graph_data/miner_hash_rates/last_day', function(graph_data) {
+                    var avg_24h = 0;
+                    if (graph_data && graph_data.length > 0) {
+                        var total = 0;
+                        var count = 0;
+                        
+                        // Helper to extract base address
+                        function extractBaseAddress(workerName) {
+                            return workerName.split('+')[0].split('/')[0].split('.')[0].split('_')[0];
+                        }
+                        
+                        graph_data.forEach(function(point) {
+                            if (point && point[1]) {
+                                var hashrate = 0;
+                                for (var workerName in point[1]) {
+                                    if (extractBaseAddress(workerName) === minerAddress) {
+                                        hashrate += point[1][workerName];
+                                    }
+                                }
+                                if (hashrate > 0) {
+                                    total += hashrate;
+                                    count++;
+                                }
+                            }
+                        });
+                        
+                        avg_24h = count > 0 ? total / count : 0;
+                    }
+                    
+                    document.getElementById('avg_24h_hashrate').textContent = format_hashrate(avg_24h);
+                });
                 
                 // Load graph data
                 loadGraphs();
