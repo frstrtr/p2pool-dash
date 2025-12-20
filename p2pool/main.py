@@ -480,6 +480,11 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
                         for fh in lock_handles:
                             fh.close()
                         return False
+                
+                # Release locks before deletion (files can't be deleted while locked)
+                for fh in lock_handles:
+                    fh.close()
+                lock_handles = []
             
             try:
                 # Delete all existing pickle files
@@ -508,11 +513,6 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
                 print 'Rebuild failed:', str(e)
                 print 'Shares will be automatically recovered from network peers on next restart'
                 return False
-            finally:
-                # Release locks
-                if use_locking:
-                    for fh in lock_handles:
-                        fh.close()
         
         def persist_shares():
             """Save current shares to disk without archiving"""
