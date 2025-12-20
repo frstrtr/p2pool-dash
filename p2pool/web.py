@@ -1097,6 +1097,9 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         result.sort(key=lambda x: x['ts'])
         
         log.msg('Net Diff: Returning %d samples' % len(result))
+        if result:
+            log.msg('Net Diff: First sample ts=%d diff=%.2f' % (result[0]['ts'], result[0]['network_diff']))
+            log.msg('Net Diff: Last sample ts=%d diff=%.2f' % (result[-1]['ts'], result[-1]['network_diff']))
         
         return result
     
