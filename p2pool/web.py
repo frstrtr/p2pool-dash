@@ -952,17 +952,23 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         all_blocks = []
         
         # 1. Get blocks from persistent storage (block_history)
+        history_count = 0
         for block_hash, block_data in block_history.items():
             if block_data.get('network_diff') is not None:
                 all_blocks.append({
                     'ts': block_data['ts'],
                     'network_diff': block_data['network_diff']
                 })
+                history_count += 1
+        
+        log.msg('Net Diff: block_history has %d blocks with network_diff' % history_count)
         
         # 2. Get blocks from sharechain (the blocks currently displayed on dashboard)
+        sharechain_count = 0
         if node.best_share_var.value is not None:
             try:
                 height = node.tracker.get_height(node.best_share_var.value)
+                log.msg('Net Diff: sharechain height = %d' % height)
                 if height >= 1:
                     for s in node.tracker.get_chain(node.best_share_var.value, min(height, node.net.CHAIN_LENGTH)):
                         if s.pow_hash <= s.header['bits'].target:
@@ -972,11 +978,14 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                                 'ts': s.timestamp,
                                 'network_diff': network_diff
                             })
+                            sharechain_count += 1
+                log.msg('Net Diff: sharechain has %d found blocks' % sharechain_count)
             except Exception as e:
-                pass
+                log.err(e, 'Error getting blocks from sharechain for net diff:')
         
         # Sort by timestamp
         all_blocks.sort(key=lambda x: x['ts'])
+        log.msg('Net Diff: Total blocks collected: %d' % len(all_blocks))
         
         # Find the last block before the time window starts
         prior_block = None
@@ -988,6 +997,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         
         # Get blocks within the time window
         blocks_in_window = [b for b in all_blocks if b['ts'] >= min_time]
+        log.msg('Net Diff: Blocks in time window (%s): %d' % (period, len(blocks_in_window)))
         
         # Build result with interpolation
         result = []
@@ -997,7 +1007,10 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             blocks_in_window[0]['network_diff'] if blocks_in_window else current_diff)
         
         if not start_diff:
+            log.msg('Net Diff: No starting difficulty found, returning empty')
             return []
+        
+        log.msg('Net Diff: Starting difficulty: %.2f' % start_diff)
         
         # Add starting point
         result.append({'ts': min_time, 'network_diff': start_diff})
@@ -1032,6 +1045,8 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         
         # Sort by timestamp
         result.sort(key=lambda x: x['ts'])
+        
+        log.msg('Net Diff: Returning %d samples' % len(result))
         
         return result
     

@@ -2178,6 +2178,10 @@
             var netDiffData = [];
             networkDiffSamples = networkDiffSamples || [];
             console.log('Compact - Processing network difficulty:', networkDiffSamples.length, 'samples');
+            if (networkDiffSamples.length > 0) {
+                console.log('First net diff sample:', networkDiffSamples[0]);
+                console.log('Last net diff sample:', networkDiffSamples[networkDiffSamples.length - 1]);
+            }
             networkDiffSamples.forEach(function(sample) {
                 var sampleTime = sample.ts * 1000;
                 // Don't filter - backend already provides correctly bounded data with gap filling
@@ -2185,6 +2189,10 @@
                 netDiffData.push([sampleTime, netHashrate]);
             });
             console.log('Net Diff data points:', netDiffData.length);
+            if (netDiffData.length > 0) {
+                console.log('First net diff point:', new Date(netDiffData[0][0]), 'value:', netDiffData[0][1]);
+                console.log('Last net diff point:', new Date(netDiffData[netDiffData.length - 1][0]), 'value:', netDiffData[netDiffData.length - 1][1]);
+            }
             
             // Sort blocks by timestamp
             var sortedBlocks = blocks.slice().sort(function(a, b) { return a.ts - b.ts; });
@@ -2738,12 +2746,22 @@
             // Process network difficulty samples - convert to hashrate equivalent
             var netDiffData = [];
             networkDiffSamples = networkDiffSamples || [];
+            console.log('Fullscreen - Processing network difficulty:', networkDiffSamples.length, 'samples');
+            if (networkDiffSamples.length > 0) {
+                console.log('Fullscreen - First net diff sample:', networkDiffSamples[0]);
+                console.log('Fullscreen - Last net diff sample:', networkDiffSamples[networkDiffSamples.length - 1]);
+            }
             networkDiffSamples.forEach(function(sample) {
                 var sampleTime = sample.ts * 1000;
                 // Don't filter - backend already provides correctly bounded data with gap filling
                 var netHashrate = sample.network_diff * Math.pow(2, 32) / 150; // 150s avg block time for Dash
                 netDiffData.push([sampleTime, netHashrate]);
             });
+            if (netDiffData.length > 0) {
+                console.log('Fullscreen - Net Diff data points:', netDiffData.length);
+                console.log('Fullscreen - First net diff point:', new Date(netDiffData[0][0]), 'value:', netDiffData[0][1]);
+                console.log('Fullscreen - Last net diff point:', new Date(netDiffData[netDiffData.length - 1][0]), 'value:', netDiffData[netDiffData.length - 1][1]);
+            }
             
             // Sort blocks by timestamp
             var sortedBlocks = blocks.slice().sort(function(a, b) { return a.ts - b.ts; });
