@@ -2279,6 +2279,30 @@
                         luckTrendData[luckTrendData.length - 1][1];
                     luckTrendData.push([maxTime, currentLuck]);
                 }
+            } else if (luckTrendData.length === 0 && sortedBlocks.length > 0) {
+                // Edge case: No blocks in time window, but blocks exist before it
+                // Find the most recent block before minTime to interpolate from
+                var lastBlockBeforeWindow = null;
+                for (var i = sortedBlocks.length - 1; i >= 0; i--) {
+                    var bt = sortedBlocks[i].ts * 1000;
+                    if (bt < minTime && sortedBlocks[i].luck) {
+                        lastBlockBeforeWindow = sortedBlocks[i];
+                        break;
+                    }
+                }
+                
+                if (lastBlockBeforeWindow) {
+                    // Draw line from minTime to maxTime using last known luck and current round luck
+                    luckTrendData.push([minTime, lastBlockBeforeWindow.luck]);
+                    var currentLuck = (luckStats && luckStats.current_luck_trend) ? 
+                        luckStats.current_luck_trend : 
+                        lastBlockBeforeWindow.luck;
+                    luckTrendData.push([maxTime, currentLuck]);
+                } else if (luckStats && luckStats.current_luck_trend) {
+                    // No blocks with luck at all, use current round luck if available
+                    luckTrendData.push([minTime, luckStats.current_luck_trend]);
+                    luckTrendData.push([maxTime, luckStats.current_luck_trend]);
+                }
             }
             
             // Convert simple array points to objects for luck trend
@@ -2294,7 +2318,6 @@
             if (blocks.length > 0) {
                 console.log('Block time:', new Date(blocks[0].ts * 1000));
             }
-            console.log('Compact - validLucks:', validLucks.length, 'luckStats:', luckStats, 'current_luck_trend:', luckStats ? luckStats.current_luck_trend : 'no luckStats');
             
             // Update stats
             var current = values[values.length - 1] || 0;
