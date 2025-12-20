@@ -2329,11 +2329,14 @@
             var currentUniqueMinerCount = uniqueMiners.length > 0 ? uniqueMiners[uniqueMiners.length - 1][1] : 0;
             document.getElementById('graph-miners').textContent = currentWorkerCount + '/' + currentUniqueMinerCount;
             
+            console.log('Compact - About to set luck display, avgLuck:', avgLuck, 'is null?', avgLuck === null);
             if (avgLuck !== null) {
                 var luckEl = document.getElementById('graph-luck');
+                console.log('Compact - Setting luck to:', d3.format('.0f')(avgLuck) + '%');
                 luckEl.textContent = d3.format('.0f')(avgLuck) + '%';
                 luckEl.style.color = avgLuck >= 100 ? 'var(--success)' : (avgLuck >= 75 ? 'var(--warning)' : 'var(--danger)');
             } else {
+                console.log('Compact - Setting luck to -');
                 document.getElementById('graph-luck').textContent = '-';
             }
             
