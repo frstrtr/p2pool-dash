@@ -689,6 +689,56 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         except Exception as e:
             log.err(e, 'Error saving block history:')
     
+    def backfill_block_history_from_sharechain():
+        """Populate block_history from current sharechain blocks if not already recorded."""
+        if not node.best_share_var.value:
+            return
+        
+        try:
+            height = node.tracker.get_height(node.best_share_var.value)
+            if height < 1:
+                return
+            
+            backfilled_count = 0
+            for s in node.tracker.get_chain(node.best_share_var.value, min(height, node.net.CHAIN_LENGTH)):
+                if s.pow_hash <= s.header['bits'].target:
+                    # This is a found block
+                    block_hash = '%064x' % s.header_hash
+                    
+                    # Skip if already in block_history
+                    if block_hash in block_history:
+                        continue
+                    
+                    # Extract block data from share
+                    try:
+                        block_number = p2pool_data.parse_bip0034(s.share_data['coinbase'])[0]
+                    except:
+                        block_number = 0
+                    
+                    network_diff = bitcoin_data.target_to_difficulty(s.header['bits'].target)
+                    
+                    # Store in block_history
+                    block_history[block_hash] = {
+                        'ts': s.timestamp,
+                        'block_height': block_number,
+                        'hash': block_hash,
+                        'share_hash': '%064x' % s.hash,
+                        'miner': '',  # Not available from sharechain
+                        'pool_hashrate': None,  # Not available from sharechain
+                        'stale_prop': None,
+                        'network_diff': network_diff,
+                        'expected_time': None,
+                        'block_reward': None,
+                        'status': 'unknown',  # Will be updated on next status check
+                    }
+                    backfilled_count += 1
+            
+            if backfilled_count > 0:
+                print 'Backfilled %d blocks from sharechain into block_history' % backfilled_count
+                save_block_history()
+        except Exception as e:
+            log.err(e, 'Error backfilling block history from sharechain:')
+    
     def record_block_found(block_hash, block_height, share_hash, miner_address, timestamp=None):
         """Record a found block with current pool hashrate for accurate luck calculation."""
         if block_hash in block_history:
@@ -1846,6 +1896,14 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                 latest_ts = info['ts']
                 latest = info
         return latest
+    
+    # Backfill block_history from sharechain on startup (deferred to allow node initialization)
+    @defer.inlineCallbacks
+    def deferred_backfill():
+        yield deferral.sleep(5)  # Wait for node to be fully initialized
+        backfill_block_history_from_sharechain()
+    
+    reactor.callLater(0, deferred_backfill)
     
     # Return web_root, record_block_found and get_last_block_info for block tracking
     return web_root, record_block_found, get_last_block_info

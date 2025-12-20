@@ -2450,6 +2450,21 @@
                     },
                     gridLineWidth: 0,
                     opposite: true
+                }, {
+                    // Fourth Y-axis for network difficulty
+                    title: { text: null },
+                    min: 0,
+                    lineColor: '#8b5cf6',
+                    tickColor: '#8b5cf6',
+                    labels: {
+                        style: { color: '#8b5cf6', fontSize: '10px' },
+                        formatter: function() {
+                            // Format difficulty in millions (M)
+                            return (this.value / 1000000).toFixed(1) + 'M';
+                        }
+                    },
+                    gridLineWidth: 0,
+                    opposite: true
                 }],
                 tooltip: {
                     shared: true,
@@ -2659,7 +2674,7 @@
                         symbol: 'circle'
                     },
                     visible: seriesVisibility.netdiff,
-                    yAxis: 0
+                    yAxis: 3
                 }]
             });
             
@@ -2984,6 +2999,21 @@
                     tickColor: '#9c27b0',
                     labels: {
                         style: { color: '#9c27b0', fontSize: '11px' }
+                    },
+                    gridLineWidth: 0,
+                    opposite: true
+                }, {
+                    // Fourth Y-axis for network difficulty
+                    title: { text: null },
+                    min: 0,
+                    lineColor: '#8b5cf6',
+                    tickColor: '#8b5cf6',
+                    labels: {
+                        style: { color: '#8b5cf6', fontSize: '11px' },
+                        formatter: function() {
+                            // Format difficulty in millions (M)
+                            return (this.value / 1000000).toFixed(1) + 'M';
+                        }
                     },
                     gridLineWidth: 0,
                     opposite: true
