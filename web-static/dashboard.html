@@ -2184,9 +2184,9 @@
             }
             networkDiffSamples.forEach(function(sample) {
                 var sampleTime = sample.ts * 1000;
-                // Don't filter - backend already provides correctly bounded data with gap filling
-                var netHashrate = sample.network_diff * Math.pow(2, 32) / 150; // 150s avg block time for Dash
-                netDiffData.push([sampleTime, netHashrate]);
+                // Use raw difficulty value (not converted to hashrate)
+                // Network hashrate would be too large to display on same scale as pool
+                netDiffData.push([sampleTime, sample.network_diff]);
             });
             console.log('Net Diff data points:', netDiffData.length);
             if (netDiffData.length > 0) {
@@ -2753,9 +2753,9 @@
             }
             networkDiffSamples.forEach(function(sample) {
                 var sampleTime = sample.ts * 1000;
-                // Don't filter - backend already provides correctly bounded data with gap filling
-                var netHashrate = sample.network_diff * Math.pow(2, 32) / 150; // 150s avg block time for Dash
-                netDiffData.push([sampleTime, netHashrate]);
+                // Use raw difficulty value (not converted to hashrate)
+                // Network hashrate would be too large to display on same scale as pool
+                netDiffData.push([sampleTime, sample.network_diff]);
             });
             if (netDiffData.length > 0) {
                 console.log('Fullscreen - Net Diff data points:', netDiffData.length);
