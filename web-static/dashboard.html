@@ -2386,7 +2386,7 @@
                     spacingBottom: 0,
                     spacingLeft: 0,
                     marginTop: 15,
-                    marginRight: 45,
+                    marginRight: 85,
                     marginBottom: 28,
                     marginLeft: 80,
                     panning: { enabled: true, type: 'x' },
@@ -2518,6 +2518,9 @@
                             if (point.series.name === 'Luck Trend') {
                                 s += '<br/><span style="color:' + point.color + '">●</span> ' + 
                                      point.series.name + ': <b>' + d3.format('.0f')(point.y) + '%</b>';
+                            } else if (point.series.name === 'Net Diff') {
+                                s += '<br/><span style="color:' + point.color + '">●</span> ' + 
+                                     point.series.name + ': <b>' + (point.y / 1000000).toFixed(1) + 'M</b>';
                             } else if (point.series.name === 'Workers' || point.series.name === 'Miners' || point.series.name === 'Connected') {
                                 s += '<br/><span style="color:' + point.color + '">●</span> ' + 
                                      point.series.name + ': <b>' + Math.round(point.y) + '</b>';
@@ -2943,7 +2946,7 @@
                     backgroundColor: 'transparent',
                     style: { fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif' },
                     marginTop: 20,
-                    marginRight: 60,
+                    marginRight: 90,
                     marginBottom: 90,  // Increased to accommodate legend without overlapping X-axis
                     marginLeft: 80,
                     panning: { enabled: true, type: 'x' },
@@ -3072,6 +3075,9 @@
                             if (point.series.name === 'Luck Trend') {
                                 s += '<br/><span style="color:' + point.color + '">●</span> ' + 
                                      point.series.name + ': <b>' + d3.format('.0f')(point.y) + '%</b>';
+                            } else if (point.series.name === 'Net Diff') {
+                                s += '<br/><span style="color:' + point.color + '">●</span> ' + 
+                                     point.series.name + ': <b>' + (point.y / 1000000).toFixed(1) + 'M</b>';
                             } else if (point.series.name === 'Workers' || point.series.name === 'Miners' || point.series.name === 'Connected') {
                                 s += '<br/><span style="color:' + point.color + '">●</span> ' + 
                                      point.series.name + ': <b>' + Math.round(point.y) + '</b>';
