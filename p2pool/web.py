@@ -1012,7 +1012,6 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                 history_count += 1
         
         log.msg('Net Diff: block_history has %d blocks with network_diff' % history_count)
-        print 'Net Diff: block_history has %d blocks with network_diff' % history_count
         
         # 2. Get blocks from sharechain (the blocks currently displayed on dashboard)
         sharechain_count = 0
@@ -1031,14 +1030,12 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                             })
                             sharechain_count += 1
                 log.msg('Net Diff: sharechain has %d found blocks' % sharechain_count)
-                print 'Net Diff: sharechain has %d found blocks' % sharechain_count
             except Exception as e:
                 log.err(e, 'Error getting blocks from sharechain for net diff:')
         
         # Sort by timestamp
         all_blocks.sort(key=lambda x: x['ts'])
         log.msg('Net Diff: Total blocks collected: %d' % len(all_blocks))
-        print 'Net Diff: Total blocks collected: %d' % len(all_blocks)
         
         # Find the last block before the time window starts
         prior_block = None
@@ -1051,7 +1048,6 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         # Get blocks within the time window
         blocks_in_window = [b for b in all_blocks if b['ts'] >= min_time]
         log.msg('Net Diff: Blocks in time window (%s): %d' % (period, len(blocks_in_window)))
-        print 'Net Diff: Blocks in time window (%s): %d, min_time=%d, max_time=%d' % (period, len(blocks_in_window), min_time, now)
         
         # Build result with interpolation
         result = []
@@ -1118,7 +1114,6 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             if 'period' in request.args:
                 period = request.args['period'][0].decode('utf-8') if isinstance(request.args['period'][0], bytes) else request.args['period'][0]
             
-            print 'Net Diff endpoint called with period=%s' % period
             res = get_network_difficulty_samples(period)
             return json.dumps(res)
     

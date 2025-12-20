@@ -1555,9 +1555,9 @@
                 
                 d3.select('#blocks_count').text(blocks.length);
                 
-                // Update pool average luck badge
-                if (blocks[0] && blocks[0].pool_avg_luck) {
-                    var avgLuck = blocks[0].pool_avg_luck;
+                // Update pool average luck badge using luckStats (matches graph calculation)
+                if (window.luckStats && window.luckStats.avg_luck !== null) {
+                    var avgLuck = window.luckStats.avg_luck;
                     var luckBadge = d3.select('#pool_luck_badge');
                     luckBadge.text('Avg Luck: ' + d3.format('.0f')(avgLuck) + '%');
                     if (avgLuck >= 100) {
@@ -2074,6 +2074,7 @@
             
             d3.json('../luck_stats', function(data) {
                 luckStatsData = data || {};
+                window.luckStats = luckStatsData;  // Store globally for Recent Blocks badge
                 tryRender();
             });
         }
@@ -2339,8 +2340,6 @@
                 validLucks.reduce(function(a, b) { return a + b; }, 0) / validLucks.length : 
                 (luckStats && luckStats.current_luck_trend ? luckStats.current_luck_trend : null);
             
-            console.log('Compact - Calculated avgLuck:', avgLuck);
-            
             document.getElementById('graph-current').textContent = format_hashrate(current);
             document.getElementById('graph-average').textContent = format_hashrate(avg);
             document.getElementById('graph-peak').textContent = format_hashrate(peak);
@@ -2360,14 +2359,11 @@
             var currentUniqueMinerCount = uniqueMiners.length > 0 ? uniqueMiners[uniqueMiners.length - 1][1] : 0;
             document.getElementById('graph-miners').textContent = currentWorkerCount + '/' + currentUniqueMinerCount;
             
-            console.log('Compact - About to set luck display, avgLuck:', avgLuck, 'is null?', avgLuck === null);
             if (avgLuck !== null) {
                 var luckEl = document.getElementById('graph-luck');
-                console.log('Compact - Setting luck to:', d3.format('.0f')(avgLuck) + '%');
                 luckEl.textContent = d3.format('.0f')(avgLuck) + '%';
                 luckEl.style.color = avgLuck >= 100 ? 'var(--success)' : (avgLuck >= 75 ? 'var(--warning)' : 'var(--danger)');
             } else {
-                console.log('Compact - Setting luck to -');
                 document.getElementById('graph-luck').textContent = '-';
             }
             
