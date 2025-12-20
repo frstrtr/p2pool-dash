@@ -2000,14 +2000,15 @@
             
             function tryRender() {
                 loadCount++;
-                if (loadCount === 6) {  // Now loading 6 resources: hashrate, worker_count, unique_miner_count, connected_miners, blocks, network_difficulty
+                if (loadCount === 7) {  // Now loading 7 resources: hashrate, worker_count, unique_miner_count, connected_miners, blocks, network_difficulty, luck_stats
                     graphData = hashrateData;
                     graphMinerData = minerCountData;
                     graphUniqueMinersData = uniqueMinerCountData;
                     graphConnectedMinersData = connectedMinersData;
                     graphBlocks = blocksData;
                     graphNetworkDiffData = networkDiffData;
-                    renderHashrateGraph(hashrateData, minerCountData, uniqueMinerCountData, connectedMinersData, blocksData, networkDiffData);
+                    graphLuckStatsData = luckStatsData;
+                    renderHashrateGraph(hashrateData, minerCountData, uniqueMinerCountData, connectedMinersData, blocksData, networkDiffData, luckStatsData);
                 }
             }
             
@@ -2070,6 +2071,11 @@
                 networkDiffData = data || [];
                 tryRender();
             });
+            
+            d3.json('../luck_stats', function(data) {
+                luckStatsData = data || {};
+                tryRender();
+            });
         }
         
         // Configure Highcharts global options
@@ -2082,12 +2088,13 @@
         var workerCountData = null;
         var uniqueMinerCountData = null;
 
-        function renderHashrateGraph(data, minerData, uniqueMinersData, connectedData, blocks, networkDiffSamples) {
+        function renderHashrateGraph(data, minerData, uniqueMinersData, connectedData, blocks, networkDiffSamples, luckStats) {
             var container = document.getElementById('hashrate-graph');
             blocks = blocks || [];
             minerData = minerData || [];
             uniqueMinersData = uniqueMinersData || [];
             connectedData = connectedData || [];
+            luckStats = luckStats || {};
             
             // Debug: log blocks info
             console.log('renderHashrateGraph - Blocks received:', blocks.length);
@@ -2264,10 +2271,13 @@
                     }
                 }
                 
-                // Add interpolated point at maxTime if last point is before maxTime
+                // Add interpolated point at maxTime using current round luck if available
                 if (luckTrendData[luckTrendData.length - 1][0] < maxTime) {
-                    // Extend the last value to maxTime
-                    luckTrendData.push([maxTime, luckTrendData[luckTrendData.length - 1][1]]);
+                    // Use current round luck if available (more accurate for ongoing round)
+                    var currentLuck = (luckStats && luckStats.current_luck_trend) ? 
+                        luckStats.current_luck_trend : 
+                        luckTrendData[luckTrendData.length - 1][1];
+                    luckTrendData.push([maxTime, currentLuck]);
                 }
             }
             
@@ -2788,10 +2798,13 @@
                     }
                 }
                 
-                // Add interpolated point at maxTime if last point is before maxTime
+                // Add interpolated point at maxTime using current round luck if available
                 if (luckTrendData[luckTrendData.length - 1][0] < maxTime) {
-                    // Extend the last value to maxTime
-                    luckTrendData.push([maxTime, luckTrendData[luckTrendData.length - 1][1]]);
+                    // Use current round luck if available (more accurate for ongoing round)
+                    var currentLuck = (luckStats && luckStats.current_luck_trend) ? 
+                        luckStats.current_luck_trend : 
+                        luckTrendData[luckTrendData.length - 1][1];
+                    luckTrendData.push([maxTime, currentLuck]);
                 }
             }
             
