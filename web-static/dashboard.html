@@ -1953,7 +1953,7 @@
                 overlay.classList.add('active');
                 document.body.style.overflow = 'hidden';
                 // Render fullscreen chart
-                renderFullscreenGraph(graphData, graphMinerData, graphUniqueMinersData, graphConnectedMinersData, graphBlocks, graphNetworkDiffData);
+                renderFullscreenGraph(graphData, graphMinerData, graphUniqueMinersData, graphConnectedMinersData, graphBlocks, graphNetworkDiffData, graphLuckStatsData);
                 // Update button states
                 updatePeriodButtons();
             } else {
@@ -2626,15 +2626,16 @@
             
             // Also update fullscreen if open
             if (isFullscreen) {
-                renderFullscreenGraph(data, minerData, uniqueMinersData, connectedData, blocks, networkDiffSamples);
+                renderFullscreenGraph(data, minerData, uniqueMinersData, connectedData, blocks, networkDiffSamples, luckStats);
             }
         }
         
-        function renderFullscreenGraph(data, minerData, uniqueMinersData, connectedData, blocks, networkDiffSamples) {
+        function renderFullscreenGraph(data, minerData, uniqueMinersData, connectedData, blocks, networkDiffSamples, luckStats) {
             var container = document.getElementById('fullscreen-graph');
             blocks = blocks || graphBlocks || [];
             minerData = minerData || [];
             connectedData = connectedData || [];
+            luckStats = luckStats || {};
             
             // Debug: log blocks info
             console.log('renderFullscreenGraph - Blocks received:', blocks.length, 'graphBlocks:', graphBlocks ? graphBlocks.length : 0);
@@ -2805,6 +2806,30 @@
                         luckStats.current_luck_trend : 
                         luckTrendData[luckTrendData.length - 1][1];
                     luckTrendData.push([maxTime, currentLuck]);
+                }
+            } else if (luckTrendData.length === 0 && sortedBlocks.length > 0) {
+                // Edge case: No blocks in time window, but blocks exist before it
+                // Find the most recent block before minTime to interpolate from
+                var lastBlockBeforeWindow = null;
+                for (var i = sortedBlocks.length - 1; i >= 0; i--) {
+                    var bt = sortedBlocks[i].ts * 1000;
+                    if (bt < minTime && sortedBlocks[i].luck) {
+                        lastBlockBeforeWindow = sortedBlocks[i];
+                        break;
+                    }
+                }
+                
+                if (lastBlockBeforeWindow) {
+                    // Draw line from minTime to maxTime using last known luck and current round luck
+                    luckTrendData.push([minTime, lastBlockBeforeWindow.luck]);
+                    var currentLuck = (luckStats && luckStats.current_luck_trend) ? 
+                        luckStats.current_luck_trend : 
+                        lastBlockBeforeWindow.luck;
+                    luckTrendData.push([maxTime, currentLuck]);
+                } else if (luckStats && luckStats.current_luck_trend) {
+                    // No blocks with luck at all, use current round luck if available
+                    luckTrendData.push([minTime, luckStats.current_luck_trend]);
+                    luckTrendData.push([maxTime, luckStats.current_luck_trend]);
                 }
             }
             
