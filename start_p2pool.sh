@@ -89,6 +89,7 @@ start_p2pool() {
         --dashd-address 127.0.0.1 \
         --dashd-rpc-port 9998 \
         -a XrTwUgw3ikobuXdLKvvSUjL9JpuPs9uqL7 \
+        --compact-on-shutdown \
         "$@"
 }
 
@@ -109,6 +110,7 @@ for arg in "$@"; do
                 --dashd-address 127.0.0.1 \
                 --dashd-rpc-port 9998 \
                 -a XrTwUgw3ikobuXdLKvvSUjL9JpuPs9uqL7 \
+                --compact-on-shutdown \
                 >> '$LOG_FILE' 2>&1" > /dev/null 2>&1 &
             disown
             echo $! > "$PID_FILE"
@@ -166,6 +168,7 @@ if [ "$DAEMON_MODE" = true ]; then
         --dashd-address 127.0.0.1 \
         --dashd-rpc-port 9998 \
         -a XrTwUgw3ikobuXdLKvvSUjL9JpuPs9uqL7 \
+        --compact-on-shutdown \
         >> '$LOG_FILE' 2>&1" > /dev/null 2>&1 &
     disown
     
