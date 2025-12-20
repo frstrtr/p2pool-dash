@@ -1107,7 +1107,23 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         
         return result
     
-    web_root.putChild('network_difficulty', WebInterface(get_network_difficulty_samples))
+    class NetworkDifficultyResource(deferred_resource.DeferredResource):
+        """Custom resource to handle period query parameter"""
+        @defer.inlineCallbacks
+        def render_GET(self, request):
+            request.setHeader('Content-Type', 'application/json')
+            request.setHeader('Access-Control-Allow-Origin', '*')
+            
+            # Extract period from query parameters
+            period = 'day'  # default
+            if 'period' in request.args:
+                period = request.args['period'][0].decode('utf-8') if isinstance(request.args['period'][0], bytes) else request.args['period'][0]
+            
+            print 'Net Diff endpoint called with period=%s' % period
+            res = get_network_difficulty_samples(period)
+            defer.returnValue(json.dumps(res))
+    
+    web_root.putChild('network_difficulty', NetworkDifficultyResource())
     
     # Fallback: Get current network difficulty from node (always available)
     def get_current_network_difficulty():
