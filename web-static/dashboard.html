@@ -2294,6 +2294,7 @@
             if (blocks.length > 0) {
                 console.log('Block time:', new Date(blocks[0].ts * 1000));
             }
+            console.log('Compact - validLucks:', validLucks.length, 'luckStats:', luckStats, 'current_luck_trend:', luckStats ? luckStats.current_luck_trend : 'no luckStats');
             
             // Update stats
             var current = values[values.length - 1] || 0;
@@ -2306,6 +2307,8 @@
             var avgLuck = validLucks.length > 0 ? 
                 validLucks.reduce(function(a, b) { return a + b; }, 0) / validLucks.length : 
                 (luckStats && luckStats.current_luck_trend ? luckStats.current_luck_trend : null);
+            
+            console.log('Compact - Calculated avgLuck:', avgLuck);
             
             document.getElementById('graph-current').textContent = format_hashrate(current);
             document.getElementById('graph-average').textContent = format_hashrate(avg);
