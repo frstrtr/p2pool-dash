@@ -928,7 +928,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     # Expose network difficulty history from blocks and current difficulty
     # Returns network difficulty data points for graphing with gap filling
     def get_network_difficulty_samples(period='day'):
-        """Get network difficulty samples with interpolation for smooth graphing."""
+        """Get network difficulty samples with interpolation for gaps."""
         now = time.time()
         period_seconds = {
             'hour': 60 * 60,
@@ -948,39 +948,72 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         except:
             pass
         
-        # If we don't have current difficulty, try to get it from recent blocks
-        if not current_diff:
-            for block_hash, block_data in block_history.items():
-                if block_data.get('network_diff') is not None:
-                    current_diff = block_data['network_diff']
-                    break
+        # Get ALL blocks with network difficulty (including before time window)
+        all_blocks = []
+        for block_hash, block_data in block_history.items():
+            if block_data.get('network_diff') is not None:
+                all_blocks.append({
+                    'ts': block_data['ts'],
+                    'network_diff': block_data['network_diff']
+                })
         
-        # If still no difficulty, return minimal data
-        if not current_diff:
+        # Sort by timestamp
+        all_blocks.sort(key=lambda x: x['ts'])
+        
+        # Find the last block before the time window starts
+        prior_block = None
+        for block in all_blocks:
+            if block['ts'] < min_time:
+                prior_block = block
+            else:
+                break
+        
+        # Get blocks within the time window
+        blocks_in_window = [b for b in all_blocks if b['ts'] >= min_time]
+        
+        # Build result with interpolation
+        result = []
+        
+        # Determine starting difficulty
+        start_diff = prior_block['network_diff'] if prior_block else (
+            blocks_in_window[0]['network_diff'] if blocks_in_window else current_diff)
+        
+        if not start_diff:
             return []
         
-        # Create interpolated samples across the time range
-        # Use more samples for shorter periods, fewer for longer
-        num_samples = {
-            'hour': 12,      # Every 5 minutes
-            'day': 24,       # Every hour
-            'week': 28,      # Every 6 hours
-            'month': 30,     # Every day
-            'year': 52,      # Every week
-        }.get(period, 24)
+        # Add starting point
+        result.append({'ts': min_time, 'network_diff': start_diff})
         
-        result = []
-        time_step = period_seconds / float(num_samples - 1) if num_samples > 1 else period_seconds
+        # Add all actual blocks in window
+        result.extend(blocks_in_window)
         
-        # Generate samples at regular intervals, all using current difficulty
-        # (Network difficulty changes slowly, typically every ~2016 blocks for Bitcoin-like chains)
-        for i in range(num_samples):
-            sample_time = min_time + (i * time_step)
-            result.append({'ts': sample_time, 'network_diff': current_diff})
+        # Add interpolated points to fill gaps if needed
+        # If we have very few points, add some intermediate samples
+        if len(result) < 10:
+            num_fill = {
+                'hour': 6,
+                'day': 12,
+                'week': 14,
+                'month': 15,
+                'year': 26,
+            }.get(period, 12)
+            
+            fill_diff = blocks_in_window[-1]['network_diff'] if blocks_in_window else (
+                current_diff if current_diff else start_diff)
+            
+            time_step = period_seconds / float(num_fill)
+            for i in range(1, num_fill):
+                fill_time = min_time + (i * time_step)
+                # Only add if we don't already have a point near this time
+                if not any(abs(r['ts'] - fill_time) < time_step / 2 for r in result):
+                    result.append({'ts': fill_time, 'network_diff': fill_diff})
         
-        # Ensure we have a point at the current time
-        if not result or result[-1]['ts'] < now - 60:
+        # Add current difficulty at end
+        if current_diff:
             result.append({'ts': now, 'network_diff': current_diff})
+        
+        # Sort by timestamp
+        result.sort(key=lambda x: x['ts'])
         
         return result
     
