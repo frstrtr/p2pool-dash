@@ -467,6 +467,7 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
             # Check if any files are locked (mining active)
             pickle_pattern = os.path.join(datadir_path, net.NAME, 'shares.*')
             pickle_files = glob.glob(pickle_pattern)
+            print 'Found %d existing pickle files to compact' % len(pickle_files)
             
             if use_locking:
                 lock_handles = []
@@ -488,11 +489,15 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
             
             try:
                 # Delete all existing pickle files
+                deleted_count = 0
                 for pickle_file in pickle_files:
                     try:
+                        print 'Deleting %s...' % pickle_file
                         os.remove(pickle_file)
+                        deleted_count += 1
                     except Exception as e:
                         print 'Warning: Failed to remove %s: %s' % (pickle_file, e)
+                print 'Successfully deleted %d files' % deleted_count
                 
                 # Clear ShareStore internal state
                 ss.known.clear()
