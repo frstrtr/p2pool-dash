@@ -1109,7 +1109,6 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     
     class NetworkDifficultyResource(deferred_resource.DeferredResource):
         """Custom resource to handle period query parameter"""
-        @defer.inlineCallbacks
         def render_GET(self, request):
             request.setHeader('Content-Type', 'application/json')
             request.setHeader('Access-Control-Allow-Origin', '*')
@@ -1121,7 +1120,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             
             print 'Net Diff endpoint called with period=%s' % period
             res = get_network_difficulty_samples(period)
-            defer.returnValue(json.dumps(res))
+            return json.dumps(res)
     
     web_root.putChild('network_difficulty', NetworkDifficultyResource())
     
