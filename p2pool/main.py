@@ -465,7 +465,7 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
             print 'Rebuilding with %d shares (from %d in tracker)' % (len(shares_to_keep), len(node.tracker.items))
             
             # Check if any files are locked (mining active)
-            pickle_pattern = os.path.join(datadir_path, net.NAME, 'shares.*')
+            pickle_pattern = os.path.join(datadir_path, 'shares.*')
             pickle_files = glob.glob(pickle_pattern)
             print 'Found %d existing pickle files to compact' % len(pickle_files)
             
