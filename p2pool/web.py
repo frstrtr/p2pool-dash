@@ -928,7 +928,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     # Expose network difficulty history from blocks and current difficulty
     # Returns network difficulty data points for graphing with gap filling
     def get_network_difficulty_samples(period='day'):
-        """Get network difficulty samples using blocks, including prior blocks for gap filling."""
+        """Get network difficulty samples with interpolation for smooth graphing."""
         now = time.time()
         period_seconds = {
             'hour': 60 * 60,
@@ -940,30 +940,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         
         min_time = now - period_seconds
         
-        # Get ALL blocks with network difficulty (including before time window)
-        all_blocks = []
-        for block_hash, block_data in block_history.items():
-            if block_data.get('network_diff') is not None:
-                all_blocks.append({
-                    'ts': block_data['ts'],
-                    'network_diff': block_data['network_diff']
-                })
-        
-        # Sort by timestamp
-        all_blocks.sort(key=lambda x: x['ts'])
-        
-        # Find the last block before the time window starts (for gap filling at start)
-        prior_diff = None
-        for block in all_blocks:
-            if block['ts'] < min_time:
-                prior_diff = block['network_diff']
-            else:
-                break
-        
-        # Get blocks within the time window
-        blocks_in_window = [b for b in all_blocks if b['ts'] >= min_time]
-        
-        # Add current network difficulty as the most recent point
+        # Get current network difficulty
         current_diff = None
         try:
             if wb.current_work.value and 'bits' in wb.current_work.value:
@@ -971,19 +948,38 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         except:
             pass
         
-        # Build result with gap filling
+        # If we don't have current difficulty, try to get it from recent blocks
+        if not current_diff:
+            for block_hash, block_data in block_history.items():
+                if block_data.get('network_diff') is not None:
+                    current_diff = block_data['network_diff']
+                    break
+        
+        # If still no difficulty, return minimal data
+        if not current_diff:
+            return []
+        
+        # Create interpolated samples across the time range
+        # Use more samples for shorter periods, fewer for longer
+        num_samples = {
+            'hour': 12,      # Every 5 minutes
+            'day': 24,       # Every hour
+            'week': 28,      # Every 6 hours
+            'month': 30,     # Every day
+            'year': 52,      # Every week
+        }.get(period, 24)
+        
         result = []
+        time_step = period_seconds / float(num_samples - 1) if num_samples > 1 else period_seconds
         
-        # Add starting point using prior block's difficulty (or first in window, or current)
-        start_diff = prior_diff or (blocks_in_window[0]['network_diff'] if blocks_in_window else current_diff)
-        if start_diff:
-            result.append({'ts': min_time, 'network_diff': start_diff})
+        # Generate samples at regular intervals, all using current difficulty
+        # (Network difficulty changes slowly, typically every ~2016 blocks for Bitcoin-like chains)
+        for i in range(num_samples):
+            sample_time = min_time + (i * time_step)
+            result.append({'ts': sample_time, 'network_diff': current_diff})
         
-        # Add all blocks in window
-        result.extend(blocks_in_window)
-        
-        # Add current difficulty at end
-        if current_diff:
+        # Ensure we have a point at the current time
+        if not result or result[-1]['ts'] < now - 60:
             result.append({'ts': now, 'network_diff': current_diff})
         
         return result
