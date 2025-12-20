@@ -1586,6 +1586,33 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         if current_expected_time and time_since_last and time_since_last > 0:
             current_luck_trend = (current_expected_time / time_since_last) * 100
         
+        # Calculate overall average including current unfinished round
+        # Use weighted average to prevent sharp spikes after finding a block
+        avg_luck = None
+        if luck_values:
+            if current_luck_trend is not None and len(luck_values) > 0:
+                # Weight current round based on number of found blocks
+                # More history = less weight to current round
+                # Formula: weighted_avg = (sum_of_found_blocks + current_round * weight) / (count + weight)
+                # Weight decreases as we have more blocks (min 0.5, max 1.0)
+                # With many blocks, current round contributes ~33-50% as much as a found block
+                num_blocks = len(luck_values)
+                if num_blocks >= 10:
+                    weight = 0.5  # Current round counts as 0.5 blocks
+                elif num_blocks >= 5:
+                    weight = 0.7  # Current round counts as 0.7 blocks
+                else:
+                    weight = 1.0  # Current round counts as 1 full block (less history)
+                
+                total = sum(luck_values) + (current_luck_trend * weight)
+                avg_luck = total / (num_blocks + weight)
+            else:
+                # Only use found blocks
+                avg_luck = sum(luck_values) / len(luck_values)
+        elif current_luck_trend is not None:
+            # No found blocks yet, use current round luck
+            avg_luck = current_luck_trend
+        
         defer.returnValue(dict(
             blocks_found=len(blocks),
             blocks_with_luck=len(valid_blocks),
@@ -1593,7 +1620,8 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             luck_approximate=True,  # Note: luck uses current hashrate, not historical
             
             # Luck statistics
-            average_luck=sum(luck_values) / len(luck_values) if luck_values else None,
+            avg_luck=avg_luck,  # Overall average including current round
+            average_luck=sum(luck_values) / len(luck_values) if luck_values else None,  # Only found blocks
             min_luck=min(luck_values) if luck_values else None,
             max_luck=max(luck_values) if luck_values else None,
             
