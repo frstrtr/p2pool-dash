@@ -744,15 +744,8 @@ class Node(object):
         if not self.running:
             raise ValueError('already stopped')
         
-        print 'P2P: === GRACEFUL SHUTDOWN INITIATED ==='
-        print 'P2P: Setting stopping flag to suppress disconnect logs...'
-        
         self.running = False
         self.stopping = True  # Set BEFORE disconnecting peers to suppress lost_conn logs
-        
-        print 'P2P: Stopping flag set = %s' % self.stopping
-        print 'P2P: Current peer count = %d' % len(self.peers)
-        print 'P2P: Shutting down factories...'
         
         self._stop_thinking()
         yield self.clientfactory.stop()
@@ -761,8 +754,7 @@ class Node(object):
             yield singleclientconnector.factory.stopTrying()
             yield singleclientconnector.disconnect()
         del self.singleclientconnectors
-        
-        print 'P2P: Shutdown complete'
+
     
     def got_conn(self, conn):
         if conn.nonce in self.peers:
@@ -782,8 +774,6 @@ class Node(object):
         is_stopping = getattr(self, 'stopping', False)
         if not is_stopping:
             print 'Lost peer %s:%i - %s' % (conn.addr[0], conn.addr[1], reason.getErrorMessage())
-        else:
-            print '[DEBUG] Suppressed disconnect for %s:%i (stopping=True)' % (conn.addr[0], conn.addr[1])
     
     
     def got_addr(self, (host, port), services, timestamp):
