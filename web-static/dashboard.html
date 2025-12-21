@@ -2275,6 +2275,17 @@
                 } else {
                     hashrateChart.series[seriesIndex].hide();
                 }
+                
+                // Toggle 100% guideline for luck trend
+                if (seriesName === 'lucktrend' && hashrateChart.yAxis[1]) {
+                    var plotLine = hashrateChart.yAxis[1].plotLinesAndBands[0];
+                    if (plotLine) {
+                        plotLine.svgElem.attr('visibility', seriesVisibility[seriesName] ? 'visible' : 'hidden');
+                        if (plotLine.label) {
+                            plotLine.label.attr('visibility', seriesVisibility[seriesName] ? 'visible' : 'hidden');
+                        }
+                    }
+                }
             }
             
             if (fullscreenChart && fullscreenChart.series[seriesIndex]) {
@@ -2282,6 +2293,17 @@
                     fullscreenChart.series[seriesIndex].show();
                 } else {
                     fullscreenChart.series[seriesIndex].hide();
+                }
+                
+                // Toggle 100% guideline for luck trend
+                if (seriesName === 'lucktrend' && fullscreenChart.yAxis[1]) {
+                    var plotLine = fullscreenChart.yAxis[1].plotLinesAndBands[0];
+                    if (plotLine) {
+                        plotLine.svgElem.attr('visibility', seriesVisibility[seriesName] ? 'visible' : 'hidden');
+                        if (plotLine.label) {
+                            plotLine.label.attr('visibility', seriesVisibility[seriesName] ? 'visible' : 'hidden');
+                        }
+                    }
                 }
             }
         }
