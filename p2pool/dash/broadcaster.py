@@ -273,6 +273,10 @@ class DashNetworkBroadcaster(object):
                 if addr == self.local_dashd_addr:
                     continue
                 
+                # Filter out ephemeral ports (incoming connection ports from dashd)
+                if port not in [9999, 19999, 18444]:
+                    continue
+                
                 # Calculate score
                 score = 100
                 if not peer.get('inbound', True):
@@ -534,18 +538,27 @@ class DashNetworkBroadcaster(object):
                     in_backoff.append((addr, int(self.connection_timeout - time_since_failure)))
                     continue
                 else:
-                    # Backoff expired - reset attempt counter and clear failure
+                    # Backoff expired - clear failure time but keep attempt counter
+                    # This allows retrying (attempt 2/3, then 3/3)
                     del self.connection_failures[addr]
-                    if addr in self.connection_attempts:
-                        self.connection_attempts[addr] = 0
             
             # Check if we've exceeded max attempts
             attempts = self.connection_attempts.get(addr, 0)
             if attempts >= self.max_connection_attempts:
-                # Put in backoff if not already there
-                if addr not in self.connection_failures:
+                # After max attempts, require longer backoff before reset
+                if addr in self.connection_failures:
+                    time_since_failure = current_time - self.connection_failures[addr]
+                    # After 30 minutes (6x normal backoff), reset and try again
+                    if time_since_failure > self.connection_timeout * 6:
+                        print 'Broadcaster: Peer %s backoff expired after max attempts, resetting counter' % _safe_addr_str(addr)
+                        del self.connection_failures[addr]
+                        self.connection_attempts[addr] = 0
+                    else:
+                        continue
+                else:
+                    # Just hit max attempts - put in backoff
                     self.connection_failures[addr] = current_time
-                    print 'Broadcaster: Peer %s exceeded max attempts (%d), entering backoff' % (
+                    print 'Broadcaster: Peer %s exceeded max attempts (%d), entering extended backoff (30m)' % (
                         _safe_addr_str(addr), attempts)
                 continue
             
