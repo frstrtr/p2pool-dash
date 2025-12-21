@@ -336,7 +336,6 @@
         
         /* Scrollable table wrapper */
         .table-scroll {
-            height: 400px;
             max-height: 400px;
             overflow-y: auto;
             overflow-x: auto;
@@ -1375,6 +1374,42 @@
             return s + 's';
         }
         
+        // Adjust table height based on content to avoid empty space on mobile
+        function adjustTableHeight(tbodySelector) {
+            var tbody = document.querySelector(tbodySelector);
+            if (!tbody) return;
+            
+            var tableScroll = tbody.closest('.table-scroll');
+            if (!tableScroll) return;
+            
+            // Get the number of rows (including "no data" rows)
+            var rowCount = tbody.querySelectorAll('tr').length;
+            
+            // Calculate approximate height per row (including padding and borders)
+            // Average row height is about 40-45px
+            var rowHeight = 45;
+            var headerHeight = 40;
+            var contentHeight = headerHeight + (rowCount * rowHeight);
+            var maxHeight = 400; // Maximum allowed height
+            
+            // Only adjust on mobile (screen width < 768px)
+            if (window.innerWidth < 768) {
+                if (contentHeight < maxHeight) {
+                    // Set exact height to fit content, no empty space
+                    tableScroll.style.height = contentHeight + 'px';
+                    tableScroll.style.maxHeight = contentHeight + 'px';
+                } else {
+                    // Use maximum height if content exceeds it
+                    tableScroll.style.height = 'auto';
+                    tableScroll.style.maxHeight = maxHeight + 'px';
+                }
+            } else {
+                // Desktop: reset to default behavior
+                tableScroll.style.height = 'auto';
+                tableScroll.style.maxHeight = maxHeight + 'px';
+            }
+        }
+        
         function values(o) { var res = []; for(var x in o) res.push(o[x]); return res; }
         
         function populateActiveMiners(local_stats) {
@@ -1552,6 +1587,9 @@
                         var payout = payouts[miner.address] || 0;
                         d3.select('#miner_payout_' + i).text(d3.format('.4f')(payout));
                     });
+                    
+                    // Adjust table height dynamically after all content is rendered
+                    adjustTableHeight('#active_miners tbody');
                 });
             });
         }
@@ -1815,6 +1853,9 @@
                     } else {
                         showMoreBtn.style('display', 'none');
                     }
+                    
+                    // Adjust table height dynamically
+                    adjustTableHeight('#blocks tbody');
                 }
                 
                 // Initial render
@@ -1919,6 +1960,9 @@
                         .style('color', 'var(--text-muted)')
                         .text('+ ' + (arr.length - 20) + ' more addresses');
                 }
+                
+                // Adjust table height dynamically
+                adjustTableHeight('#payouts tbody');
             });
         }
         
@@ -2004,6 +2048,9 @@
                     } else {
                         showMoreBtn.style('display', 'none');
                     }
+                    
+                    // Adjust table height dynamically
+                    adjustTableHeight('#peers_tbody');
                 }
                 
                 // Initial render
@@ -2135,6 +2182,9 @@
                     } else {
                         showMoreBtn.style('display', 'none');
                     }
+                    
+                    // Adjust table height dynamically
+                    adjustTableHeight('#broadcaster_peers_tbody');
                 }
                 
                 // Initial render
@@ -3540,6 +3590,13 @@
             if (fullscreenChart) {
                 fullscreenChart.reflow();
             }
+            
+            // Re-adjust table heights on resize
+            adjustTableHeight('#active_miners tbody');
+            adjustTableHeight('#blocks tbody');
+            adjustTableHeight('#payouts tbody');
+            adjustTableHeight('#peers_tbody');
+            adjustTableHeight('#broadcaster_peers_tbody');
         });
         
         // Close fullscreen on Escape key
