@@ -356,6 +356,11 @@ class DashNetworkBroadcaster(object):
             if not host:
                 continue
             
+            # Filter out non-standard ports (ephemeral/random ports from incoming connections)
+            # Only accept standard Dash P2P port (9999 mainnet, 19999 testnet, 18444 regtest)
+            if port not in [9999, 19999, 18444]:
+                continue
+            
             addr = (host, port)
             timestamp = addr_info.get('timestamp', time.time())
             
