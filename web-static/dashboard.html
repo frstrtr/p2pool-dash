@@ -528,7 +528,11 @@
             }
             .header-content { flex-direction: column; align-items: flex-start; }
             .stats-grid { grid-template-columns: 1fr; }
-            .stat-value { font-size: 1.5rem; }
+            .stats-grid.broadcaster-stats { grid-template-columns: repeat(2, 1fr); }
+            .stat-value { font-size: 1.2rem !important; }
+            .stat-label { font-size: 0.65rem; }
+            .stat-sublabel { font-size: 0.65rem; }
+            .stat-card { padding: 8px !important; }
             nav { width: 100%; justify-content: flex-start; }
             table { font-size: 0.8rem; }
             th, td { padding: 6px 6px; }
@@ -1238,7 +1242,7 @@
                         <span class="badge" id="broadcaster_status_badge" style="background: var(--success);">✓ Healthy</span>
                     </div>
                 </div>
-                <div class="stats-grid" style="margin-bottom: 15px; grid-template-columns: repeat(2, 1fr);">
+                <div class="stats-grid broadcaster-stats" style="margin-bottom: 15px; grid-template-columns: repeat(4, 1fr);">
                     <div class="stat-card" style="padding: 12px;">
                         <div class="stat-label">Connections</div>
                         <div class="stat-value" id="broadcaster_connections" style="font-size: 1.3rem;">-</div>
