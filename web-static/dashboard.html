@@ -2630,35 +2630,14 @@
                 // Sort by time
                 luckTrendData.sort(function(a, b) { return a[0] - b[0]; });
                 
-                // Add interpolated point at minTime if first point is after minTime
-                if (luckTrendData[0][0] > minTime && sortedBlocks.length > 0) {
-                    // Find the last block before minTime for interpolation
-                    var prevBlock = null;
-                    for (var i = 0; i < sortedBlocks.length; i++) {
-                        var bt = sortedBlocks[i].ts * 1000;
-                        if (bt < minTime && sortedBlocks[i].luck) {
-                            prevBlock = sortedBlocks[i];
-                        } else if (bt >= minTime) {
-                            break;
-                        }
-                    }
-                    
-                    if (prevBlock) {
-                        // Use the previous block's luck value at minTime
-                        luckTrendData.unshift([minTime, prevBlock.luck]);
-                    } else {
-                        // No previous block, use first point's value at minTime
-                        luckTrendData.unshift([minTime, luckTrendData[0][1]]);
-                    }
+                // Add interpolated point at minTime if first point is after minTime (use first value, avoid old carryover)
+                if (luckTrendData[0][0] > minTime) {
+                    luckTrendData.unshift([minTime, luckTrendData[0][1]]);
                 }
                 
-                // Add interpolated point at maxTime using current round luck if available
+                // Add interpolated point at maxTime with decay to 0 instead of flat carry
                 if (luckTrendData[luckTrendData.length - 1][0] < maxTime) {
-                    // Use current round luck if available (more accurate for ongoing round)
-                    var currentLuck = (luckStats && luckStats.current_luck_trend) ? 
-                        luckStats.current_luck_trend : 
-                        luckTrendData[luckTrendData.length - 1][1];
-                    luckTrendData.push([maxTime, currentLuck]);
+                    luckTrendData.push([maxTime, 0]);
                 }
             } else if (luckTrendData.length === 0 && sortedBlocks.length > 0) {
                 // Edge case: No blocks in time window, but blocks exist before it
@@ -2673,16 +2652,14 @@
                 }
                 
                 if (lastBlockBeforeWindow) {
-                    // Draw line from minTime to maxTime using last known luck and current round luck
-                    luckTrendData.push([minTime, lastBlockBeforeWindow.luck]);
-                    var currentLuck = (luckStats && luckStats.current_luck_trend) ? 
-                        luckStats.current_luck_trend : 
-                        lastBlockBeforeWindow.luck;
-                    luckTrendData.push([maxTime, currentLuck]);
+                    // Draw line from minTime to maxTime decaying to 0
+                    var lastLuck = lastBlockBeforeWindow.luck;
+                    luckTrendData.push([minTime, lastLuck]);
+                    luckTrendData.push([maxTime, 0]);
                 } else if (luckStats && luckStats.current_luck_trend) {
-                    // No blocks with luck at all, use current round luck if available
+                    // No blocks with luck at all, use current round luck if available and decay to 0
                     luckTrendData.push([minTime, luckStats.current_luck_trend]);
-                    luckTrendData.push([maxTime, luckStats.current_luck_trend]);
+                    luckTrendData.push([maxTime, 0]);
                 }
             }
             
@@ -3279,35 +3256,14 @@
                 // Sort by time
                 luckTrendData.sort(function(a, b) { return a[0] - b[0]; });
                 
-                // Add interpolated point at minTime if first point is after minTime
-                if (luckTrendData[0][0] > minTime && sortedBlocks.length > 0) {
-                    // Find the last block before minTime for interpolation
-                    var prevBlock = null;
-                    for (var i = 0; i < sortedBlocks.length; i++) {
-                        var bt = sortedBlocks[i].ts * 1000;
-                        if (bt < minTime && sortedBlocks[i].luck) {
-                            prevBlock = sortedBlocks[i];
-                        } else if (bt >= minTime) {
-                            break;
-                        }
-                    }
-                    
-                    if (prevBlock) {
-                        // Use the previous block's luck value at minTime
-                        luckTrendData.unshift([minTime, prevBlock.luck]);
-                    } else {
-                        // No previous block, use first point's value at minTime
-                        luckTrendData.unshift([minTime, luckTrendData[0][1]]);
-                    }
+                // Add interpolated point at minTime if first point is after minTime (use first value, avoid old carryover)
+                if (luckTrendData[0][0] > minTime) {
+                    luckTrendData.unshift([minTime, luckTrendData[0][1]]);
                 }
                 
-                // Add interpolated point at maxTime using current round luck if available
+                // Add interpolated point at maxTime with decay to 0 instead of flat carry
                 if (luckTrendData[luckTrendData.length - 1][0] < maxTime) {
-                    // Use current round luck if available (more accurate for ongoing round)
-                    var currentLuck = (luckStats && luckStats.current_luck_trend) ? 
-                        luckStats.current_luck_trend : 
-                        luckTrendData[luckTrendData.length - 1][1];
-                    luckTrendData.push([maxTime, currentLuck]);
+                    luckTrendData.push([maxTime, 0]);
                 }
             } else if (luckTrendData.length === 0 && sortedBlocks.length > 0) {
                 // Edge case: No blocks in time window, but blocks exist before it
@@ -3322,16 +3278,14 @@
                 }
                 
                 if (lastBlockBeforeWindow) {
-                    // Draw line from minTime to maxTime using last known luck and current round luck
-                    luckTrendData.push([minTime, lastBlockBeforeWindow.luck]);
-                    var currentLuck = (luckStats && luckStats.current_luck_trend) ? 
-                        luckStats.current_luck_trend : 
-                        lastBlockBeforeWindow.luck;
-                    luckTrendData.push([maxTime, currentLuck]);
+                    // Draw line from minTime to maxTime decaying to 0
+                    var lastLuck = lastBlockBeforeWindow.luck;
+                    luckTrendData.push([minTime, lastLuck]);
+                    luckTrendData.push([maxTime, 0]);
                 } else if (luckStats && luckStats.current_luck_trend) {
-                    // No blocks with luck at all, use current round luck if available
+                    // No blocks with luck at all, use current round luck if available and decay to 0
                     luckTrendData.push([minTime, luckStats.current_luck_trend]);
-                    luckTrendData.push([maxTime, luckStats.current_luck_trend]);
+                    luckTrendData.push([maxTime, 0]);
                 }
             }
             
