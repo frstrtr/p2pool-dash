@@ -745,7 +745,9 @@ class Node(object):
             raise ValueError('already stopped')
         
         self.running = False
-        self.stopping = True  # Flag for graceful shutdown
+        self.stopping = True  # Set BEFORE disconnecting peers to suppress lost_conn logs
+        
+        print 'P2P: Shutting down gracefully...'
         
         self._stop_thinking()
         yield self.clientfactory.stop()
@@ -754,6 +756,8 @@ class Node(object):
             yield singleclientconnector.factory.stopTrying()
             yield singleclientconnector.disconnect()
         del self.singleclientconnectors
+        
+        print 'P2P: Shutdown complete'
     
     def got_conn(self, conn):
         if conn.nonce in self.peers:

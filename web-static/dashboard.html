@@ -1912,7 +1912,7 @@
         }
         
         function loadBroadcasterStats() {
-            d3.json('../broadcaster/status', function(data) {
+            d3.json('../broadcaster_status', function(data) {
                 d3.select('#broadcaster_loading').style('display', 'none');
                 
                 if (!data) {
