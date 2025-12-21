@@ -521,6 +521,20 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                 # Get block reward (may not be available yet)
                 block_reward = block_data.get('block_reward', 0)
                 
+                # Retry fetching reward if it's missing and block is confirmed
+                if block_reward == 0 and status == 'confirmed':
+                    try:
+                        block_info = yield wb.dashd.rpc_getblock(block_hash)
+                        if block_info and 'tx' in block_info and len(block_info['tx']) > 0:
+                            coinbase_txid = block_info['tx'][0]
+                            tx_info = yield wb.dashd.rpc_getrawtransaction(coinbase_txid, 1)
+                            if tx_info and 'vout' in tx_info:
+                                block_reward = sum(vout['value'] for vout in tx_info['vout'])
+                                block_data['block_reward'] = block_reward
+                                save_block_history()
+                    except Exception as e:
+                        pass  # Keep block_reward as 0
+                
                 # Calculate miner's share of the reward
                 # The miner gets their proportional share based on their shares in the window
                 current_txouts = node.get_current_txouts()
@@ -775,7 +789,6 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         
         # Try to get block reward from dashd (async, will update later if not available now)
         @defer.inlineCallbacks
-        @defer.inlineCallbacks
         def fetch_block_reward():
             try:
                 block_info = yield wb.dashd.rpc_getblock(block_hash)
@@ -813,8 +826,8 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         # Save to disk
         save_block_history()
         
-        # Fetch reward asynchronously
-        fetch_block_reward()
+        # Fetch reward asynchronously (start the deferred chain)
+        fetch_block_reward().addErrback(lambda f: log.err(f, 'Error in fetch_block_reward:'))
     
     def get_block_history_data(block_hash):
         """Get historical data for a block if available."""
@@ -1181,9 +1194,9 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             confirmations = block_info.get('confirmations', 0)
             chainlock = block_info.get('chainlock', False)
             
-            # Dash coinbase maturity is 100 blocks
-            # ChainLocked blocks are considered immediately confirmed
-            if chainlock or confirmations >= 100:
+            # Dash coinbase maturity is 100 blocks (COINBASE_MATURITY)
+            # ChainLock provides instant finality but does NOT reduce maturity requirement
+            if confirmations >= 100:
                 status = 'confirmed'
             elif confirmations >= 1:
                 status = 'pending'  # Maturing (waiting for 100 confirmations)

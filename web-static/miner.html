@@ -1084,7 +1084,6 @@
                         doaElement.className = 'stat-value ' + (doaRate > 5 ? 'danger' : (doaRate > 2 ? 'warning' : 'success'));
                         
                         document.getElementById('share_difficulty').textContent = d3.format('.3r')(stats.share_difficulty);
-                        document.getElementById('time_to_share').textContent = format_dt(stats.time_to_share);
                         document.getElementById('current_payout').textContent = d3.format('.4f')(stats.current_payout);
                         document.getElementById('doa_hashrate').textContent = format_hashrate(stats.dead_hashrate);
                     }
