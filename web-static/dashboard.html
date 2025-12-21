@@ -2818,10 +2818,11 @@
                                 var compressed = displayValue - 100;
                                 var actualLuck = 100 + 100 * (Math.pow(10, compressed / 100) - 1);
                                 
-                                // Show ∞ for values near the maximum
-                                if (displayValue >= 195) {
+                                // Only show ∞ for the very highest value (within 2% of max)
+                                if (this.isLast && displayValue > luckMax * 0.98) {
                                     return '∞';
                                 }
+                                
                                 // Show rounded value for readability
                                 if (actualLuck > 1000) {
                                     return (actualLuck / 1000).toFixed(1) + 'k%';
@@ -3428,9 +3429,11 @@
                                 var compressed = displayValue - 100;
                                 var actualLuck = 100 + 100 * (Math.pow(10, compressed / 100) - 1);
                                 
-                                if (displayValue >= 195) {
+                                // Only show ∞ for the very highest value
+                                if (this.isLast && displayValue > fsLuckMax * 0.98) {
                                     return '∞';
                                 }
+                                
                                 if (actualLuck > 1000) {
                                     return (actualLuck / 1000).toFixed(1) + 'k%';
                                 }
