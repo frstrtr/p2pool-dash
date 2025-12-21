@@ -716,6 +716,7 @@ class Node(object):
         self.clientfactory = ClientFactory(self, desired_outgoing_conns, max_outgoing_attempts)
         self.serverfactory = ServerFactory(self, max_incoming_conns)
         self.running = False
+        self.stopping = False
     
     def start(self):
         if self.running:
@@ -744,6 +745,7 @@ class Node(object):
             raise ValueError('already stopped')
         
         self.running = False
+        self.stopping = True  # Flag for graceful shutdown
         
         self._stop_thinking()
         yield self.clientfactory.stop()
@@ -767,7 +769,9 @@ class Node(object):
             raise ValueError('wrong conn')
         del self.peers[conn.nonce]
         
-        print 'Lost peer %s:%i - %s' % (conn.addr[0], conn.addr[1], reason.getErrorMessage())
+        # Don't log peer disconnections during graceful shutdown
+        if not self.stopping:
+            print 'Lost peer %s:%i - %s' % (conn.addr[0], conn.addr[1], reason.getErrorMessage())
     
     
     def got_addr(self, (host, port), services, timestamp):
