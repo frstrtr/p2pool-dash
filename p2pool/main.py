@@ -623,18 +623,33 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
         @defer.inlineCallbacks
         def shutdown_handler():
             """Archive shares and optionally compact storage on graceful shutdown"""
-            print 'Graceful shutdown: archiving shares...'
+            print '=' * 70
+            print 'GRACEFUL SHUTDOWN INITIATED'
+            print '=' * 70
+            
+            # FIRST: Set P2P node stopping flag to suppress disconnect logs
+            print 'Setting P2P stopping flag...'
+            try:
+                node.stopping = True
+                print 'P2P stopping flag set (will suppress disconnect logs)'
+            except Exception as e:
+                print 'Warning: Could not set stopping flag: %s' % str(e)
+            
+            # Archive shares
+            print 'Archiving shares...'
             try:
                 save_shares()  # Final save and archive
                 print 'Shutdown archival complete'
+            except Exception as e:
+                print 'Warning: Shutdown archival failed: %s' % str(e)
                 
-                # Stop P2P node gracefully
-                print 'Stopping P2P node...'
-                try:
-                    yield node.stop()
-                    print 'P2P node stopped'
-                except Exception as e:
-                    print 'Warning: P2P node shutdown error: %s' % str(e)
+            # Stop P2P node gracefully
+            print 'Stopping P2P node...'
+            try:
+                yield node.stop()
+                print 'P2P node stopped'
+            except Exception as e:
+                print 'Warning: P2P node shutdown error: %s' % str(e)
                 
                 # Stop broadcaster if running
                 if broadcaster:
