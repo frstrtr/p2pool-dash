@@ -306,6 +306,23 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
         node = p2pool_node.Node(factory, dashd, shares.values(), known_verified, net)
         yield node.start()
         
+        # Install signal handlers for graceful shutdown
+        def sigterm_handler(signum, frame):
+            """Handle SIGTERM/SIGINT by setting stopping flag before reactor stops"""
+            print '\n[Signal %d received - initiating graceful shutdown]' % signum
+            # Set stopping flag BEFORE reactor tears down connections
+            node.stopping = True
+            if broadcaster:
+                try:
+                    broadcaster.stop()
+                except:
+                    pass
+            # Now let reactor stop normally
+            reactor.callFromThread(reactor.stop)
+        
+        signal.signal(signal.SIGTERM, sigterm_handler)
+        signal.signal(signal.SIGINT, sigterm_handler)
+        
         print '    ...share chain initialized!'
         print
         
