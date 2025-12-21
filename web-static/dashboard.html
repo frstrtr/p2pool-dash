@@ -1188,6 +1188,56 @@
             </div>
         </div>
         
+        <!-- Broadcaster Stats -->
+        <div class="table-section">
+            <div class="section-header">
+                <h2>📡 Broadcaster Stats</h2>
+                <span class="badge" id="broadcaster_status_badge">Checking...</span>
+            </div>
+            <div class="stats-grid" style="margin-bottom: 20px;">
+                <div class="stat-card">
+                    <div class="stat-label">Connections</div>
+                    <div class="stat-value" id="broadcaster_connections">-</div>
+                    <div class="stat-sublabel">Active / Target</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Peers Database</div>
+                    <div class="stat-value" id="broadcaster_database_size">-</div>
+                    <div class="stat-sublabel">Total Peers</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Success Rate</div>
+                    <div class="stat-value" id="broadcaster_success_rate">-</div>
+                    <div class="stat-sublabel">Connection Success</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Broadcasts</div>
+                    <div class="stat-value" id="broadcaster_broadcasts">-</div>
+                    <div class="stat-sublabel">Success / Failed</div>
+                </div>
+            </div>
+            <div class="table-container">
+                <div class="section-header" style="background: transparent; padding: 0 0 10px 0; margin: 0;">
+                    <h3 style="font-size: 1rem; color: var(--text-muted);">📋 Connected Peers</h3>
+                </div>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Address</th>
+                            <th>Score</th>
+                            <th>Source</th>
+                            <th>Success Rate</th>
+                            <th>Broadcasts</th>
+                            <th>Last Seen</th>
+                        </tr>
+                    </thead>
+                    <tbody id="broadcaster_peers_tbody">
+                    </tbody>
+                </table>
+                <div class="loading" id="broadcaster_loading">Loading broadcaster stats...</div>
+            </div>
+        </div>
+        
         <!-- Share Explorer -->
         <div class="shares-section">
             <div class="section-header">
@@ -1463,6 +1513,7 @@
             loadPoolLuck();
             loadPeers();
             loadShares();
+            loadBroadcasterStats();
         });
         
         // Load version
@@ -1857,6 +1908,85 @@
                     .text(function(p) { return format_duration(p.downtime || 0); })
                     .style('color', function(p) { return p.downtime > 0 ? 'var(--text-muted)' : ''; });
                 tr.append('td').text(function(p) { return p.txpool_size || '0'; });
+            });
+        }
+        
+        function loadBroadcasterStats() {
+            d3.json('../broadcaster/status', function(data) {
+                d3.select('#broadcaster_loading').style('display', 'none');
+                
+                if (!data) {
+                    d3.select('#broadcaster_status_badge')
+                        .style('background', 'var(--danger)')
+                        .text('Not Available');
+                    d3.select('#broadcaster_connections').text('N/A');
+                    d3.select('#broadcaster_database_size').text('N/A');
+                    d3.select('#broadcaster_success_rate').text('N/A');
+                    d3.select('#broadcaster_broadcasts').text('N/A');
+                    return;
+                }
+                
+                // Status badge
+                var badge = d3.select('#broadcaster_status_badge');
+                if (data.healthy) {
+                    badge.style('background', 'var(--success)').text('✓ Healthy');
+                } else {
+                    badge.style('background', 'var(--warning)').text('⚠ Issues');
+                }
+                
+                // Summary stats
+                d3.select('#broadcaster_connections').text(
+                    data.connection_stats.active_connections + ' / ' + data.connection_stats.target_connections
+                );
+                d3.select('#broadcaster_database_size').text(data.database_size.toLocaleString());
+                
+                var totalAttempts = data.connection_stats.total_attempts;
+                var successRate = totalAttempts > 0 ? 
+                    ((data.connection_stats.successful_connections / totalAttempts) * 100).toFixed(1) : 0;
+                d3.select('#broadcaster_success_rate').text(successRate + '%');
+                
+                var totalBroadcasts = data.successful_broadcasts + data.failed_broadcasts;
+                d3.select('#broadcaster_broadcasts').text(
+                    data.successful_broadcasts + ' / ' + data.failed_broadcasts + 
+                    (totalBroadcasts > 0 ? ' (' + ((data.successful_broadcasts / totalBroadcasts) * 100).toFixed(1) + '%)' : '')
+                );
+                
+                // Connected peers table
+                d3.select('#broadcaster_peers_tbody').selectAll('tr').remove();
+                
+                if (!data.connected_peers || data.connected_peers.length === 0) {
+                    var tr = d3.select('#broadcaster_peers_tbody').append('tr');
+                    tr.append('td')
+                        .attr('colspan', '6')
+                        .style('text-align', 'center')
+                        .style('color', 'var(--text-muted)')
+                        .text('No peers connected');
+                    return;
+                }
+                
+                var tr = d3.select('#broadcaster_peers_tbody').selectAll('tr')
+                    .data(data.connected_peers)
+                    .enter().append('tr');
+                
+                tr.append('td').text(function(p) { return p.addr; });
+                tr.append('td').text(function(p) { return p.score.toFixed(1); });
+                tr.append('td').text(function(p) { return p.source || 'unknown'; });
+                
+                tr.append('td').text(function(p) {
+                    var total = p.successful_broadcasts + p.failed_broadcasts;
+                    if (total === 0) return '0.0%';
+                    return ((p.successful_broadcasts / total) * 100).toFixed(1) + '%';
+                });
+                
+                tr.append('td').text(function(p) {
+                    return p.successful_broadcasts + ' / ' + p.failed_broadcasts;
+                });
+                
+                tr.append('td').text(function(p) {
+                    if (!p.last_seen) return 'Never';
+                    var ago = Math.floor((Date.now() / 1000) - p.last_seen);
+                    return format_duration(ago) + ' ago';
+                });
             });
         }
         
@@ -3278,6 +3408,7 @@
                     loadPayouts();
                     loadPoolLuck();
                     loadShares();
+                    loadBroadcasterStats();
                     loadHashrateGraph();
                     document.getElementById('last-update').textContent = 'Last update: ' + new Date().toLocaleTimeString();
                 }, 30000);
@@ -3293,6 +3424,7 @@
             loadPoolLuck();
             loadShares();
             loadPeers();
+            loadBroadcasterStats();
             loadHashrateGraph();
             document.getElementById('last-update').textContent = 'Last update: ' + new Date().toLocaleTimeString();
         }
