@@ -280,6 +280,7 @@
             text-transform: uppercase;
             letter-spacing: 0.5px;
             font-weight: 600;
+            white-space: nowrap;
         }
         
         th:first-child { border-radius: 8px 0 0 8px; }
@@ -527,8 +528,7 @@
                 max-width: 100vw;
             }
             .header-content { flex-direction: column; align-items: flex-start; }
-            .stats-grid { grid-template-columns: 1fr; }
-            .stats-grid.broadcaster-stats { grid-template-columns: repeat(2, 1fr); }
+            .stats-grid { grid-template-columns: 1fr !important; }
             .stat-value { font-size: 1.2rem !important; }
             .stat-label { font-size: 0.65rem; }
             .stat-sublabel { font-size: 0.65rem; }
@@ -1271,8 +1271,8 @@
                                 <th>Address</th>
                                 <th>Score</th>
                                 <th>Source</th>
-                                <th>Success Rate</th>
-                                <th>Broadcasts</th>
+                                <th>Success</th>
+                                <th>Sent</th>
                                 <th>Last Seen</th>
                             </tr>
                         </thead>
