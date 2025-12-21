@@ -307,10 +307,16 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
         yield node.start()
         
         # Install signal handlers for graceful shutdown
+        # Note: node.p2p_node won't exist yet - it's created later in main()
+        # We'll set a flag on node that the signal handler was triggered
         def sigterm_handler(signum, frame):
             """Handle SIGTERM/SIGINT by setting stopping flag before reactor stops"""
             print '\n[Signal %d received - initiating graceful shutdown]' % signum
-            # Set stopping flag BEFORE reactor tears down connections
+            # Set stopping flag on p2p_node if it exists (it's created later)
+            if hasattr(node, 'p2p_node') and node.p2p_node:
+                node.p2p_node.stopping = True
+                print '[Signal handler] Set p2p_node.stopping = True'
+            # Also set flag on main node for reference
             node.stopping = True
             if broadcaster:
                 try:
