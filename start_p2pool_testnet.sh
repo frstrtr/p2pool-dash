@@ -78,6 +78,7 @@ case "$1" in
         echo "Starting P2Pool in TESTNET daemon mode..."
         echo "Log file: $LOG_FILE"
         
+        echo "Multi-peer broadcaster: ENABLED (testnet mode)"
         nohup bash -c "cd '$SCRIPT_DIR' && pypy run_p2pool.py --net dash --testnet \
             --dashd-address 127.0.0.1 \
             --dashd-rpc-port 19998 \
@@ -110,6 +111,8 @@ case "$1" in
         stop_graceful
         echo "Starting P2Pool in TESTNET foreground mode..."
         echo "Log file: $LOG_FILE"
+        echo "Multi-peer broadcaster: ENABLED (use --disable-broadcaster to disable)"
+        echo "  Monitor: curl http://127.0.0.1:7903/broadcaster_status | jq ."
         
         pypy run_p2pool.py --net dash --testnet \
             --dashd-address 127.0.0.1 \

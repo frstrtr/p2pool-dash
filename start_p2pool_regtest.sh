@@ -83,6 +83,8 @@ esac
 stop_graceful
 echo "Starting P2Pool in REGTEST mode..."
 echo "Log file: $LOG_FILE"
+echo "Multi-peer broadcaster: ENABLED (regtest mode)"
+echo "  Note: Limited peer discovery in regtest - mainly uses local dashd"
 
 pypy run_p2pool.py --net dash_regtest \
     --dashd-address 127.0.0.1 \

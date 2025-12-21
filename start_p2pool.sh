@@ -164,6 +164,9 @@ rotate_log
 if [ "$DAEMON_MODE" = true ]; then
     # Background/daemon mode - suitable for SSH launching
     echo "Starting P2Pool in daemon mode (logging to $LOG_FILE)..."
+    echo "Multi-peer broadcaster: ENABLED (use --disable-broadcaster to disable)"
+    echo "  Max peers: 20 (use --broadcaster-max-peers N to change)"
+    echo "  Min peers: 5 (use --broadcaster-min-peers N to change)"
     nohup bash -c "cd '$SCRIPT_DIR' && pypy run_p2pool.py --net dash \
         --dashd-address 127.0.0.1 \
         --dashd-rpc-port 9998 \
@@ -189,5 +192,8 @@ if [ "$DAEMON_MODE" = true ]; then
 else
     # Foreground mode - for interactive use or systemd
     echo "Starting P2Pool in foreground mode (logging to $LOG_FILE)..."
+    echo "Multi-peer broadcaster: ENABLED (use --disable-broadcaster to disable)"
+    echo "  Max peers: 20 (use --broadcaster-max-peers N to change)"
+    echo "  Min peers: 5 (use --broadcaster-min-peers N to change)"
     start_p2pool 2>&1 | tee -a "$LOG_FILE"
 fi
