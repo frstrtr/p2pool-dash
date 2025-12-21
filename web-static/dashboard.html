@@ -2685,6 +2685,8 @@
                 var minLuck = Math.min.apply(null, luckValues);
                 var maxLuck = Math.max.apply(null, luckValues);
                 
+                console.log('Luck range calculation - min:', minLuck, 'max:', maxLuck, 'values:', luckValues.length);
+                
                 // Calculate the maximum distance from 100% to determine symmetric range
                 var maxDistance = Math.max(Math.abs(100 - minLuck), Math.abs(maxLuck - 100));
                 
@@ -2695,11 +2697,14 @@
                 luckMin = Math.max(0, 100 - maxDistance);
                 luckMax = 100 + maxDistance;
                 
+                console.log('Calculated luck axis - min:', luckMin.toFixed(1), 'max:', luckMax.toFixed(1), 'distance:', maxDistance.toFixed(1));
+                
                 // Ensure minimum range of 50% on each side (100 total)
                 if (luckMax - luckMin < 100) {
                     var center = (luckMin + luckMax) / 2;
                     luckMin = Math.max(0, center - 50);
                     luckMax = center + 50;
+                    console.log('Applied minimum range - min:', luckMin, 'max:', luckMax);
                 }
             }
             
@@ -3287,6 +3292,8 @@
                 var fsMinLuck = Math.min.apply(null, fsLuckValues);
                 var fsMaxLuck = Math.max.apply(null, fsLuckValues);
                 
+                console.log('Fullscreen luck range - min:', fsMinLuck, 'max:', fsMaxLuck);
+                
                 // Calculate the maximum distance from 100% to determine symmetric range
                 var fsMaxDistance = Math.max(Math.abs(100 - fsMinLuck), Math.abs(fsMaxLuck - 100));
                 
@@ -3296,6 +3303,8 @@
                 // Set symmetric range around 100%
                 fsLuckMin = Math.max(0, 100 - fsMaxDistance);
                 fsLuckMax = 100 + fsMaxDistance;
+                
+                console.log('Fullscreen luck axis - min:', fsLuckMin.toFixed(1), 'max:', fsLuckMax.toFixed(1));
                 
                 // Ensure minimum range of 50% on each side (100 total)
                 if (fsLuckMax - fsLuckMin < 100) {
