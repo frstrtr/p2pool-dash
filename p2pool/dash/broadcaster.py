@@ -327,8 +327,8 @@ class DashNetworkBroadcaster(object):
                     if addr in self.connection_failures:
                         del self.connection_failures[addr]
                         print '  -> Cleared previous failure history'
-                    if addr in self.connection_attempts:
-                        self.connection_attempts[addr] = 0
+                    # Don't reset attempt counter - let it accumulate across refreshes
+                    # Only gets reset on successful connection
                 else:
                     # Update existing peer
                     self.peer_db[addr]['last_seen'] = time.time()
