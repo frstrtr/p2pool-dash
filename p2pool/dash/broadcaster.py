@@ -675,9 +675,15 @@ class DashNetworkBroadcaster(object):
             
             def gotConnection_wrapper(protocol):
                 connection_time = time.time() - connection_start_time
+                
+                # Log with current attempt count (before reset)
+                current_attempts = self.connection_attempts.get(addr, 1)
+                if current_attempts == 0:
+                    current_attempts = 1  # Handle reconnection case
+                    
                 print 'Broadcaster: CONNECTED to %s (%.3fs, attempt %d/%d)' % (
                     _safe_addr_str(addr), connection_time, 
-                    self.connection_attempts[addr], self.max_connection_attempts)
+                    current_attempts, self.max_connection_attempts)
                 
                 # Clear failure history on successful connection
                 if addr in self.connection_failures:
@@ -692,8 +698,11 @@ class DashNetworkBroadcaster(object):
                 
                 # Request peer addresses from this peer (P2P discovery)
                 try:
-                    protocol.send_getaddr()
-                    print 'Broadcaster:   -> Sent getaddr request to %s' % _safe_addr_str(addr)
+                    if hasattr(protocol, 'send_getaddr') and callable(protocol.send_getaddr):
+                        protocol.send_getaddr()
+                        print 'Broadcaster:   -> Sent getaddr request to %s' % _safe_addr_str(addr)
+                    else:
+                        print 'Broadcaster:   -> Skipping getaddr (protocol not ready)'
                 except Exception as e:
                     print >>sys.stderr, 'Broadcaster: Error sending getaddr to %s: %s' % (_safe_addr_str(addr), e)
                 
