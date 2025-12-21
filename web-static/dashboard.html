@@ -2463,6 +2463,59 @@
         var workerCountData = null;
         var uniqueMinerCountData = null;
 
+        // Helper: Bayesian effective vs reported hashrate diagnostic (shared by compact and fullscreen)
+        function updateHashrateDiagnostic(containerId, avgHashrate, blocksInWindow, windowSec, netDiff, labelPrefix) {
+            var el = document.getElementById(containerId);
+            if (!el) return;
+            if (!netDiff || netDiff <= 0 || !windowSec || windowSec <= 0) {
+                el.textContent = labelPrefix + 'Not enough data yet';
+                el.style.color = 'var(--muted)';
+                return;
+            }
+            var blockHashes = netDiff * 4294967296; // 2^32
+            var reported = avgHashrate || 0;
+            var k = blocksInWindow;
+            // Prior centered at reported with strength ~5 expected blocks
+            var expectedLambdaPrior = (reported > 0) ? (reported / blockHashes) : 0.0000001;
+            var alpha0 = 5;
+            var beta0 = (expectedLambdaPrior > 0) ? (alpha0 / expectedLambdaPrior) : 1e9;
+            var alpha = alpha0 + k;
+            var beta = beta0 + windowSec;
+            var meanLambda = alpha / beta;
+            var varLambda = alpha / (beta * beta);
+            var stdLambda = Math.sqrt(varLambda);
+            // 95% CI via normal approx
+            var z = 1.96;
+            var lambdaLow = Math.max(0, meanLambda - z * stdLambda);
+            var lambdaHigh = meanLambda + z * stdLambda;
+            var effMean = meanLambda * blockHashes;
+            var effLow = lambdaLow * blockHashes;
+            var effHigh = lambdaHigh * blockHashes;
+            // Formatting
+            var fmt = function(v) { return format_hashrate(v); };
+            var statusText = labelPrefix + 'CI95 ' + fmt(effLow) + ' – ' + fmt(effHigh) + ' vs reported ' + fmt(reported);
+            var color = 'var(--muted)';
+            if (reported > 0) {
+                if (effHigh < reported * 0.6) {
+                    statusText += ' • Critical: effective well below reported';
+                    color = 'var(--danger)';
+                } else if (effHigh < reported * 0.8) {
+                    statusText += ' • Warning: effective below reported';
+                    color = 'var(--warning)';
+                } else {
+                    statusText += ' • OK';
+                    color = 'var(--success)';
+                }
+            }
+            // Require some evidence: at least 3 blocks or window >= 3 * pool block time heuristic
+            if (k < 3) {
+                statusText += ' • Low evidence (<3 blocks)';
+                color = 'var(--muted)';
+            }
+            el.textContent = statusText;
+            el.style.color = color;
+        }
+
         function renderHashrateGraph(data, minerData, uniqueMinersData, connectedData, blocks, networkDiffSamples, luckStats) {
             var container = document.getElementById('hashrate-graph');
             blocks = blocks || [];
@@ -2594,59 +2647,6 @@
                 var sumHashWindow = values.reduce(function(a, b) { return a + b; }, 0);
                 avgHashrateWindow = sumHashWindow / values.length;
             }
-
-            // Helper: Bayesian effective vs reported hashrate diagnostic
-            var updateHashrateDiagnostic = function(containerId, avgHashrate, blocksInWindow, windowSec, netDiff, labelPrefix) {
-                var el = document.getElementById(containerId);
-                if (!el) return;
-                if (!netDiff || netDiff <= 0 || !windowSec || windowSec <= 0) {
-                    el.textContent = labelPrefix + 'Not enough data yet';
-                    el.style.color = 'var(--muted)';
-                    return;
-                }
-                var blockHashes = netDiff * 4294967296; // 2^32
-                var reported = avgHashrate || 0;
-                var k = blocksInWindow;
-                // Prior centered at reported with strength ~5 expected blocks
-                var expectedLambdaPrior = (reported > 0) ? (reported / blockHashes) : 0.0000001;
-                var alpha0 = 5;
-                var beta0 = (expectedLambdaPrior > 0) ? (alpha0 / expectedLambdaPrior) : 1e9;
-                var alpha = alpha0 + k;
-                var beta = beta0 + windowSec;
-                var meanLambda = alpha / beta;
-                var varLambda = alpha / (beta * beta);
-                var stdLambda = Math.sqrt(varLambda);
-                // 95% CI via normal approx
-                var z = 1.96;
-                var lambdaLow = Math.max(0, meanLambda - z * stdLambda);
-                var lambdaHigh = meanLambda + z * stdLambda;
-                var effMean = meanLambda * blockHashes;
-                var effLow = lambdaLow * blockHashes;
-                var effHigh = lambdaHigh * blockHashes;
-                // Formatting
-                var fmt = function(v) { return format_hashrate(v); };
-                var statusText = labelPrefix + 'CI95 ' + fmt(effLow) + ' – ' + fmt(effHigh) + ' vs reported ' + fmt(reported);
-                var color = 'var(--muted)';
-                if (reported > 0) {
-                    if (effHigh < reported * 0.6) {
-                        statusText += ' • Critical: effective well below reported';
-                        color = 'var(--danger)';
-                    } else if (effHigh < reported * 0.8) {
-                        statusText += ' • Warning: effective below reported';
-                        color = 'var(--warning)';
-                    } else {
-                        statusText += ' • OK';
-                        color = 'var(--success)';
-                    }
-                }
-                // Require some evidence: at least 3 blocks or window >= 3 * pool block time heuristic
-                if (k < 3) {
-                    statusText += ' • Low evidence (<3 blocks)';
-                    color = 'var(--muted)';
-                }
-                el.textContent = statusText;
-                el.style.color = color;
-            };
 
             // Helper to estimate expected block time for the pool from network diff and pool hashrate
             // block_hashes = diff * 2^32; expected time = block_hashes / pool_hashrate
