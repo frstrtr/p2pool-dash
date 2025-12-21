@@ -127,7 +127,7 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
             print 'INITIALIZING MULTI-PEER BROADCASTER'
             print '=' * 70
             try:
-                from dash.broadcaster import DashNetworkBroadcaster
+                from dash.broadcaster import DashNetworkBroadcaster, _safe_addr_str
                 
                 local_dashd_addr = (args.dashd_address, args.dashd_p2p_port)
                 broadcaster = DashNetworkBroadcaster(
@@ -152,7 +152,7 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
                 print '*** BROADCASTER READY ***'
                 print '  Max peers: %d' % broadcaster.max_peers
                 print '  Min peers: %d' % broadcaster.min_peers
-                print '  Local dashd: %s:%d (PROTECTED)' % local_dashd_addr
+                print '  Local dashd: %s (PROTECTED)' % _safe_addr_str(local_dashd_addr)
                 print '  Peer database: %d peers' % len(broadcaster.peer_db)
                 print '  Active connections: %d' % len(broadcaster.connections)
                 print '=' * 70
@@ -161,7 +161,7 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
             except Exception as e:
                 print >>sys.stderr, ''
                 print >>sys.stderr, '*** BROADCASTER INITIALIZATION FAILED ***'
-                print >>sys.stderr, '  Error: %s' % e
+                print >>sys.stderr, '  Error: %s' % str(e).encode('ascii', 'replace')
                 print >>sys.stderr, '  Falling back to local dashd only mode'
                 print >>sys.stderr, '=' * 70
                 print >>sys.stderr, ''
