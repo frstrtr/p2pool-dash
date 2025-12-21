@@ -580,7 +580,7 @@ class DashNetworkBroadcaster(object):
         
         print 'Broadcaster: Connection status: %d connected (local dashd: %s)' % (
             len(self.connections),
-            'PROTECTED ✓' if self.local_dashd_addr in self.connections else 'MISSING ✗')
+            'PROTECTED [OK]' if self.local_dashd_addr in self.connections else 'MISSING [!]')
         print 'Broadcaster: === REFRESH COMPLETE ==='
         print ''
         
