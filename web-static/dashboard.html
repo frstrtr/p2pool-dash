@@ -2679,6 +2679,7 @@
             var avgLuck = (luckStats && luckStats.avg_luck !== null) ? luckStats.avg_luck : null;
             
             // Calculate dynamic luck Y-axis range to center 100%
+            // Use asymmetric scaling: linear below 100%, compressed above 100%
             var luckMin = 0, luckMax = 200;
             if (luckTrendData.length > 0) {
                 var luckValues = luckTrendData.map(function(p) { return p.y; });
@@ -2687,17 +2688,28 @@
                 
                 console.log('Luck range calculation - min:', minLuck, 'max:', maxLuck, 'values:', luckValues.length);
                 
-                // Calculate the maximum distance from 100% to determine symmetric range
-                var maxDistance = Math.max(Math.abs(100 - minLuck), Math.abs(maxLuck - 100));
+                // Calculate distances from 100%
+                var distanceBelow = 100 - minLuck; // How far below 100%
+                var distanceAbove = maxLuck - 100; // How far above 100%
                 
-                // Add 20% padding for better visibility
+                // For values above 100%, use logarithmic compression
+                // log(1 + x) provides smooth compression for large values
+                var compressedDistanceAbove = distanceAbove > 0 ? 
+                    100 * Math.log10(1 + distanceAbove / 100) : 0;
+                
+                // Use the larger of the two distances (one linear, one compressed)
+                var maxDistance = Math.max(distanceBelow, compressedDistanceAbove);
+                
+                // Add 20% padding
                 maxDistance = maxDistance * 1.2;
                 
-                // Set symmetric range around 100%
+                // Set symmetric range around 100% (both sides use same scale)
                 luckMin = Math.max(0, 100 - maxDistance);
                 luckMax = 100 + maxDistance;
                 
-                console.log('Calculated luck axis - min:', luckMin.toFixed(1), 'max:', luckMax.toFixed(1), 'distance:', maxDistance.toFixed(1));
+                console.log('Calculated luck axis - min:', luckMin.toFixed(1), 'max:', luckMax.toFixed(1), 
+                    'distBelow:', distanceBelow.toFixed(1), 'distAbove:', distanceAbove.toFixed(1), 
+                    'compressed:', compressedDistanceAbove.toFixed(1));
                 
                 // Ensure minimum range of 50% on each side (100 total)
                 if (luckMax - luckMin < 100) {
@@ -3286,6 +3298,7 @@
             var fsAvgLuck = (luckStats && luckStats.avg_luck !== null) ? luckStats.avg_luck : null;
             
             // Calculate dynamic luck Y-axis range to center 100% (fullscreen)
+            // Use asymmetric scaling: linear below 100%, compressed above 100%
             var fsLuckMin = 0, fsLuckMax = 200;
             if (luckTrendData.length > 0) {
                 var fsLuckValues = luckTrendData.map(function(p) { return p.y; });
@@ -3294,17 +3307,27 @@
                 
                 console.log('Fullscreen luck range - min:', fsMinLuck, 'max:', fsMaxLuck);
                 
-                // Calculate the maximum distance from 100% to determine symmetric range
-                var fsMaxDistance = Math.max(Math.abs(100 - fsMinLuck), Math.abs(fsMaxLuck - 100));
+                // Calculate distances from 100%
+                var fsDistanceBelow = 100 - fsMinLuck;
+                var fsDistanceAbove = fsMaxLuck - 100;
                 
-                // Add 20% padding for better visibility
+                // For values above 100%, use logarithmic compression
+                var fsCompressedDistanceAbove = fsDistanceAbove > 0 ? 
+                    100 * Math.log10(1 + fsDistanceAbove / 100) : 0;
+                
+                // Use the larger of the two distances
+                var fsMaxDistance = Math.max(fsDistanceBelow, fsCompressedDistanceAbove);
+                
+                // Add 20% padding
                 fsMaxDistance = fsMaxDistance * 1.2;
                 
                 // Set symmetric range around 100%
                 fsLuckMin = Math.max(0, 100 - fsMaxDistance);
                 fsLuckMax = 100 + fsMaxDistance;
                 
-                console.log('Fullscreen luck axis - min:', fsLuckMin.toFixed(1), 'max:', fsLuckMax.toFixed(1));
+                console.log('Fullscreen luck axis - min:', fsLuckMin.toFixed(1), 'max:', fsLuckMax.toFixed(1),
+                    'distBelow:', fsDistanceBelow.toFixed(1), 'distAbove:', fsDistanceAbove.toFixed(1),
+                    'compressed:', fsCompressedDistanceAbove.toFixed(1));
                 
                 // Ensure minimum range of 50% on each side (100 total)
                 if (fsLuckMax - fsLuckMin < 100) {
