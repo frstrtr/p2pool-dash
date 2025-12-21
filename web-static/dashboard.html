@@ -1915,7 +1915,7 @@
             d3.json('../broadcaster_status', function(data) {
                 d3.select('#broadcaster_loading').style('display', 'none');
                 
-                if (!data) {
+                if (!data || !data.enabled) {
                     d3.select('#broadcaster_status_badge')
                         .style('background', 'var(--danger)')
                         .text('Not Available');
@@ -1928,33 +1928,47 @@
                 
                 // Status badge
                 var badge = d3.select('#broadcaster_status_badge');
-                if (data.healthy) {
+                if (data.health && data.health.healthy) {
                     badge.style('background', 'var(--success)').text('✓ Healthy');
                 } else {
                     badge.style('background', 'var(--warning)').text('⚠ Issues');
                 }
                 
                 // Summary stats
-                d3.select('#broadcaster_connections').text(
-                    data.connection_stats.active_connections + ' / ' + data.connection_stats.target_connections
-                );
-                d3.select('#broadcaster_database_size').text(data.database_size.toLocaleString());
+                if (data.health) {
+                    d3.select('#broadcaster_connections').text(
+                        data.health.active_connections + ' / ' + data.health.target_max_peers
+                    );
+                }
                 
-                var totalAttempts = data.connection_stats.total_attempts;
-                var successRate = totalAttempts > 0 ? 
-                    ((data.connection_stats.successful_connections / totalAttempts) * 100).toFixed(1) : 0;
-                d3.select('#broadcaster_success_rate').text(successRate + '%');
+                if (data.database) {
+                    d3.select('#broadcaster_database_size').text(data.database.total_peers.toLocaleString());
+                }
                 
-                var totalBroadcasts = data.successful_broadcasts + data.failed_broadcasts;
-                d3.select('#broadcaster_broadcasts').text(
-                    data.successful_broadcasts + ' / ' + data.failed_broadcasts + 
-                    (totalBroadcasts > 0 ? ' (' + ((data.successful_broadcasts / totalBroadcasts) * 100).toFixed(1) + '%)' : '')
-                );
+                if (data.statistics) {
+                    var totalAttempts = data.statistics.connection_attempts || 0;
+                    var successRate = totalAttempts > 0 ? 
+                        ((data.statistics.successful_connections / totalAttempts) * 100).toFixed(1) : 0;
+                    d3.select('#broadcaster_success_rate').text(successRate + '%');
+                    
+                    var totalBroadcasts = data.statistics.successful_broadcasts + data.statistics.failed_broadcasts;
+                    d3.select('#broadcaster_broadcasts').text(
+                        data.statistics.successful_broadcasts + ' / ' + data.statistics.failed_broadcasts + 
+                        (totalBroadcasts > 0 ? ' (' + ((data.statistics.successful_broadcasts / totalBroadcasts) * 100).toFixed(1) + '%)' : '')
+                    );
+                }
                 
                 // Connected peers table
                 d3.select('#broadcaster_peers_tbody').selectAll('tr').remove();
                 
-                if (!data.connected_peers || data.connected_peers.length === 0) {
+                var connectedPeers = [];
+                if (data.peers) {
+                    // Combine protected and active peers
+                    if (data.peers.protected) connectedPeers = connectedPeers.concat(data.peers.protected);
+                    if (data.peers.active) connectedPeers = connectedPeers.concat(data.peers.active);
+                }
+                
+                if (connectedPeers.length === 0) {
                     var tr = d3.select('#broadcaster_peers_tbody').append('tr');
                     tr.append('td')
                         .attr('colspan', '6')
@@ -1965,10 +1979,12 @@
                 }
                 
                 var tr = d3.select('#broadcaster_peers_tbody').selectAll('tr')
-                    .data(data.connected_peers)
+                    .data(connectedPeers)
                     .enter().append('tr');
                 
-                tr.append('td').text(function(p) { return p.addr; });
+                tr.append('td').text(function(p) { 
+                    return p.host + ':' + p.port + (p.protected ? ' [PROTECTED]' : ''); 
+                });
                 tr.append('td').text(function(p) { return p.score.toFixed(1); });
                 tr.append('td').text(function(p) { return p.source || 'unknown'; });
                 
@@ -1983,9 +1999,8 @@
                 });
                 
                 tr.append('td').text(function(p) {
-                    if (!p.last_seen) return 'Never';
-                    var ago = Math.floor((Date.now() / 1000) - p.last_seen);
-                    return format_duration(ago) + ' ago';
+                    if (!p.uptime_seconds) return 'Just connected';
+                    return format_duration(p.uptime_seconds);
                 });
             });
         }
