@@ -2567,6 +2567,26 @@
                 console.log('Last net diff point:', new Date(netDiffData[netDiffData.length - 1][0]), 'value:', netDiffData[netDiffData.length - 1][1]);
             }
             
+            // Compute average hashrate in window for decay scaling
+            var avgHashrateWindow = 0;
+            if (values.length > 0) {
+                var sumHashWindow = values.reduce(function(a, b) { return a + b; }, 0);
+                avgHashrateWindow = sumHashWindow / values.length;
+            }
+
+            // Helper to estimate expected block time for the pool from network diff and pool hashrate
+            // block_hashes = diff * 2^32; expected time = block_hashes / pool_hashrate
+            var lastNetDiff = (netDiffData.length > 0) ? netDiffData[netDiffData.length - 1][1] : null;
+            var computePoolBlockTimeMs = function(avgHashrate, netDiff) {
+                if (!avgHashrate || avgHashrate <= 0 || !netDiff || netDiff <= 0) {
+                    return 150000; // fallback to Dash target
+                }
+                var blockHashes = netDiff * 4294967296; // 2^32
+                var seconds = blockHashes / avgHashrate;
+                return Math.max(150000, seconds * 1000); // avoid over-aggressive decay
+            };
+            var poolBlockTimeMs = computePoolBlockTimeMs(avgHashrateWindow, lastNetDiff);
+
             // Sort blocks by timestamp
             var sortedBlocks = blocks.slice().sort(function(a, b) { return a.ts - b.ts; });
             
@@ -2626,10 +2646,8 @@
             });
             
             // Interpolate luck trend to align with hashrate time boundaries
-            // Use a simple exponential decay toward 0 after the last known block luck,
-            // based on target block time (Dash ~150s). This reflects rising expected work
-            // with no found block: luck drifts down as time passes without a hit.
-            var targetBlockTimeMs = 150000; // 2.5 minutes
+            // Use exponential decay toward 0 after the last known block luck, scaled by pool expected block time
+            var targetBlockTimeMs = poolBlockTimeMs;
             if (luckTrendData.length > 0) {
                 // Sort by time
                 luckTrendData.sort(function(a, b) { return a[0] - b[0]; });
@@ -3263,8 +3281,8 @@
             });
             
             // Interpolate luck trend to align with hashrate time boundaries
-            // Apply exponential decay toward 0 after the last block (target block 150s)
-            var targetBlockTimeMs = 150000; // 2.5 minutes
+            // Apply exponential decay toward 0 after the last block, scaled by pool expected block time
+            var targetBlockTimeMs = poolBlockTimeMs;
             if (luckTrendData.length > 0) {
                 // Sort by time
                 luckTrendData.sort(function(a, b) { return a[0] - b[0]; });
