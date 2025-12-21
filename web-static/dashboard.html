@@ -291,6 +291,29 @@
             font-size: 0.9rem;
         }
         
+        /* Version column wrapping */
+        td.version-cell {
+            max-width: 120px;
+            word-wrap: break-word;
+            word-break: break-word;
+            white-space: normal;
+            font-size: 0.8rem;
+        }
+        
+        .stat-label {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 5px;
+        }
+        
+        .stat-sublabel {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            margin-top: 3px;
+        }
+        
         tr:last-child td {
             border-bottom: none;
         }
@@ -1170,7 +1193,22 @@
             <div class="table-container">
                 <div class="section-header">
                     <h2>🌐 P2Pool Nodes</h2>
-                    <span class="badge" id="p2pool_peers_count">0</span>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <span class="badge" id="p2pool_peers_count">0</span>
+                        <span class="badge" id="p2pool_status_badge" style="background: var(--success);">✓ Healthy</span>
+                    </div>
+                </div>
+                <div class="stats-grid" style="margin-bottom: 15px; grid-template-columns: repeat(2, 1fr);">
+                    <div class="stat-card" style="padding: 12px;">
+                        <div class="stat-label">Connections</div>
+                        <div class="stat-value" id="p2pool_connections" style="font-size: 1.3rem;">-</div>
+                        <div class="stat-sublabel">Active Peers</div>
+                    </div>
+                    <div class="stat-card" style="padding: 12px;">
+                        <div class="stat-label">Direction</div>
+                        <div class="stat-value" id="p2pool_direction" style="font-size: 1.3rem;">-</div>
+                        <div class="stat-sublabel">In / Out</div>
+                    </div>
                 </div>
                 <div class="table-scroll">
                     <table class="data-table">
@@ -1201,24 +1239,24 @@
                     </div>
                 </div>
                 <div class="stats-grid" style="margin-bottom: 15px; grid-template-columns: repeat(2, 1fr);">
-                    <div class="stat-card">
+                    <div class="stat-card" style="padding: 12px;">
                         <div class="stat-label">Connections</div>
-                        <div class="stat-value" id="broadcaster_connections">-</div>
+                        <div class="stat-value" id="broadcaster_connections" style="font-size: 1.3rem;">-</div>
                         <div class="stat-sublabel">Active / Target</div>
                     </div>
-                    <div class="stat-card">
+                    <div class="stat-card" style="padding: 12px;">
                         <div class="stat-label">Database</div>
-                        <div class="stat-value" id="broadcaster_database_size">-</div>
+                        <div class="stat-value" id="broadcaster_database_size" style="font-size: 1.3rem;">-</div>
                         <div class="stat-sublabel">Total Peers</div>
                     </div>
-                    <div class="stat-card">
+                    <div class="stat-card" style="padding: 12px;">
                         <div class="stat-label">Success</div>
-                        <div class="stat-value" id="broadcaster_success_rate">-</div>
+                        <div class="stat-value" id="broadcaster_success_rate" style="font-size: 1.3rem;">-</div>
                         <div class="stat-sublabel">Connect Rate</div>
                     </div>
-                    <div class="stat-card">
+                    <div class="stat-card" style="padding: 12px;">
                         <div class="stat-label">Broadcasts</div>
-                        <div class="stat-value" id="broadcaster_broadcasts">-</div>
+                        <div class="stat-value" id="broadcaster_broadcasts" style="font-size: 1.3rem;">-</div>
                         <div class="stat-sublabel">Success / Failed</div>
                     </div>
                 </div>
@@ -1885,7 +1923,26 @@
                         .style('color', 'var(--text-muted)')
                         .text('No peers connected');
                     d3.select('#p2pool_peers_show_more').style('display', 'none');
+                    // Reset stats
+                    d3.select('#p2pool_connections').text('0');
+                    d3.select('#p2pool_direction').text('0 / 0');
+                    d3.select('#p2pool_status_badge').style('background', 'var(--error)').text('✗ No Peers');
                     return;
+                }
+                
+                // Calculate stats
+                var incoming = peers.filter(function(p) { return p.incoming; }).length;
+                var outgoing = peers.length - incoming;
+                d3.select('#p2pool_connections').text(peers.length);
+                d3.select('#p2pool_direction').text(incoming + ' / ' + outgoing);
+                
+                // Update health status
+                if (peers.length >= 3) {
+                    d3.select('#p2pool_status_badge').style('background', 'var(--success)').text('✓ Healthy');
+                } else if (peers.length >= 1) {
+                    d3.select('#p2pool_status_badge').style('background', 'var(--warning)').text('⚠ Low Peers');
+                } else {
+                    d3.select('#p2pool_status_badge').style('background', 'var(--error)').text('✗ No Peers');
                 }
                 
                 // Store peers globally and initialize display count
@@ -1914,7 +1971,7 @@
                             var p2p_port = parts[1];
                             return host + ':' + p.web_port + ' (P2P:' + p2p_port + ')';
                         });
-                    tr.append('td').text(function(p) { return p.version || '-'; });
+                    tr.append('td').attr('class', 'version-cell').text(function(p) { return p.version || '-'; });
                     tr.append('td')
                         .html(function(p) { 
                             return p.incoming ? 
