@@ -119,6 +119,61 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
         if not args.testnet:
             factory = yield connect_p2p()
         
+        # Initialize multi-peer broadcaster if enabled
+        broadcaster = None
+        if args.broadcaster_enabled:
+            print ''
+            print '=' * 70
+            print 'INITIALIZING MULTI-PEER BROADCASTER'
+            print '=' * 70
+            try:
+                from dash.broadcaster import DashNetworkBroadcaster
+                
+                local_dashd_addr = (args.dashd_address, args.dashd_p2p_port)
+                broadcaster = DashNetworkBroadcaster(
+                    net=net,
+                    dashd=dashd,
+                    local_dashd_factory=factory,
+                    local_dashd_addr=local_dashd_addr,
+                    datadir_path=datadir_path
+                )
+                
+                # Configure settings
+                broadcaster.max_peers = args.broadcaster_max_peers
+                broadcaster.min_peers = args.broadcaster_min_peers
+                
+                # Start the broadcaster (bootstrap and begin peer management)
+                yield broadcaster.start()
+                
+                # Register with helper module
+                helper.set_broadcaster(broadcaster)
+                
+                print ''
+                print '*** BROADCASTER READY ***'
+                print '  Max peers: %d' % broadcaster.max_peers
+                print '  Min peers: %d' % broadcaster.min_peers
+                print '  Local dashd: %s:%d (PROTECTED)' % local_dashd_addr
+                print '  Peer database: %d peers' % len(broadcaster.peer_db)
+                print '  Active connections: %d' % len(broadcaster.connections)
+                print '=' * 70
+                print ''
+                
+            except Exception as e:
+                print >>sys.stderr, ''
+                print >>sys.stderr, '*** BROADCASTER INITIALIZATION FAILED ***'
+                print >>sys.stderr, '  Error: %s' % e
+                print >>sys.stderr, '  Falling back to local dashd only mode'
+                print >>sys.stderr, '=' * 70
+                print >>sys.stderr, ''
+                log.err(e, 'Broadcaster initialization error:')
+                broadcaster = None
+        else:
+            print ''
+            print 'Multi-peer broadcaster: DISABLED'
+            print '  Using local dashd only for block propagation'
+            print '  (Use without --disable-broadcaster to enable multi-peer broadcasting)'
+            print ''
+        
         print 'Determining payout address...'
         pubkeys = keypool()
         if args.pubkey_hash is None and args.address != 'dynamic':
@@ -571,6 +626,15 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
             try:
                 save_shares()  # Final save and archive
                 print 'Shutdown archival complete'
+                
+                # Stop broadcaster if running
+                if broadcaster:
+                    print 'Stopping broadcaster...'
+                    try:
+                        broadcaster.stop()
+                        print 'Broadcaster stopped'
+                    except Exception as e:
+                        print 'Warning: Broadcaster shutdown error: %s' % str(e)
                 
                 # Compact storage if requested
                 if args.compact_on_shutdown:
@@ -1032,6 +1096,17 @@ def run():
     dashd_group.add_argument('--dashd-p2p-port', metavar='DASHD_P2P_PORT',
         help='''connect to P2P interface at this port (default: %s <read from dash.conf if password not provided>)''' % ', '.join('%s:%i' % (name, net.PARENT.P2P_PORT) for name, net in sorted(realnets.items())),
         type=int, action='store', default=None, dest='dashd_p2p_port')
+    
+    broadcaster_group = parser.add_argument_group('multi-peer broadcaster (experimental)')
+    broadcaster_group.add_argument('--disable-broadcaster',
+        help='disable multi-peer block broadcasting (uses only local dashd for propagation)',
+        action='store_false', default=True, dest='broadcaster_enabled')
+    broadcaster_group.add_argument('--broadcaster-max-peers', metavar='MAX_PEERS',
+        help='maximum number of Dash network peers to maintain connections to (default: 20)',
+        type=int, action='store', default=20, dest='broadcaster_max_peers')
+    broadcaster_group.add_argument('--broadcaster-min-peers', metavar='MIN_PEERS',
+        help='minimum number of peers required for healthy operation (default: 5)',
+        type=int, action='store', default=5, dest='broadcaster_min_peers')
     
     parser.add_argument('--compact-on-shutdown',
         help='compact share storage on graceful shutdown (removes archived shares, saves disk space)',

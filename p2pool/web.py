@@ -1937,6 +1937,10 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     # Add security config endpoint
     web_root.putChild('security_config', WebInterface(lambda: sec_config.get_config_summary(), require_auth=True))
     
+    # Add broadcaster network status endpoint
+    from dash import helper
+    web_root.putChild('broadcaster_status', WebInterface(lambda: helper.get_broadcaster_status(), require_auth=False))
+    
     def get_last_block_info():
         """Get info about the last found block for luck calculation."""
         if not block_history:
