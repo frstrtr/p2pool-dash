@@ -300,8 +300,8 @@ def submit_block(block, ignore_failure, factory, dashd, dashd_work, net):
     print '=' * 80
     print 'BLOCK SUBMISSION PIPELINE COMPLETE'
     print '  Multi-peer: %d peers' % broadcaster_peer_count
-    print '  Local dashd P2P: ✓ (always sent)'
-    print '  RPC verification: ✓ (completed)'
+    print '  Local dashd P2P: [OK] (always sent)'
+    print '  RPC verification: [OK] (completed)'
     print '=' * 80
     print ''
 

@@ -925,8 +925,8 @@ class DashNetworkBroadcaster(object):
         print '  Failed: %d peers' % failures
         print '  Speed: %.1f peers/second' % (len(results) / broadcast_time if broadcast_time > 0 else 0)
         print '  Local dashd: %s' % (
-            'SUCCESS ✓' if local_dashd_success else 
-            'FAILED ✗' if local_dashd_success is False else 
+            'SUCCESS [OK]' if local_dashd_success else 
+            'FAILED [!]' if local_dashd_success is False else 
             'NOT FOUND')
         print '=' * 70
         print ''
