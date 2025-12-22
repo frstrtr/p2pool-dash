@@ -77,9 +77,12 @@ On Ubuntu 24.04+ with OpenSSL 3.0, pyOpenSSL cannot be compiled for Python 2.7 d
 
 **Option A: Use Ubuntu 22.04 or earlier** (has OpenSSL 1.1.1)
 
-**Option B: Manual OpenSSL 1.1.1 installation** (advanced)
+**Option B: Manual OpenSSL 1.1.1 installation** (successfully tested on Ubuntu 24.04)
+
+This approach compiles OpenSSL 1.1.1w locally and uses the official PyPy tarball (which uses system glibc):
+
 ```bash
-# Download and compile OpenSSL 1.1.1
+# 1. Download and compile OpenSSL 1.1.1w
 cd /tmp
 wget https://www.openssl.org/source/openssl-1.1.1w.tar.gz
 tar xzf openssl-1.1.1w.tar.gz
@@ -88,12 +91,27 @@ cd openssl-1.1.1w
 make -j$(nproc)
 make install
 
-# Install cryptography with custom OpenSSL
-LDFLAGS="-L$HOME/.local/openssl-1.1.1/lib" \
-CFLAGS="-I$HOME/.local/openssl-1.1.1/include" \
-LD_LIBRARY_PATH=$HOME/.local/openssl-1.1.1/lib \
-pypy -m pip install --user 'cryptography<3.3' 'pyOpenSSL<21'
+# 2. Download official PyPy tarball (uses system glibc)
+cd /tmp
+wget https://downloads.python.org/pypy/pypy2.7-v7.3.20-linux64.tar.bz2
+tar xjf pypy2.7-v7.3.20-linux64.tar.bz2
+mv pypy2.7-v7.3.20-linux64 ~/.local/
+
+# 3. Add to PATH and install pip
+export PATH="$HOME/.local/pypy2.7-v7.3.20-linux64/bin:$PATH"
+pypy -m ensurepip --user
+
+# 4. Install cryptography and pyOpenSSL with custom OpenSSL
+export LDFLAGS="-L$HOME/.local/openssl-1.1.1/lib"
+export CPPFLAGS="-I$HOME/.local/openssl-1.1.1/include"
+pypy -m pip install --user --no-binary :all: 'cryptography<3' 'pyOpenSSL<21'
+
+# 5. Verify installation (must set LD_LIBRARY_PATH)
+export LD_LIBRARY_PATH=$HOME/.local/openssl-1.1.1/lib:$LD_LIBRARY_PATH
+pypy -c 'import OpenSSL; print("✓ OpenSSL version:", OpenSSL.__version__)'
 ```
+
+**Important:** The startup script will automatically set `PATH` and `LD_LIBRARY_PATH` to use the custom OpenSSL build.
 
 For most users, **skip pyOpenSSL** and proceed without it.
 

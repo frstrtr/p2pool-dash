@@ -3,6 +3,10 @@
 
 cd "$(dirname "$0")"
 
+# Set up PyPy and OpenSSL 1.1.1 environment
+export PATH="$HOME/.local/pypy2.7-v7.3.20-linux64/bin:$PATH"
+export LD_LIBRARY_PATH="$HOME/.local/openssl-1.1.1/lib:$LD_LIBRARY_PATH"
+
 # Litecoin Testnet RPC credentials
 LTC_RPC_USER="litecoinrpc"
 LTC_RPC_PASS="LTC_testnet_pass_2024_secure"
