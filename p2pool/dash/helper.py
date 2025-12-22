@@ -9,31 +9,37 @@ from p2pool.util import deferral, jsonrpc
 
 @deferral.retry('Error while checking dash connection:', 1)
 @defer.inlineCallbacks
-def check(dashd, net):
-    if not (yield net.PARENT.RPC_CHECK(dashd)):
-        print >>sys.stderr, "    Check failed! Make sure that you're connected to the right dashd with --dashd-rpc-port!"
+def check(coind, net):
+    if not (yield net.PARENT.RPC_CHECK(coind)):
+        print >>sys.stderr, "    Check failed! Make sure that you're connected to the right coind with --coind-rpc-port!"
         raise deferral.RetrySilentlyException()
-    if not net.VERSION_CHECK((yield dashd.rpc_getnetworkinfo())['version']):
+    if not net.VERSION_CHECK((yield coind.rpc_getnetworkinfo())['version']):
         print >>sys.stderr, '    dash version too old! Upgrade to v20.0.0 or newer!'
         raise deferral.RetrySilentlyException()
 
-@deferral.retry('Error getting work from dashd:', 3)
+@deferral.retry('Error getting work from coind:', 3)
 @defer.inlineCallbacks
-def getwork(dashd, net, use_getblocktemplate=True):
+def getwork(coind, net, use_getblocktemplate=True):
     def go():
         if use_getblocktemplate:
-            return dashd.rpc_getblocktemplate(dict(mode='template'))
+            # Add Segwit/MWEB rules based on network's required softforks
+            rules = []
+            if 'segwit' in getattr(net, 'SOFTFORKS_REQUIRED', set()):
+                rules.append('segwit')
+            if 'mweb' in getattr(net, 'SOFTFORKS_REQUIRED', set()):
+                rules.append('mweb')
+            return coind.rpc_getblocktemplate(dict(mode='template', rules=rules) if rules else dict(mode='template'))
         else:
-            return dashd.rpc_getmemorypool()
+            return coind.rpc_getmemorypool()
     try:
         start = time.time()
         work = yield go()
         end = time.time()
     except twisted_error.TimeoutError:
-        print >>sys.stderr, '    dashd RPC timeout - dashd may be busy or overloaded, retrying...'
+        print >>sys.stderr, '    coind RPC timeout - coind may be busy or overloaded, retrying...'
         raise deferral.RetrySilentlyException()
     except twisted_error.ConnectionRefusedError:
-        print >>sys.stderr, '    dashd connection refused - is dashd running?'
+        print >>sys.stderr, '    coind connection refused - is coind running?'
         raise deferral.RetrySilentlyException()
     except jsonrpc.Error_for_code(-10): # Initial sync
         print >>sys.stderr, '    Dash Core is in initial sync, waiting for blocks...'
@@ -53,7 +59,7 @@ def getwork(dashd, net, use_getblocktemplate=True):
             error_msg = str(e)
         except:
             error_msg = 'JSON-RPC error (code: %s)' % getattr(e, 'code', 'unknown')
-        print >>sys.stderr, '    dashd RPC error: %s' % error_msg
+        print >>sys.stderr, '    coind RPC error: %s' % error_msg
         raise deferral.RetrySilentlyException()
 
     # Include ALL transactions from getblocktemplate
@@ -66,9 +72,9 @@ def getwork(dashd, net, use_getblocktemplate=True):
             packed_transactions.append(x.decode('hex'))
 
     if 'height' not in work:
-        work['height'] = (yield dashd.rpc_getblock(work['previousblockhash']))['height'] + 1
+        work['height'] = (yield coind.rpc_getblock(work['previousblockhash']))['height'] + 1
     elif p2pool.DEBUG:
-        assert work['height'] == (yield dashd.rpc_getblock(work['previousblockhash']))['height'] + 1
+        assert work['height'] == (yield coind.rpc_getblock(work['previousblockhash']))['height'] + 1
 
     # Dash Payments
     packed_payments = []
@@ -131,23 +137,23 @@ def submit_block_p2p(block, factory, net):
     block_hash = dash_data.hash256(dash_data.block_header_type.pack(block['header']))
     
     if factory.conn.value is None:
-        print >>sys.stderr, 'No dashd P2P connection when block submittal attempted! %s%064x' % (net.PARENT.BLOCK_EXPLORER_URL_PREFIX, block_hash)
+        print >>sys.stderr, 'No coind P2P connection when block submittal attempted! %s%064x' % (net.PARENT.BLOCK_EXPLORER_URL_PREFIX, block_hash)
         raise deferral.RetrySilentlyException()
     
     # Serialize and send block
     try:
-        print 'P2P: Sending block %064x to dashd via P2P protocol...' % block_hash
+        print 'P2P: Sending block %064x to coind via P2P protocol...' % block_hash
         print 'P2P: Block header version: %d, prev: %064x' % (block['header']['version'], block['header']['previous_block'])
         print 'P2P: Block has %d transactions' % len(block.get('txs', []))
         factory.conn.value.send_block(block=block)
-        print 'P2P: Block sent successfully to dashd for network propagation'
+        print 'P2P: Block sent successfully to coind for network propagation'
     except Exception as e:
         print >>sys.stderr, 'P2P: ERROR sending block: %s' % e
         raise
 
 @deferral.retry('Error submitting block: (will retry)', 10, 10)
 @defer.inlineCallbacks
-def submit_block_rpc(block, ignore_failure, dashd, dashd_work, net):
+def submit_block_rpc(block, ignore_failure, coind, coind_work, net):
     block_hash = dash_data.hash256(dash_data.block_header_type.pack(block['header']))
     pow_hash = net.PARENT.POW_FUNC(dash_data.block_header_type.pack(block['header']))
     block_height = block['header'].get('height', 'unknown')
@@ -166,14 +172,14 @@ def submit_block_rpc(block, ignore_failure, dashd, dashd_work, net):
     success = False
     p2p_won_race = False
     
-    if dashd_work.value['use_getblocktemplate']:
+    if coind_work.value['use_getblocktemplate']:
         try:
             block_data = dash_data.block_type.pack(block).encode('hex')
             print 'RPC: Calling submitblock with %d bytes of data...' % len(block_data)
-            result = yield dashd.rpc_submitblock(block_data)
+            result = yield coind.rpc_submitblock(block_data)
             print 'RPC: submitblock returned: %r' % result
         except jsonrpc.Error_for_code(-32601): # Method not found, for older litecoin versions
-            result = yield dashd.rpc_getblocktemplate(dict(mode='submit', data=dash_data.block_type.pack(block).encode('hex')))
+            result = yield coind.rpc_getblocktemplate(dict(mode='submit', data=dash_data.block_type.pack(block).encode('hex')))
         except Exception as e:
             print >>sys.stderr, 'RPC: submitblock ERROR: %s' % e
             raise
@@ -194,7 +200,7 @@ def submit_block_rpc(block, ignore_failure, dashd, dashd_work, net):
             elif 'stale' in str(result).lower():
                 print >>sys.stderr, '    Block is STALE - another block was found first!'
     else:
-        result = yield dashd.rpc_getmemorypool(dash_data.block_type.pack(block).encode('hex'))
+        result = yield coind.rpc_getmemorypool(dash_data.block_type.pack(block).encode('hex'))
         success = result
         p2p_won_race = False
     success_expected = pow_hash <= block['header']['bits'].target
@@ -213,15 +219,15 @@ def submit_block_rpc(block, ignore_failure, dashd, dashd_work, net):
     
     # Check chainlock status after submission (but skip if P2P already submitted it)
     if success and not p2p_won_race:
-        yield check_block_chainlock(dashd, block_hash, net)
+        yield check_block_chainlock(coind, block_hash, net)
 
 @defer.inlineCallbacks
-def submit_block(block, ignore_failure, factory, dashd, dashd_work, net):
+def submit_block(block, ignore_failure, factory, coind, coind_work, net):
     """Submit block via both P2P and RPC for redundant propagation."""
     # Submit via P2P first for fastest network propagation (synchronous)
     submit_block_p2p(block, factory, net)
     # Also submit via RPC (submitblock call) and wait for result
-    yield submit_block_rpc(block, ignore_failure, dashd, dashd_work, net)
+    yield submit_block_rpc(block, ignore_failure, coind, coind_work, net)
 
 @defer.inlineCallbacks
 def check_block_header(bitcoind, block_hash):
@@ -233,7 +239,7 @@ def check_block_header(bitcoind, block_hash):
         defer.returnValue(True)
 
 @defer.inlineCallbacks
-def check_block_chainlock(dashd, block_hash, net):
+def check_block_chainlock(coind, block_hash, net):
     """Check and log the chainlock status of a submitted block."""
     from twisted.internet import reactor
     
@@ -252,7 +258,7 @@ def check_block_chainlock(dashd, block_hash, net):
     for delay in [2, 5, 10, 30, 60]:
         yield deferral.sleep(delay)
         try:
-            block_info = yield dashd.rpc_getblock('%064x' % block_hash)
+            block_info = yield coind.rpc_getblock('%064x' % block_hash)
             chainlock = block_info.get('chainlock', False)
             confirmations = block_info.get('confirmations', 0)
             height = block_info.get('height', 'unknown')
@@ -278,10 +284,10 @@ def check_block_chainlock(dashd, block_hash, net):
                 print ''
                 # Check what block is at this height now
                 try:
-                    current_hash = yield dashd.rpc_getblockhash(height)
+                    current_hash = yield coind.rpc_getblockhash(height)
                     if current_hash != '%064x' % block_hash:
                         print '  Current block at height %s: %s' % (height, current_hash)
-                        current_block = yield dashd.rpc_getblock(current_hash)
+                        current_block = yield coind.rpc_getblock(current_hash)
                         print '  Current block chainlock: %s' % current_block.get('chainlock', False)
                 except Exception as e:
                     print '  Error checking current block: %s' % e

@@ -86,8 +86,8 @@ rotate_log() {
 # Function to start p2pool
 start_p2pool() {
     pypy run_p2pool.py --net dash \
-        --dashd-address 127.0.0.1 \
-        --dashd-rpc-port 9998 \
+        --coind-address 127.0.0.1 \
+        --coind-rpc-port 9998 \
         -a XrTwUgw3ikobuXdLKvvSUjL9JpuPs9uqL7 \
         "$@"
 }
@@ -106,8 +106,8 @@ for arg in "$@"; do
             rotate_log
             echo "Starting P2Pool in daemon mode (logging to $LOG_FILE)..."
             nohup bash -c "cd '$SCRIPT_DIR' && pypy run_p2pool.py --net dash \
-                --dashd-address 127.0.0.1 \
-                --dashd-rpc-port 9998 \
+                --coind-address 127.0.0.1 \
+                --coind-rpc-port 9998 \
                 -a XrTwUgw3ikobuXdLKvvSUjL9JpuPs9uqL7 \
                 >> '$LOG_FILE' 2>&1" > /dev/null 2>&1 &
             disown
@@ -163,8 +163,8 @@ if [ "$DAEMON_MODE" = true ]; then
     # Background/daemon mode - suitable for SSH launching
     echo "Starting P2Pool in daemon mode (logging to $LOG_FILE)..."
     nohup bash -c "cd '$SCRIPT_DIR' && pypy run_p2pool.py --net dash \
-        --dashd-address 127.0.0.1 \
-        --dashd-rpc-port 9998 \
+        --coind-address 127.0.0.1 \
+        --coind-rpc-port 9998 \
         -a XrTwUgw3ikobuXdLKvvSUjL9JpuPs9uqL7 \
         >> '$LOG_FILE' 2>&1" > /dev/null 2>&1 &
     disown

@@ -81,12 +81,12 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
         
         @defer.inlineCallbacks
         def connect_p2p():
-            # connect to dashd over dash-p2p
-            print '''Testing dashd P2P connection to '%s:%s'...''' % (args.dashd_address, args.dashd_p2p_port)
+            # connect to coind over dash-p2p
+            print '''Testing coind P2P connection to '%s:%s'...''' % (args.coind_address, args.coind_p2p_port)
             factory = dash_p2p.ClientFactory(net.PARENT)
-            reactor.connectTCP(args.dashd_address, args.dashd_p2p_port, factory)
+            reactor.connectTCP(args.coind_address, args.coind_p2p_port, factory)
             def long():
-                print '''    ...taking a while. Common reasons for this include all of dashd's connection slots being used...'''
+                print '''    ...taking a while. Common reasons for this include all of coind's connection slots being used...'''
             long_dc = reactor.callLater(5, long)
             yield factory.getProtocol() # waits until handshake is successful
             if not long_dc.called: long_dc.cancel()
@@ -94,20 +94,20 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
             print
             defer.returnValue(factory)
         
-        if args.testnet: # establish p2p connection first if testnet so dashd can work without connections
+        if args.testnet: # establish p2p connection first if testnet so coind can work without connections
             factory = yield connect_p2p()
         
-        # connect to dashd over JSON-RPC and do initial getmemorypool
-        url = '%s://%s:%i/' % ('https' if args.dashd_rpc_ssl else 'http', args.dashd_address, args.dashd_rpc_port)
-        print '''Testing dashd RPC connection to '%s' with username '%s'...''' % (url, args.dashd_rpc_username)
-        dashd = jsonrpc.HTTPProxy(url, dict(Authorization='Basic ' + base64.b64encode(args.dashd_rpc_username + ':' + args.dashd_rpc_password)), timeout=30)
-        yield helper.check(dashd, net)
-        temp_work = yield helper.getwork(dashd, net)
+        # connect to coind over JSON-RPC and do initial getmemorypool
+        url = '%s://%s:%i/' % ('https' if args.coind_rpc_ssl else 'http', args.coind_address, args.coind_rpc_port)
+        print '''Testing coind RPC connection to '%s' with username '%s'...''' % (url, args.coind_rpc_username)
+        coind = jsonrpc.HTTPProxy(url, dict(Authorization='Basic ' + base64.b64encode(args.coind_rpc_username + ':' + args.coind_rpc_password)), timeout=30)
+        yield helper.check(coind, net)
+        temp_work = yield helper.getwork(coind, net)
         
-        dashd_getnetworkinfo_var = variable.Variable(None)
+        coind_getnetworkinfo_var = variable.Variable(None)
         @defer.inlineCallbacks
         def poll_warnings():
-            dashd_getnetworkinfo_var.set((yield deferral.retry('Error while calling getnetworkinfo:')(dashd.rpc_getnetworkinfo)()))
+            coind_getnetworkinfo_var.set((yield deferral.retry('Error while calling getnetworkinfo:')(coind.rpc_getnetworkinfo)()))
         yield poll_warnings()
         deferral.RobustLoopingCall(poll_warnings).start(20*60)
         
@@ -132,14 +132,14 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
                 address = None
             
             if address is not None:
-                res = yield deferral.retry('Error validating cached address:', 5)(lambda: dashd.rpc_validateaddress(address))()
+                res = yield deferral.retry('Error validating cached address:', 5)(lambda: coind.rpc_validateaddress(address))()
                 if not res['isvalid'] or not res['ismine']:
-                    print '    Cached address is either invalid or not controlled by local dashd!'
+                    print '    Cached address is either invalid or not controlled by local coind!'
                     address = None
             
             if address is None:
-                print '    Getting payout address from dashd...'
-                address = yield deferral.retry('Error getting payout address from dashd:', 5)(lambda: dashd.rpc_getaccountaddress('p2pool'))()
+                print '    Getting payout address from coind...'
+                address = yield deferral.retry('Error getting payout address from coind:', 5)(lambda: coind.rpc_getaccountaddress('p2pool'))()
             
             with open(address_path, 'wb') as f:
                 f.write(address)
@@ -206,7 +206,7 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
 
             pubkeys = keypool()
             for i in xrange(args.numaddresses):
-                address = yield deferral.retry('Error getting a dynamic address from dashd:', 5)(lambda: dashd.rpc_getnewaddress('p2pool'))()
+                address = yield deferral.retry('Error getting a dynamic address from coind:', 5)(lambda: coind.rpc_getnewaddress('p2pool'))()
                 new_pubkey = dash_data.address_to_pubkey_hash(address, net.PARENT)
                 pubkeys.addkey(new_pubkey)
 
@@ -248,7 +248,7 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
         print 'Initializing work...'
         print '    Building share chain graph from %i shares...' % (len(shares),)
         
-        node = p2pool_node.Node(factory, dashd, shares.values(), known_verified, net)
+        node = p2pool_node.Node(factory, coind, shares.values(), known_verified, net)
         yield node.start()
         
         print '    ...share chain initialized!'
@@ -615,8 +615,8 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
         
         print 'Listening for workers on %r port %i...' % (worker_endpoint[0], worker_endpoint[1])
         
-        wb = work.WorkerBridge(node, my_pubkey_hash, args.donation_percentage, merged_urls, args.worker_fee, args, pubkeys, dashd)
-        web_root, record_block_found, get_last_block_info = web.get_web_root(wb, datadir_path, dashd_getnetworkinfo_var, static_dir=args.web_static)
+        wb = work.WorkerBridge(node, my_pubkey_hash, args.donation_percentage, merged_urls, args.worker_fee, args, pubkeys, coind)
+        web_root, record_block_found, get_last_block_info = web.get_web_root(wb, datadir_path, coind_getnetworkinfo_var, static_dir=args.web_static)
         caching_wb = worker_interface.CachingWorkerBridge(wb)
         worker_interface.WorkerInterface(caching_wb).attach_to(web_root, get_handler=lambda request: request.redirect('/static/'))
         web_serverfactory = server.Site(web_root)
@@ -664,8 +664,8 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
                                 node.tracker, node.best_share_var.value, lookbehind)
                             pool_hashrate = raw_hashrate / (1 - stale_prop) if stale_prop < 1 else raw_hashrate
                     # Get network difficulty
-                    if node.dashd_work.value and 'bits' in node.dashd_work.value:
-                        network_diff = dash_data.target_to_difficulty(node.dashd_work.value['bits'].target)
+                    if node.coind_work.value and 'bits' in node.coind_work.value:
+                        network_diff = dash_data.target_to_difficulty(node.coind_work.value['bits'].target)
                 except Exception:
                     pass
                 
@@ -845,10 +845,10 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
                         this_str += '\n Pool: %sH/s Stale rate: %.1f%% Expected time to block: %s' % (
                             math.format(int(real_att_s)),
                             100*stale_prop,
-                            math.format_dt(2**256 / node.dashd_work.value['bits'].target / real_att_s),
+                            math.format_dt(2**256 / node.coind_work.value['bits'].target / real_att_s),
                         )
                         
-                        for warning in p2pool_data.get_warnings(node.tracker, node.best_share_var.value, net, dashd_getnetworkinfo_var.value, node.dashd_work.value):
+                        for warning in p2pool_data.get_warnings(node.tracker, node.best_share_var.value, net, coind_getnetworkinfo_var.value, node.coind_work.value):
                             print >>sys.stderr, '#'*40
                             print >>sys.stderr, '>>> Warning: ' + warning
                             print >>sys.stderr, '#'*40
@@ -891,7 +891,7 @@ def run():
         help='enable benchmarking mode (print performance timing info)',
         action='store_const', const=True, default=False, dest='bench')
     parser.add_argument('-a', '--address',
-        help='generate payouts to this address (default: <address requested from dashd>), or (dynamic)',
+        help='generate payouts to this address (default: <address requested from coind>), or (dynamic)',
         type=str, action='store', default=None, dest='address')
     parser.add_argument('-i', '--numaddresses',
         help='number of dash auto-generated addresses to maintain for getwork dynamic address allocation',
@@ -961,26 +961,26 @@ def run():
         help='Auto-adjust stratum mining difficulty on each connection to target this many seconds per pseudoshare (default: 10)',
         type=float, action='store', default=10., dest='share_rate')
     
-    dashd_group = parser.add_argument_group('dashd interface')
-    dashd_group.add_argument('--dashd-config-path', metavar='DASHD_CONFIG_PATH',
-        help='custom configuration file path (when dashd -conf option used)',
-        type=str, action='store', default=None, dest='dashd_config_path')
-    dashd_group.add_argument('--dashd-address', metavar='DASHD_ADDRESS',
+    coind_group = parser.add_argument_group('coind interface')
+    coind_group.add_argument('--coind-config-path', metavar='COIND_CONFIG_PATH',
+        help='custom configuration file path (when coind -conf option used)',
+        type=str, action='store', default=None, dest='coind_config_path')
+    coind_group.add_argument('--coind-address', metavar='COIND_ADDRESS',
         help='connect to this address (default: 127.0.0.1)',
-        type=str, action='store', default='127.0.0.1', dest='dashd_address')
-    dashd_group.add_argument('--dashd-rpc-port', metavar='DASHD_RPC_PORT',
+        type=str, action='store', default='127.0.0.1', dest='coind_address')
+    coind_group.add_argument('--coind-rpc-port', metavar='COIND_RPC_PORT',
         help='''connect to JSON-RPC interface at this port (default: %s <read from dash.conf if password not provided>)''' % ', '.join('%s:%i' % (name, net.PARENT.RPC_PORT) for name, net in sorted(realnets.items())),
-        type=int, action='store', default=None, dest='dashd_rpc_port')
-    dashd_group.add_argument('--dashd-rpc-ssl',
+        type=int, action='store', default=None, dest='coind_rpc_port')
+    coind_group.add_argument('--coind-rpc-ssl',
         help='connect to JSON-RPC interface using SSL',
-        action='store_true', default=False, dest='dashd_rpc_ssl')
-    dashd_group.add_argument('--dashd-p2p-port', metavar='DASHD_P2P_PORT',
+        action='store_true', default=False, dest='coind_rpc_ssl')
+    coind_group.add_argument('--coind-p2p-port', metavar='COIND_P2P_PORT',
         help='''connect to P2P interface at this port (default: %s <read from dash.conf if password not provided>)''' % ', '.join('%s:%i' % (name, net.PARENT.P2P_PORT) for name, net in sorted(realnets.items())),
-        type=int, action='store', default=None, dest='dashd_p2p_port')
+        type=int, action='store', default=None, dest='coind_p2p_port')
     
-    dashd_group.add_argument(metavar='DASHD_RPCUSERPASS',
-        help='dashd RPC interface username, then password, space-separated (only one being provided will cause the username to default to being empty, and none will cause P2Pool to read them from dash.conf)',
-        type=str, action='store', default=[], nargs='*', dest='dashd_rpc_userpass')
+    coind_group.add_argument(metavar='COIND_RPCUSERPASS',
+        help='coind RPC interface username, then password, space-separated (only one being provided will cause the username to default to being empty, and none will cause P2Pool to read them from dash.conf)',
+        type=str, action='store', default=[], nargs='*', dest='coind_rpc_userpass')
     
     args = parser.parse_args()
     
@@ -1014,12 +1014,12 @@ def run():
         sec_config.set_web_password(username, password)
         print 'Web interface password protection enabled for user: %s' % username
     
-    if len(args.dashd_rpc_userpass) > 2:
+    if len(args.coind_rpc_userpass) > 2:
         parser.error('a maximum of two arguments are allowed')
-    args.dashd_rpc_username, args.dashd_rpc_password = ([None, None] + args.dashd_rpc_userpass)[-2:]
+    args.coind_rpc_username, args.coind_rpc_password = ([None, None] + args.coind_rpc_userpass)[-2:]
     
-    if args.dashd_rpc_password is None:
-        conf_path = args.dashd_config_path or net.PARENT.CONF_FILE_FUNC()
+    if args.coind_rpc_password is None:
+        conf_path = args.coind_config_path or net.PARENT.CONF_FILE_FUNC()
         if not os.path.exists(conf_path):
             parser.error('''dash configuration file not found. Manually enter your RPC password.\r\n'''
                 '''If you actually haven't created a configuration file, you should create one at %s with the text:\r\n'''
@@ -1038,26 +1038,26 @@ def run():
             k, v = line.split('=', 1)
             contents[k.strip()] = v.strip()
         for conf_name, var_name, var_type in [
-            ('rpcuser', 'dashd_rpc_username', str),
-            ('rpcpassword', 'dashd_rpc_password', str),
-            ('rpcport', 'dashd_rpc_port', int),
-            ('port', 'dashd_p2p_port', int),
+            ('rpcuser', 'coind_rpc_username', str),
+            ('rpcpassword', 'coind_rpc_password', str),
+            ('rpcport', 'coind_rpc_port', int),
+            ('port', 'coind_p2p_port', int),
         ]:
             if getattr(args, var_name) is None and conf_name in contents:
                 setattr(args, var_name, var_type(contents[conf_name]))
         if 'rpcssl' in contents and contents['rpcssl'] != '0':
-                args.dashd_rpc_ssl = True
-        if args.dashd_rpc_password is None:
+                args.coind_rpc_ssl = True
+        if args.coind_rpc_password is None:
             parser.error('''dash configuration file didn't contain an rpcpassword= line! Add one!''')
     
-    if args.dashd_rpc_username is None:
-        args.dashd_rpc_username = ''
+    if args.coind_rpc_username is None:
+        args.coind_rpc_username = ''
     
-    if args.dashd_rpc_port is None:
-        args.dashd_rpc_port = net.PARENT.RPC_PORT
+    if args.coind_rpc_port is None:
+        args.coind_rpc_port = net.PARENT.RPC_PORT
     
-    if args.dashd_p2p_port is None:
-        args.dashd_p2p_port = net.PARENT.P2P_PORT
+    if args.coind_p2p_port is None:
+        args.coind_p2p_port = net.PARENT.P2P_PORT
     
     if args.p2pool_port is None:
         args.p2pool_port = net.P2P_PORT

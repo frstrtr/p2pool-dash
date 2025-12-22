@@ -35,8 +35,8 @@ pypy run_p2pool.py \
     --net $NET \
     --address $P2POOL_ADDRESS \
     --fee $P2POOL_FEE \
-    --dashd-address $LTC_RPC_HOST \
-    --dashd-rpc-port $LTC_RPC_PORT \
+    --coind-address $LTC_RPC_HOST \
+    --coind-rpc-port $LTC_RPC_PORT \
     --worker-port 9327 \
     --p2pool-port 9338 \
     --max-conns 40 \

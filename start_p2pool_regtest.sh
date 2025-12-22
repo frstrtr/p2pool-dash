@@ -85,8 +85,8 @@ echo "Starting P2Pool in REGTEST mode..."
 echo "Log file: $LOG_FILE"
 
 pypy run_p2pool.py --net dash_regtest \
-    --dashd-address 127.0.0.1 \
-    --dashd-rpc-port 19998 \
+    --coind-address 127.0.0.1 \
+    --coind-rpc-port 19998 \
     -a "$REGTEST_ADDRESS" \
     --give-author 0 \
     "$@" 2>&1 | tee -a "$LOG_FILE"

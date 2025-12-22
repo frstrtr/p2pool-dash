@@ -79,9 +79,9 @@ case "$1" in
         echo "Log file: $LOG_FILE"
         
         nohup bash -c "cd '$SCRIPT_DIR' && pypy run_p2pool.py --net dash --testnet \
-            --dashd-address 127.0.0.1 \
-            --dashd-rpc-port 19998 \
-            --dashd-p2p-port 19999 \
+            --coind-address 127.0.0.1 \
+            --coind-rpc-port 19998 \
+            --coind-p2p-port 19999 \
             -a $TESTNET_ADDRESS \
             --give-author 0 \
             --web-static web-static \
@@ -112,9 +112,9 @@ case "$1" in
         echo "Log file: $LOG_FILE"
         
         pypy run_p2pool.py --net dash --testnet \
-            --dashd-address 127.0.0.1 \
-            --dashd-rpc-port 19998 \
-            --dashd-p2p-port 19999 \
+            --coind-address 127.0.0.1 \
+            --coind-rpc-port 19998 \
+            --coind-p2p-port 19999 \
             -a "$TESTNET_ADDRESS" \
             --give-author 0 \
             --web-static web-static \

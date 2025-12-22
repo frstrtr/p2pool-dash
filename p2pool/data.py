@@ -691,7 +691,7 @@ def get_desired_version_counts(tracker, best_share_hash, dist):
         res[share.desired_version] = res.get(share.desired_version, 0) + dash_data.target_to_average_attempts(share.target)
     return res
 
-def get_warnings(tracker, best_share, net, dashd_getnetworkinfo, dashd_work_value):
+def get_warnings(tracker, best_share, net, coind_getnetworkinfo, coind_work_value):
     res = []
     
     desired_version_counts = get_desired_version_counts(tracker, best_share,
@@ -702,18 +702,18 @@ def get_warnings(tracker, best_share, net, dashd_getnetworkinfo, dashd_work_valu
             'An upgrade is likely necessary. Check https://github.com/dashpay/p2pool-dash for more information.' % (
                 majority_desired_version, 100*desired_version_counts[majority_desired_version]/sum(desired_version_counts.itervalues())))
     
-    if dashd_getnetworkinfo['warnings'] != '':
-        if 'This is a pre-release test build' not in dashd_getnetworkinfo['warnings']:
+    if coind_getnetworkinfo['warnings'] != '':
+        if 'This is a pre-release test build' not in coind_getnetworkinfo['warnings']:
             # Filter out wallet encryption warning spam
-            if 'encrypt your wallet' not in dashd_getnetworkinfo['warnings']:
-                res.append('(from dashd) %s' % (dashd_getnetworkinfo['warnings'],))
+            if 'encrypt your wallet' not in coind_getnetworkinfo['warnings']:
+                res.append('(from coind) %s' % (coind_getnetworkinfo['warnings'],))
     
-    version_warning = getattr(net, 'VERSION_WARNING', lambda v: None)(dashd_getnetworkinfo['version'])
+    version_warning = getattr(net, 'VERSION_WARNING', lambda v: None)(coind_getnetworkinfo['version'])
     if version_warning is not None:
         res.append(version_warning)
     
-    if time.time() > dashd_work_value['last_update'] + 60:
-        res.append('''LOST CONTACT WITH DASHD for %s! Check that it isn't frozen or dead!''' % (math.format_dt(time.time() - dashd_work_value['last_update']),))
+    if time.time() > coind_work_value['last_update'] + 60:
+        res.append('''LOST CONTACT WITH COIND for %s! Check that it isn't frozen or dead!''' % (math.format_dt(time.time() - coind_work_value['last_update']),))
     
     return res
 

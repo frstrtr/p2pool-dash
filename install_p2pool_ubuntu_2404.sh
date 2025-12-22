@@ -100,7 +100,7 @@ After=network.target
 User=$USER
 WorkingDirectory=$REPO_DIR
 Environment="LD_LIBRARY_PATH=$INSTALL_DIR/openssl/lib"
-ExecStart=$PYPY_BIN run_p2pool.py --net dash --dashd-rpc-port $RPC_PORT --dashd-rpc-user $RPC_USER --dashd-rpc-pass $RPC_PASS --p2p-port $P2P_PORT --worker-port $WORKER_PORT --give-author 0 --fee 0 -a $FEE_ADDR
+ExecStart=$PYPY_BIN run_p2pool.py --net dash --coind-rpc-port $RPC_PORT --coind-rpc-user $RPC_USER --coind-rpc-pass $RPC_PASS --p2p-port $P2P_PORT --worker-port $WORKER_PORT --give-author 0 --fee 0 -a $FEE_ADDR
 Restart=always
 RestartSec=10
 

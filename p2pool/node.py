@@ -149,16 +149,16 @@ class P2PNode(p2p.Node):
             
             def spread():
                 if (self.node.get_height_rel_highest(share.header['previous_block']) > -5 or
-                    self.node.dashd_work.value['previous_block'] in [share.header['previous_block'], share.header_hash]):
+                    self.node.coind_work.value['previous_block'] in [share.header['previous_block'], share.header_hash]):
                     self.broadcast_share(share.hash)
             spread()
             reactor.callLater(5, spread) # so get_height_rel_highest can update
         
 
 class Node(object):
-    def __init__(self, factory, dashd, shares, known_verified_share_hashes, net):
+    def __init__(self, factory, coind, shares, known_verified_share_hashes, net):
         self.factory = factory
-        self.dashd = dashd
+        self.coind = coind
         self.net = net
         
         self.tracker = p2pool_data.OkayTracker(self.net)
@@ -177,15 +177,15 @@ class Node(object):
         stop_signal = variable.Event()
         self.stop = stop_signal.happened
         
-        # DASHD WORK
+        # COIND WORK
         
-        self.dashd_work = variable.Variable((yield helper.getwork(self.dashd, self.net)))
+        self.coind_work = variable.Variable((yield helper.getwork(self.coind, self.net)))
         @defer.inlineCallbacks
         def work_poller():
             while stop_signal.times == 0:
                 flag = self.factory.new_block.get_deferred()
                 try:
-                    self.dashd_work.set((yield helper.getwork(self.dashd, self.net, self.dashd_work.value['use_getblocktemplate'])))
+                    self.coind_work.set((yield helper.getwork(self.coind, self.net, self.coind_work.value['use_getblocktemplate'])))
                 except:
                     log.err()
                 yield defer.DeferredList([flag, deferral.sleep(15)], fireOnOneCallback=True)
@@ -196,17 +196,17 @@ class Node(object):
         self.best_block_header = variable.Variable(None)
         def handle_header(new_header):
             # check that header matches current target
-            if not (self.net.PARENT.POW_FUNC(dash_data.block_header_type.pack(new_header)) <= self.dashd_work.value['bits'].target):
+            if not (self.net.PARENT.POW_FUNC(dash_data.block_header_type.pack(new_header)) <= self.coind_work.value['bits'].target):
                 return
-            dashd_best_block = self.dashd_work.value['previous_block']
+            coind_best_block = self.coind_work.value['previous_block']
             if (self.best_block_header.value is None
                 or (
-                    new_header['previous_block'] == dashd_best_block and
-                    self.net.PARENT.BLOCKHASH_FUNC(dash_data.block_header_type.pack(self.best_block_header.value)) == dashd_best_block
+                    new_header['previous_block'] == coind_best_block and
+                    self.net.PARENT.BLOCKHASH_FUNC(dash_data.block_header_type.pack(self.best_block_header.value)) == coind_best_block
                 ) # new is child of current and previous is current
                 or (
-                    self.net.PARENT.BLOCKHASH_FUNC(dash_data.block_header_type.pack(new_header)) == dashd_best_block and
-                    self.best_block_header.value['previous_block'] != dashd_best_block
+                    self.net.PARENT.BLOCKHASH_FUNC(dash_data.block_header_type.pack(new_header)) == coind_best_block and
+                    self.best_block_header.value['previous_block'] != coind_best_block
                 )): # new is current and previous is not a child of current
                 self.best_block_header.set(new_header)
         self.handle_header = handle_header
@@ -215,47 +215,47 @@ class Node(object):
             if self.factory.conn.value is None:
                 return
             try:
-                header = yield self.factory.conn.value.get_block_header(self.dashd_work.value['previous_block'])
+                header = yield self.factory.conn.value.get_block_header(self.coind_work.value['previous_block'])
                 handle_header(header)
             except defer.TimeoutError:
-                # Dashd didn't respond in time, will retry on next call
-                print 'Warning: Timeout while requesting block header from dashd'
+                # Coind didn't respond in time, will retry on next call
+                print 'Warning: Timeout while requesting block header from coind'
             except Exception as e:
                 # Log other errors but don't crash
                 print 'Warning: Error while requesting block header:', str(e)
-        self.dashd_work.changed.watch(lambda _: poll_header())
+        self.coind_work.changed.watch(lambda _: poll_header())
         yield deferral.retry('Error while requesting best block header:')(poll_header)()
         
         # BEST SHARE
         
         self.known_txs_var = variable.VariableDict({}) # hash -> tx
         self.mining_txs_var = variable.Variable({}) # hash -> tx
-        self.get_height_rel_highest = yield height_tracker.get_height_rel_highest_func(self.dashd, self.factory, lambda: self.dashd_work.value['previous_block'], self.net)
+        self.get_height_rel_highest = yield height_tracker.get_height_rel_highest_func(self.coind, self.factory, lambda: self.coind_work.value['previous_block'], self.net)
         
         self.best_share_var = variable.Variable(None)
         self.desired_var = variable.Variable(None)
-        self.dashd_work.changed.watch(lambda _: self.set_best_share())
+        self.coind_work.changed.watch(lambda _: self.set_best_share())
         self.set_best_share()
         
         # setup p2p logic and join p2pool network
         
         # update mining_txs according to getwork results
-        @self.dashd_work.changed.run_and_watch
+        @self.coind_work.changed.run_and_watch
         def _(_=None):
             new_mining_txs = {}
             added_known_txs = {}
-            for tx_hash, tx in zip(self.dashd_work.value['transaction_hashes'], self.dashd_work.value['transactions']):
+            for tx_hash, tx in zip(self.coind_work.value['transaction_hashes'], self.coind_work.value['transactions']):
                 new_mining_txs[tx_hash] = tx
                 added_known_txs[tx_hash] = tx
             self.mining_txs_var.set(new_mining_txs)
             self.known_txs_var.add(added_known_txs)
-        # add p2p transactions from dashd to known_txs
+        # add p2p transactions from coind to known_txs
         @self.factory.new_tx.watch
         def _(tx):
             self.known_txs_var.add({
                 dash_data.hash256(dash_data.tx_type.pack(tx)): tx,
             })
-        # forward transactions seen to dashd
+        # forward transactions seen to coind
         @self.known_txs_var.added.watch
         @defer.inlineCallbacks
         def _(added):
@@ -275,9 +275,9 @@ class Node(object):
             if block is None:
                 print >>sys.stderr, 'GOT INCOMPLETE BLOCK FROM PEER! %s dash: %s%064x' % (p2pool_data.format_hash(share.hash), self.net.PARENT.BLOCK_EXPLORER_URL_PREFIX, share.header_hash)
                 return
-            helper.submit_block(block, True, self.factory, self.dashd, self.dashd_work, self.net)
+            helper.submit_block(block, True, self.factory, self.coind, self.coind_work, self.net)
             print
-            print 'GOT BLOCK FROM PEER! Passing to dashd! %s dash: %s%064x' % (p2pool_data.format_hash(share.hash), self.net.PARENT.BLOCK_EXPLORER_URL_PREFIX, share.header_hash)
+            print 'GOT BLOCK FROM PEER! Passing to coind! %s dash: %s%064x' % (p2pool_data.format_hash(share.hash), self.net.PARENT.BLOCK_EXPLORER_URL_PREFIX, share.header_hash)
             print
             self.factory.new_block.happened(share.hash)
         
@@ -301,7 +301,7 @@ class Node(object):
         stop_signal.watch(t.stop)
     
     def set_best_share(self):
-        best, desired, decorated_heads, bad_peer_addresses = self.tracker.think(self.get_height_rel_highest, self.dashd_work.value['previous_block'], self.dashd_work.value['bits'], self.known_txs_var.value)
+        best, desired, decorated_heads, bad_peer_addresses = self.tracker.think(self.get_height_rel_highest, self.coind_work.value['previous_block'], self.coind_work.value['bits'], self.known_txs_var.value)
         
         self.best_share_var.set(best)
         self.desired_var.set(desired)
@@ -315,45 +315,45 @@ class Node(object):
     
     def get_current_txouts(self):
         # Use value from getblocktemplate's result.
-        real_subsidy = self.dashd_work.value['subsidy']
-        payment_amount = self.dashd_work.value.get('payment_amount', -1)
+        real_subsidy = self.coind_work.value['subsidy']
+        payment_amount = self.coind_work.value.get('payment_amount', -1)
         
         if payment_amount >= 0:
             real_pay = real_subsidy - payment_amount
-            return p2pool_data.get_expected_payouts(self.tracker, self.best_share_var.value, self.dashd_work.value['bits'].target, real_pay, self.net)
+            return p2pool_data.get_expected_payouts(self.tracker, self.best_share_var.value, self.coind_work.value['bits'].target, real_pay, self.net)
         
         # Fallback to legacy percentage-based calculation if payment_amount not available
-        if self.dashd_work.value['height'] > 158000+((576*30)* 17):
+        if self.coind_work.value['height'] > 158000+((576*30)* 17):
             real_pay = (real_subsidy)*40/100
-        elif self.dashd_work.value['height'] > 158000+((576*30)* 15):
+        elif self.coind_work.value['height'] > 158000+((576*30)* 15):
             real_pay = (real_subsidy)*42.5/100
-        elif self.dashd_work.value['height'] > 158000+((576*30)* 13):
+        elif self.coind_work.value['height'] > 158000+((576*30)* 13):
             real_pay = (real_subsidy)*45/100
-        elif self.dashd_work.value['height'] > 158000+((576*30)* 11):
+        elif self.coind_work.value['height'] > 158000+((576*30)* 11):
             real_pay = (real_subsidy)*47.5/100
-        elif self.dashd_work.value['height'] > 158000+((576*30)* 9):
+        elif self.coind_work.value['height'] > 158000+((576*30)* 9):
             real_pay = (real_subsidy)*50/100
-        elif self.dashd_work.value['height'] > 158000+((576*30)* 7):
+        elif self.coind_work.value['height'] > 158000+((576*30)* 7):
             real_pay = (real_subsidy)*52.5/100
-        elif self.dashd_work.value['height'] > 158000+((576*30)* 6):
+        elif self.coind_work.value['height'] > 158000+((576*30)* 6):
             real_pay = (real_subsidy)*55/100
-        elif self.dashd_work.value['height'] > 158000+((576*30)* 5):
+        elif self.coind_work.value['height'] > 158000+((576*30)* 5):
             real_pay = (real_subsidy)*57.5/100
-        elif self.dashd_work.value['height'] > 158000+((576*30)* 4):
+        elif self.coind_work.value['height'] > 158000+((576*30)* 4):
             real_pay = (real_subsidy)*60/100
-        elif self.dashd_work.value['height'] > 158000+((576*30)* 3):
+        elif self.coind_work.value['height'] > 158000+((576*30)* 3):
             real_pay = (real_subsidy)*62.5/100
-        elif self.dashd_work.value['height'] > 158000+((576*30)* 2):
+        elif self.coind_work.value['height'] > 158000+((576*30)* 2):
             real_pay = (real_subsidy)*65/100
-        elif self.dashd_work.value['height'] > 158000+((576*30)* 1):
+        elif self.coind_work.value['height'] > 158000+((576*30)* 1):
             real_pay = (real_subsidy)*70/100
         else:
             real_pay = (real_subsidy)*75/100
-        return p2pool_data.get_expected_payouts(self.tracker, self.best_share_var.value, self.dashd_work.value['bits'].target, real_pay, self.net)
+        return p2pool_data.get_expected_payouts(self.tracker, self.best_share_var.value, self.coind_work.value['bits'].target, real_pay, self.net)
     
     def clean_tracker(self):
         try:
-            best, desired, decorated_heads, bad_peer_addresses = self.tracker.think(self.get_height_rel_highest, self.dashd_work.value['previous_block'], self.dashd_work.value['bits'], self.known_txs_var.value)
+            best, desired, decorated_heads, bad_peer_addresses = self.tracker.think(self.get_height_rel_highest, self.coind_work.value['previous_block'], self.coind_work.value['bits'], self.known_txs_var.value)
         except Exception as e:
             log.err(e, 'Error in tracker.think() - continuing')
             return  # Skip this iteration, try again next time

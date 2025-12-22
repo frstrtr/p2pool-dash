@@ -261,11 +261,11 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             ),
             uptime=time.time() - start_time,
             attempts_to_share=bitcoin_data.target_to_average_attempts(node.tracker.items[node.best_share_var.value].max_target),
-            attempts_to_block=bitcoin_data.target_to_average_attempts(node.dashd_work.value['bits'].target),
-            block_value=node.dashd_work.value['subsidy']*1e-8,
-            block_value_payments=node.dashd_work.value.get('payment_amount', 0)*1e-8,
-            block_value_miner=max(0, node.dashd_work.value['subsidy'] - node.dashd_work.value.get('payment_amount', 0))*1e-8,
-            warnings=p2pool_data.get_warnings(node.tracker, node.best_share_var.value, node.net, bitcoind_getinfo_var.value, node.dashd_work.value),
+            attempts_to_block=bitcoin_data.target_to_average_attempts(node.coind_work.value['bits'].target),
+            block_value=node.coind_work.value['subsidy']*1e-8,
+            block_value_payments=node.coind_work.value.get('payment_amount', 0)*1e-8,
+            block_value_miner=max(0, node.coind_work.value['subsidy'] - node.coind_work.value.get('payment_amount', 0))*1e-8,
+            warnings=p2pool_data.get_warnings(node.tracker, node.best_share_var.value, node.net, bitcoind_getinfo_var.value, node.coind_work.value),
             donation_proportion=wb.donation_percentage/100,
             version=p2pool.__version__,
             protocol_version=p2p.Protocol.VERSION,
@@ -723,16 +723,16 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         except Exception as e:
             log.err(e, 'Error calculating hashrate for block record:')
         
-        # Try to get block reward from dashd (async, will update later if not available now)
+        # Try to get block reward from coind (async, will update later if not available now)
         @defer.inlineCallbacks
         @defer.inlineCallbacks
         def fetch_block_reward():
             try:
-                block_info = yield wb.dashd.rpc_getblock(block_hash)
+                block_info = yield wb.coind.rpc_getblock(block_hash)
                 if block_info and 'tx' in block_info and len(block_info['tx']) > 0:
                     # Get coinbase transaction
                     coinbase_txid = block_info['tx'][0]
-                    tx_info = yield wb.dashd.rpc_getrawtransaction(coinbase_txid, 1)
+                    tx_info = yield wb.coind.rpc_getrawtransaction(coinbase_txid, 1)
                     if tx_info and 'vout' in tx_info:
                         # Sum all outputs (block reward + fees)
                         reward = sum(vout['value'] for vout in tx_info['vout'])
@@ -1048,7 +1048,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                 defer.returnValue(cached['status'])
         
         try:
-            block_info = yield wb.dashd.rpc_getblock(block_hash)
+            block_info = yield wb.coind.rpc_getblock(block_hash)
             confirmations = block_info.get('confirmations', 0)
             chainlock = block_info.get('chainlock', False)
             
@@ -1109,8 +1109,8 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                 
                 # Get current blockchain height to calculate confirmations
                 current_height = 0
-                if node.dashd_work.value and 'height' in node.dashd_work.value:
-                    current_height = node.dashd_work.value['height']
+                if node.coind_work.value and 'height' in node.coind_work.value:
+                    current_height = node.coind_work.value['height']
                 
                 # Recheck if pending, or if "confirmed" but might have < 100 confirmations
                 if old_status == 'pending':
@@ -1220,7 +1220,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             if block.get('needs_hash_fetch') and block.get('number'):
                 try:
                     # Get block hash from blockchain by height
-                    block_hash_from_chain = yield wb.dashd.rpc_getblockhash(block['number'])
+                    block_hash_from_chain = yield wb.coind.rpc_getblockhash(block['number'])
                     if block_hash_from_chain:
                         # Calculate Hash Diff from the actual block hash
                         hash_int = int(block_hash_from_chain, 16)
@@ -1538,8 +1538,8 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                 outgoing=sum(1 for peer in node.p2p_node.peers.itervalues() if not peer.incoming),
             ),
             attempts_to_share=bitcoin_data.target_to_average_attempts(node.tracker.items[node.best_share_var.value].max_target),
-            attempts_to_block=bitcoin_data.target_to_average_attempts(node.dashd_work.value['bits'].target),
-            block_value=node.dashd_work.value['subsidy']*1e-8,
+            attempts_to_block=bitcoin_data.target_to_average_attempts(node.coind_work.value['bits'].target),
+            block_value=node.coind_work.value['subsidy']*1e-8,
         ))
         
         with open(os.path.join(datadir_path, 'stats'), 'wb') as f:
@@ -1758,7 +1758,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     x = deferral.RobustLoopingCall(add_point)
     x.start(5)
     stop_event.watch(x.stop)
-    @node.dashd_work.changed.watch
+    @node.coind_work.changed.watch
     def _(new_work):
         hd.datastreams['getwork_latency'].add_datum(time.time(), new_work['latency'])
     new_root.putChild('graph_data', WebInterface(lambda source, view: hd.datastreams[source].dataviews[view].get_data(time.time())))
