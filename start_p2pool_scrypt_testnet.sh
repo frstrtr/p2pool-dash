@@ -29,14 +29,21 @@ P2POOL_FEE="0.5"                                                 # 0.5% pool fee
 NET="litecoin_testnet"
 
 # Dogecoin testnet address for merged mining: nmkmeRtJu3wzg8THQYpnaUpTUtqKP15zRB
+DOGE_MERGED_ADDRESS="nmkmeRtJu3wzg8THQYpnaUpTUtqKP15zRB"
+DOGE_MERGED_URL="http://${DOGE_RPC_USER}:${DOGE_RPC_PASS}@${DOGE_RPC_HOST}:${DOGE_RPC_PORT}/"
 
-echo "=== Starting P2Pool Scrypt (Litecoin + Dogecoin Testnet) ==="
+echo "=== Starting P2Pool Scrypt (Litecoin + Dogecoin Merged Mining Testnet) ==="
 echo "Network: $NET"
-echo "Payout Address: $P2POOL_ADDRESS"
+echo "Litecoin Payout Address: $P2POOL_ADDRESS"
+echo "Dogecoin Merged Mining: $DOGE_MERGED_URL"
 echo "Pool Fee: $P2POOL_FEE%"
+echo "Merged Mining: ENABLED (with auxpow capability)"
+echo ""
+echo "NOTE: Ensure Dogecoin daemon with auxpow support is running:"
+echo "  ~/start-dogecoin-auxpow.sh ~/bin-auxpow/dogecoind -testnet -daemon"
 echo ""
 
-# Start P2Pool
+# Start P2Pool with Dogecoin merged mining
 pypy run_p2pool.py \
     --net $NET \
     --address $P2POOL_ADDRESS \
@@ -47,5 +54,6 @@ pypy run_p2pool.py \
     --p2pool-port 9338 \
     --max-conns 40 \
     --outgoing-conns 8 \
+    --merged $DOGE_MERGED_URL \
     $LTC_RPC_USER $LTC_RPC_PASS \
     "$@"
