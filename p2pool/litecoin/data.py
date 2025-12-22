@@ -59,7 +59,6 @@ from p2pool.dash.data import (
     aux_pow_coinbase_type,
     make_auxpow_tree,
     merkle_record_type,
-    merkle_branch_type,
 )
 
 # Re-export for compatibility
@@ -73,5 +72,5 @@ __all__ = [
     'block_header_type', 'block_type',
     'merkle_tx_type', 'merkle_link_type',
     'aux_pow_type', 'aux_pow_coinbase_type', 'make_auxpow_tree',
-    'merkle_record_type', 'merkle_branch_type',
+    'merkle_record_type',
 ]
