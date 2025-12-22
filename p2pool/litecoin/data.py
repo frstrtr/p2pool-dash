@@ -43,8 +43,6 @@ from p2pool.dash.data import (
     FloatingInteger,
     FloatingIntegerType,
     address_type,
-    script_address_type,
-    pubkey_type,
     target_to_average_attempts,
     target_to_difficulty,
     difficulty_to_target,
@@ -71,7 +69,7 @@ from p2pool.dash.data import (
 __all__ = [
     'hash256', 'hash160', 'scrypt_hash',
     'ChecksummedType', 'FloatingInteger', 'FloatingIntegerType',
-    'address_type', 'script_address_type', 'pubkey_type',
+    'address_type',
     'target_to_average_attempts', 'target_to_difficulty', 'difficulty_to_target',
     'merkle_hash',
     'tx_type', 'tx_id_type', 'tx_in_type', 'tx_out_type',
