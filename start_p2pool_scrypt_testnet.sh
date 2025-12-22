@@ -20,9 +20,15 @@ DOGE_RPC_HOST="192.168.80.182"
 DOGE_RPC_PORT="44555"
 
 # P2Pool configuration
-P2POOL_ADDRESS="mwjUmhAW68zCtgZpW5b1xD5g7MZew6xPV4"  # Replace with your Litecoin testnet address
-P2POOL_FEE="0.5"                                     # 0.5% pool fee
+# Litecoin testnet addresses (choose one):
+# Legacy: mm3suEPoj1WnhYuRTdoM6dfEXQvZEyuu9h
+# P2SH-Segwit: QcVudrUyKGwqjk4KWadnXfbHgnMVHB1Lif  
+# Bech32 (native segwit): tltc1qpkcpgwl24flh35mknlsf374x8ypqv7de6esjh4
+P2POOL_ADDRESS="tltc1qpkcpgwl24flh35mknlsf374x8ypqv7de6esjh4"  # Using native segwit (best for Litecoin with MWEB)
+P2POOL_FEE="0.5"                                                 # 0.5% pool fee
 NET="litecoin_testnet"
+
+# Dogecoin testnet address for merged mining: nmkmeRtJu3wzg8THQYpnaUpTUtqKP15zRB
 
 echo "=== Starting P2Pool Scrypt (Litecoin + Dogecoin Testnet) ==="
 echo "Network: $NET"
