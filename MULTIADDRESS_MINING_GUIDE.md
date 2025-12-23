@@ -69,7 +69,7 @@ minerd -a scrypt -o stratum+tcp://192.168.80.182:9327 \
   "pools": [
     {
       "url": "stratum+tcp://192.168.80.182:9327",
-      "user": "mm3suEPoj1WnhYuRTdoM6dfEXQvZEyuu9h:nmkmeRtJu3wzg8THQYpnaUpTUtqKP15zRB",
+      "user": "mm3suEPoj1WnhYuRTdoM6dfEXQvZEyuu9h,nmkmeRtJu3wzg8THQYpnaUpTUtqKP15zRB",
       "pass": "x"
     }
   ],
@@ -80,7 +80,7 @@ minerd -a scrypt -o stratum+tcp://192.168.80.182:9327 \
 **Command line:**
 ```bash
 cgminer --scrypt -o stratum+tcp://192.168.80.182:9327 \
-  -u mm3suEPoj1WnhYuRTdoM6dfEXQvZEyuu9h:nmkmeRtJu3wzg8THQYpnaUpTUtqKP15zRB -p x
+  -u mm3suEPoj1WnhYuRTdoM6dfEXQvZEyuu9h,nmkmeRtJu3wzg8THQYpnaUpTUtqKP15zRB -p x
 ```
 
 ## Difficulty Adjustment
@@ -89,23 +89,23 @@ You can still specify target difficulty after the addresses:
 
 **With pseudoshare difficulty (+):**
 ```
-litecoin_addr:dogecoin_addr+0.001
+litecoin_addr,dogecoin_addr+0.001
 ```
 
 **With share difficulty (/):**
 ```
-litecoin_addr:dogecoin_addr/32
+litecoin_addr,dogecoin_addr/32
 ```
 
 **Both:**
 ```
-litecoin_addr:dogecoin_addr+0.001/32
+litecoin_addr,dogecoin_addr+0.001/32
 ```
 
 Example:
 ```bash
 minerd -a scrypt -o stratum+tcp://192.168.80.182:9327 \
-  -u mm3suEPoj1WnhYuRTdoM6dfEXQvZEyuu9h:nmkmeRtJu3wzg8THQYpnaUpTUtqKP15zRB+0.001 -p x
+  -u mm3suEPoj1WnhYuRTdoM6dfEXQvZEyuu9h,nmkmeRtJu3wzg8THQYpnaUpTUtqKP15zRB+0.001 -p x
 ```
 
 ## Address Requirements
@@ -159,7 +159,7 @@ Using miner dogecoin address: nmkmeRtJu3wzg8THQYpnaUpTUtqKP15zRB
 ### "Invalid address" Error
 - Ensure addresses are for the correct network (testnet vs mainnet)
 - Check address format (no extra spaces or characters)
-- Verify colon separator between addresses
+- Verify comma separator between addresses
 
 ### Dogecoin Rewards Not Received
 - Check if pool detected auxpow: Look for "Detected auxpow-capable merged mining daemon" in logs
@@ -167,8 +167,8 @@ Using miner dogecoin address: nmkmeRtJu3wzg8THQYpnaUpTUtqKP15zRB
 - Ensure block was actually solved (merged mining blocks are rare)
 
 ### Worker Name Not Showing
-- Use dot notation: `ltc_addr:doge_addr.worker1`
-- Or underscore: `ltc_addr:doge_addr_worker1`
+- Use dot notation: `ltc_addr,doge_addr.worker1`
+- Or underscore: `ltc_addr,doge_addr_worker1`
 - Check web interface for worker stats
 
 ## Testing on Testnet
@@ -187,7 +187,7 @@ Using miner dogecoin address: nmkmeRtJu3wzg8THQYpnaUpTUtqKP15zRB
 ```bash
 # Test with cpuminer (single thread, low intensity)
 minerd -a scrypt -o stratum+tcp://192.168.80.182:9327 \
-  -u mm3suEPoj1WnhYuRTdoM6dfEXQvZEyuu9h:nmkmeRtJu3wzg8THQYpnaUpTUtqKP15zRB.test \
+  -u mm3suEPoj1WnhYuRTdoM6dfEXQvZEyuu9h,nmkmeRtJu3wzg8THQYpnaUpTUtqKP15zRB.test \
   -p x -t 1
 ```
 
@@ -206,7 +206,7 @@ minerd -a scrypt -o stratum+tcp://192.168.80.182:9327 \
 ### Example Mainnet Configuration
 ```bash
 minerd -a scrypt -o stratum+tcp://pool.example.com:9327 \
-  -u LYourLitecoinAddressHere:DYourDogecoinAddressHere.worker1 -p x
+  -u LYourLitecoinAddressHere,DYourDogecoinAddressHere.worker1 -p x
 ```
 
 ## Advanced Features
@@ -214,9 +214,9 @@ minerd -a scrypt -o stratum+tcp://pool.example.com:9327 \
 ### Multiple Workers
 Each worker can have different Dogecoin addresses:
 ```
-Worker 1: ltc_addr1:doge_addr1.rig1
-Worker 2: ltc_addr1:doge_addr2.rig2
-Worker 3: ltc_addr2:doge_addr3.rig3
+Worker 1: ltc_addr1,doge_addr1.rig1
+Worker 2: ltc_addr1,doge_addr2.rig2
+Worker 3: ltc_addr2,doge_addr3.rig3
 ```
 
 ### Share Chain Distribution
@@ -261,6 +261,26 @@ For issues or questions:
 
 ---
 
-**Last Updated**: December 22, 2025
+## ✅ Successfully Tested
+
+**December 23, 2025** - Multiaddress merged mining successfully tested on Litecoin+Dogecoin testnet:
+
+- **5 Dogecoin testnet blocks accepted** via AuxPOW merged mining
+- Miner: cpuminer-multi (scrypt, ~25 kH/s)
+- P2Pool running on Ubuntu 24.04 with PyPy 7.3.20
+- Parent chain: Litecoin testnet (port 19332)
+- Merged chain: Dogecoin testnet (port 44555)
+
+Example successful submission:
+```
+Submitting Dogecoin auxpow block...
+rpc_submitblock returned: None
+Multiaddress merged block accepted!
+```
+
+---
+
+**Last Updated**: December 23, 2025
 **P2Pool Version**: v1.1.1+ with multiaddress merged mining support
 **Networks Supported**: Litecoin + Dogecoin (mainnet and testnet)
+**Status**: ✅ Tested and Working

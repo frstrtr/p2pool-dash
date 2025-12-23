@@ -6,6 +6,7 @@ multiaddress coinbase transactions, allowing proportional payouts to
 multiple miners on merged chains (e.g., Dogecoin).
 """
 
+import sys
 from p2pool.bitcoin import data as bitcoin_data
 from p2pool.util import pack
 
@@ -51,9 +52,6 @@ def build_merged_coinbase(template, shareholders, net):
     
     # Build outputs for each shareholder
     tx_outs = []
-    
-    # Build outputs for each shareholder
-    for address, value in shareholders.iteritems():
     for address, value in shareholders.iteritems():
         # Handle both old format (address: fraction) and new format (address: (fraction, net))
         if isinstance(value, tuple):
@@ -136,15 +134,27 @@ def build_merged_block(template, coinbase_tx, auxpow_proof, parent_block_header,
     # Calculate merkle root from transaction hashes
     merkle_root = bitcoin_data.merkle_hash(tx_hashes)
     
+    # Debug bits unpacking
+    bits_hex = template['bits']
+    bits_bytes = bits_hex.decode('hex')
+    bits_reversed = bits_bytes[::-1]
+    print >>sys.stderr, '[DEBUG merged_mining] Dogecoin template bits=%s' % bits_hex
+    print >>sys.stderr, '[DEBUG merged_mining] Bits bytes=%s, reversed=%s' % (bits_bytes.encode('hex'), bits_reversed.encode('hex'))
+    
     # Build block header
+    # NOTE: Bits field needs byte reversal! Dogecoin getblocktemplate returns bits in 
+    # big-endian hex format but the header expects little-endian uint32
     header = {
         'version': template['version'],
         'previous_block': int(template['previousblockhash'], 16),
         'merkle_root': merkle_root,
         'timestamp': template['curtime'],
-        'bits': bitcoin_data.FloatingIntegerType().unpack(template['bits'].decode('hex')[::-1]),
+        'bits': bitcoin_data.FloatingIntegerType().unpack(bits_reversed),
         'nonce': parent_block_header['nonce'],  # Use nonce from parent chain
     }
+    
+    print >>sys.stderr, '[DEBUG merged_mining] Created FloatingInteger: %r' % header['bits']
+    print >>sys.stderr, '[DEBUG merged_mining] FloatingInteger.bits (raw 32-bit): 0x%08x' % header['bits'].bits
     
     # Build complete block with auxpow
     # Note: For multiaddress merged mining, we need to submit via submitauxblock or submitblock

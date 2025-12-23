@@ -109,8 +109,28 @@ class StratumRPCMiningProvider(object):
             return False
         x, got_response = self.handler_map[job_id]
         coinb_nonce = extranonce2.decode('hex')
+        print >>sys.stderr, '[STRATUM DEBUG] extranonce2 raw: %s (len=%d)' % (extranonce2, len(extranonce2))
+        print >>sys.stderr, '[STRATUM DEBUG] coinb_nonce len: %d, expected: %d' % (len(coinb_nonce), self.wb.COINBASE_NONCE_LENGTH)
+        # Pad or truncate to match expected length
+        if len(coinb_nonce) < self.wb.COINBASE_NONCE_LENGTH:
+            print >>sys.stderr, '[STRATUM DEBUG] Padding coinb_nonce from %d to %d bytes' % (len(coinb_nonce), self.wb.COINBASE_NONCE_LENGTH)
+            coinb_nonce = coinb_nonce + '\x00' * (self.wb.COINBASE_NONCE_LENGTH - len(coinb_nonce))
+        elif len(coinb_nonce) > self.wb.COINBASE_NONCE_LENGTH:
+            print >>sys.stderr, '[STRATUM DEBUG] Truncating coinb_nonce from %d to %d bytes' % (len(coinb_nonce), self.wb.COINBASE_NONCE_LENGTH)
+            coinb_nonce = coinb_nonce[:self.wb.COINBASE_NONCE_LENGTH]
         assert len(coinb_nonce) == self.wb.COINBASE_NONCE_LENGTH
         new_packed_gentx = x['coinb1'] + coinb_nonce + x['coinb2']
+
+        # Debug: Print stratum's calculation
+        stratum_coinbase_hash = bitcoin_data.hash256(new_packed_gentx)
+        stratum_merkle_root = bitcoin_data.check_merkle_link(stratum_coinbase_hash, x['merkle_link'])
+        print >>sys.stderr, '[STRATUM DEBUG] coinb1 length: %d' % len(x['coinb1'])
+        print >>sys.stderr, '[STRATUM DEBUG] coinb2 length: %d' % len(x['coinb2'])
+        print >>sys.stderr, '[STRATUM DEBUG] coinb_nonce hex: %s' % coinb_nonce.encode('hex')
+        print >>sys.stderr, '[STRATUM DEBUG] new_packed_gentx length: %d' % len(new_packed_gentx)
+        print >>sys.stderr, '[STRATUM DEBUG] coinbase hash: %064x' % stratum_coinbase_hash
+        print >>sys.stderr, '[STRATUM DEBUG] merkle_link branch length: %d' % len(x['merkle_link']['branch'])
+        print >>sys.stderr, '[STRATUM DEBUG] calculated merkle_root: %064x' % stratum_merkle_root
 
         job_version = x['version']
         nversion = job_version
@@ -124,10 +144,16 @@ class StratumRPCMiningProvider(object):
             nversion = (job_version & ~self.pool_version_mask) | (int(version_bits,16) & self.pool_version_mask)
             #nversion = nversion & int(version_bits,16)
 
+        # Since coinb1/coinb2 are already in stripped format (tx_id_type),
+        # hash256(new_packed_gentx) equals get_txid() of the transaction.
+        # The miner computes the same hash, so merkle roots will match.
+        coinbase_hash = bitcoin_data.hash256(new_packed_gentx)
+        print >>sys.stderr, '[STRATUM DEBUG] coinbase_hash (stripped): %064x' % coinbase_hash
+        
         header = dict(
             version=nversion,
             previous_block=x['previous_block'],
-            merkle_root=bitcoin_data.check_merkle_link(bitcoin_data.hash256(new_packed_gentx), x['merkle_link']), # new_packed_gentx has witness data stripped
+            merkle_root=bitcoin_data.check_merkle_link(coinbase_hash, x['merkle_link']),
             timestamp=pack.IntType(32).unpack(getwork._swap4(ntime.decode('hex'))),
             bits=x['bits'],
             nonce=pack.IntType(32).unpack(getwork._swap4(nonce.decode('hex'))),
