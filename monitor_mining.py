@@ -103,6 +103,76 @@ def get_submission_stats():
     except:
         return None
 
+def check_accepted_blocks_orphan_status():
+    """Check which of our accepted blocks are still in the blockchain vs orphaned"""
+    try:
+        # Get all accepted block submissions with context
+        cmd = "grep -B5 'rpc_submitblock returned: None' " + P2POOL_LOG + " | grep -E '(Building Dogecoin auxpow block|rpc_submitblock returned: None)' | head -100"
+        result = run_ssh_command(cmd)
+        
+        # Parse to find block heights from getblocktemplate
+        # We need to check if the block at that height matches our submission
+        # Since we don't log the exact height, we'll check recent blocks for our address pattern
+        
+        # Alternative: Check recent blockchain blocks for our mining address
+        current_height = get_block_count()
+        if not current_height:
+            return {'in_chain': 0, 'orphaned': 0, 'unknown': 0, 'checked': 0}
+        
+        our_blocks_in_chain = 0
+        blocks_checked = 0
+        
+        # Check last 500 blocks for our address (covers ~2 minutes at 0.26s/block)
+        for i in range(min(500, current_height)):
+            height = current_height - i
+            blocks_checked += 1
+            
+            try:
+                block_hash = rpc_call("getblockhash", [height])
+                if not block_hash:
+                    continue
+                    
+                block = rpc_call("getblock", [block_hash, 2])
+                if not block:
+                    continue
+                
+                # Check coinbase transaction
+                coinbase_tx = block["tx"][0]
+                vouts = coinbase_tx.get("vout", [])
+                
+                # Look for our mining address OR donation address
+                found_ours = False
+                for vout in vouts:
+                    addresses = vout.get("scriptPubKey", {}).get("addresses", [])
+                    # Our mining address is Litecoin format, won't appear in Dogecoin blockchain
+                    # Check for donation address or 2-output pattern (our signature)
+                    if len(vouts) == 2:  # Our blocks have exactly 2 outputs
+                        script_hex = vout.get("scriptPubKey", {}).get("hex", "")
+                        if script_hex == DONATION_SCRIPT:
+                            found_ours = True
+                            break
+                
+                if found_ours:
+                    our_blocks_in_chain += 1
+                    
+            except:
+                continue
+        
+        # Get total accepted from logs
+        cmd_total = "grep -c 'rpc_submitblock returned: None' " + P2POOL_LOG + " 2>/dev/null || echo 0"
+        total_accepted = int(run_ssh_command(cmd_total))
+        
+        orphaned = max(0, total_accepted - our_blocks_in_chain)
+        
+        return {
+            'in_chain': our_blocks_in_chain,
+            'orphaned': orphaned,
+            'total_accepted': total_accepted,
+            'checked_blocks': blocks_checked
+        }
+    except Exception as e:
+        return {'in_chain': 0, 'orphaned': 0, 'total_accepted': 0, 'checked_blocks': 0, 'error': str(e)}
+
 def check_recent_accepted_blocks():
     """Check coinbase outputs of recently accepted blocks"""
     try:
@@ -327,8 +397,8 @@ def print_mining_stats(candidates, balance, local_stats, donation_info):
         print(f"\n  💰 P2Pool Donation Fund: Scanning...")
     print()
 
-def print_submission_stats(stats, accepted_blocks):
-    """Print block submission statistics"""
+def print_submission_stats(stats, orphan_status):
+    """Print block submission statistics with orphan analysis"""
     print("📤 BLOCK SUBMISSION STATS")
     print("-" * 80)
     if not stats:
@@ -341,10 +411,16 @@ def print_submission_stats(stats, accepted_blocks):
         print(f"  🔄 Duplicate:      {stats['duplicate'] + stats['duplicate_inconclusive']}")
         print(f"  ❌ Errors:         {stats['bad_cb_height'] + stats['other']}")
         
-        if accepted_blocks:
-            print(f"\n  Recent Accepted Blocks (last 5):")
-            for block in accepted_blocks[-5:]:
-                print(f"    Hash: {block['pow_hash']}")
+        if orphan_status and orphan_status.get('total_accepted', 0) > 0:
+            print(f"\n  🔍 ORPHAN ANALYSIS (last {orphan_status['checked_blocks']} blocks scanned):")
+            print(f"     Still in Chain: {orphan_status['in_chain']} blocks (have 2 outputs + donation script)")
+            print(f"     Orphaned:       {orphan_status['orphaned']} blocks (removed from chain)")
+            print(f"     Orphan Rate:    {orphan_status['orphaned']*100//max(1,orphan_status['total_accepted'])}%")
+            
+            if orphan_status['in_chain'] > 0:
+                print(f"\n     💰 Immature coinbase outputs: Check with minconf=0")
+            else:
+                print(f"\n     ⚠️  ALL accepted blocks were orphaned! (Testnet too fast)")
     print()
 
 def print_recent_candidates(candidates_list):
@@ -410,7 +486,9 @@ def main():
                 
                 # Get submission statistics
                 submission_stats = get_submission_stats()
-                accepted_blocks = check_recent_accepted_blocks()
+                
+                # Check orphan status of accepted blocks
+                orphan_status = check_accepted_blocks_orphan_status()
                 
                 # Check for mined blocks (fast scan)
                 mined_blocks = check_recent_blocks(10)
@@ -423,7 +501,7 @@ def main():
                 print_header()
                 print_network_stats(network_info)
                 print_mining_stats(total_candidates, balance, local_stats, donation_info)
-                print_submission_stats(submission_stats, accepted_blocks)
+                print_submission_stats(submission_stats, orphan_status)
                 print_recent_candidates(recent)
                 print_mined_blocks(mined_blocks)
                 print_footer(datetime.now())

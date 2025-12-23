@@ -1,42 +1,81 @@
-# P2Pool Author Donation Implementation
+# P2Pool Merged Mining with Native Donation Support
 
 ## Overview
-This implementation adds a 1% donation to the P2Pool author on all merged mining blocks. The donation is automatically deducted from the block reward and sent to the P2Pool author's address.
+
+P2Pool **already includes** donation and OP_RETURN functionality in its core protocol (see `p2pool/data.py` line 94). Every P2Pool share includes:
+- **P2Pool author donation script** (built into `gentx_before_refhash`)
+- **OP_RETURN tag** for blockchain identification
+
+This implementation extends P2Pool to support **merged mining** with **multiaddress coinbase transactions**, allowing proportional payouts to multiple miners on merged chains like Dogecoin.
+
+## P2Pool Native Features
+
+### Built-in Donation (data.py)
+```python
+# Line 94 in p2pool/data.py
+gentx_before_refhash = pack.VarStrType().pack(DONATION_SCRIPT) + \
+                       pack.IntType(64).pack(0) + \
+                       pack.VarStrType().pack('\x6a\x28' + pack.IntType(256).pack(0) + \
+                       pack.IntType(64).pack(0))[:3]
+```
+
+This constant ensures **every P2Pool share** includes:
+1. **DONATION_SCRIPT**: P2Pool author donation output
+2. **\x6a\x28**: OP_RETURN opcode + length (40 bytes)
+3. **Additional data**: P2Pool protocol identifiers
+
+### Coinbase Structure (Already in Protocol)
+```
+Output 0-N:  Miner payouts (based on share chain, PPLNS distribution)
+Output N+1:  P2Pool donation (built into gentx_before_refhash)
+Output N+2:  OP_RETURN tag (built into gentx_before_refhash)
+```
+
+The donation and OP_RETURN are **automatically included** by the share chain protocol - we don't need to add them again in merged_mining.py!
 
 ## Technical Details
 
-### Donation Script
+### Donation Script (Already in P2Pool)
 - **Format**: P2PK (Pay-to-PubKey)
 - **Hex**: `4104ffd03de44a6e11b9917f3a29f9443283d9871c9d743ef30d5eddcd37094b64d1b3d8090496b53256786bf5c82932ec23c3b74d9f05a6f95a8b5529352656664bac`
+- **Address (testnet)**: `noBEfr9wTGgs94CdGVXGYwsQghEwBsXw4K`
 - **Address (mainnet)**: `1BHCtLJRhWftUQT9RZmhEBYx6QXJZbXRKL`
+- **Location**: Defined in `p2pool/data.py` as `DONATION_SCRIPT` constant
 
-### Implementation
+### OP_RETURN Tag (Already in P2Pool)
+- **Format**: OP_RETURN (0x6a) + length (0x28 = 40 bytes) + data
+- **Purpose**: Permanent on-chain identifier for P2Pool shares
+- **Location**: Built into `gentx_before_refhash` in `p2pool/data.py`
 
-#### File: `p2pool/merged_mining.py`
-Added `DONATION_SCRIPT` constant and modified `build_merged_coinbase()`:
+## Implementation
+
+### File: `p2pool/merged_mining.py`
+Simplified coinbase builder that focuses on miner payouts only (donation/OP_RETURN already handled by protocol):
 
 ```python
-# Reserve 1% for P2Pool author donation
-donation_amount = total_reward // 100  # 1% of block reward
-miners_reward = total_reward - donation_amount
-
-# Build outputs for shareholders from 99% of reward
-# ... shareholder payout logic ...
-
-# Add P2Pool author donation output (1% of block reward)
-tx_outs.append({
-    'value': donation_amount,
-    'script': DONATION_SCRIPT,
-})
+def build_merged_coinbase(template, shareholders, net):
+    """
+    Build coinbase transaction with multiple outputs for merged mining
+    
+    P2Pool donation and OP_RETURN are already included in gentx_before_refhash.
+    This function focuses on miner payouts.
+    """
+    total_reward = template['coinbasevalue']
+    
+    # Build outputs for each shareholder
+    tx_outs = []
+    for address, fraction in shareholders.iteritems():
+        amount = int(total_reward * fraction)
+        script = bitcoin_data.address_to_script2(address, net)
+        tx_outs.append({'value': amount, 'script': script})
+    
+    # Donation and OP_RETURN are added automatically by share chain protocol
+    return coinbase_tx
 ```
 
-**Key Features:**
-- Donation is 1% of `total_reward` (block reward + transaction fees)
-- Miners receive 99% of the reward, split according to PPLNS
-- Donation output is always last in the coinbase transaction
-- Marks blocks as P2Pool-mined in the blockchain
+**Key Point**: We removed the manual donation/OP_RETURN addition because P2Pool's core protocol **already handles this** through `gentx_before_refhash`.
 
-#### File: `p2pool/work.py`
+### File: `p2pool/work.py`
 Fixed critical bugs that were preventing merged mining from working:
 
 1. **AttributeError Fix**: Changed `self.node.args` → `self.args`
