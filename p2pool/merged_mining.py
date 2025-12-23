@@ -5,14 +5,21 @@ This module provides utilities for building merged mining blocks with
 multiaddress coinbase transactions, allowing proportional payouts to
 multiple miners on merged chains (e.g., Dogecoin).
 
-Note: P2Pool already includes donation and OP_RETURN in gentx_before_refhash (data.py line 94).
-The coinbase structure includes these by default in every share.
+IMPORTANT: gentx_before_refhash (data.py) is for PARENT chain (Litecoin) shares.
+Merged chain blocks (Dogecoin) need their OWN coinbase with donation/OP_RETURN!
 """
 
 import sys
 from p2pool.bitcoin import data as bitcoin_data
 from p2pool.util import pack
 from p2pool import data as p2pool_data
+
+# P2Pool author donation script (1% of merged mining blocks)
+# This is SEPARATE from the parent chain donation
+DONATION_SCRIPT = '4104ffd03de44a6e11b9917f3a29f9443283d9871c9d743ef30d5eddcd37094b64d1b3d8090496b53256786bf5c82932ec23c3b74d9f05a6f95a8b5529352656664bac'.decode('hex')
+
+# P2Pool merged mining identifier for OP_RETURN
+P2POOL_TAG = 'P2Pool merged mining'
 
 
 def build_coinbase_input_script(height, extradata=''):
@@ -39,17 +46,23 @@ def build_coinbase_input_script(height, extradata=''):
     return script_bytes
 
 
-def build_merged_coinbase(template, shareholders, net):
+def build_merged_coinbase(template, shareholders, net, donation_percentage=1.0):
     """
-    Build coinbase transaction with multiple outputs for merged mining
+    Build coinbase transaction for MERGED CHAIN (Dogecoin) with multiple outputs
     
-    P2Pool donation and OP_RETURN are already included in gentx_before_refhash
-    (see p2pool/data.py line 94). This function focuses on miner payouts.
+    This is SEPARATE from parent chain (Litecoin) coinbase!
+    Parent chain uses gentx_before_refhash. Merged chain needs its own structure.
+    
+    Includes:
+    - Miner outputs (proportional to shares)
+    - OP_RETURN tag (identifies merged P2Pool blocks on Dogecoin chain)
+    - P2Pool donation (configurable %, default 1%)
     
     Args:
         template: Block template from getblocktemplate (with auxpow)
         shareholders: Dict of {address: fraction} OR {address: (fraction, net_obj)}
         net: Network object (default if shareholders don't specify network per address)
+        donation_percentage: Donation percentage (0-100, default 1.0 for 1%)
     
     Returns:
         Dict representing the coinbase transaction
@@ -57,10 +70,15 @@ def build_merged_coinbase(template, shareholders, net):
     total_reward = template['coinbasevalue']
     height = template['height']
     
-    print >>sys.stderr, '[COINBASE] Total reward: %d satoshis' % total_reward
-    print >>sys.stderr, '[COINBASE] Building outputs for %d shareholders' % len(shareholders)
+    # Calculate donation amount from configurable percentage (same as parent chain)
+    donation_amount = int(total_reward * donation_percentage / 100)
+    miners_reward = total_reward - donation_amount
     
-    # Build outputs for each shareholder
+    print >>sys.stderr, '[MERGED COINBASE] Total reward: %d, Donation (%.1f%%): %d, Miners (%.1f%%): %d' % (
+        total_reward, donation_percentage, donation_amount, 100 - donation_percentage, miners_reward)
+    print >>sys.stderr, '[MERGED COINBASE] Building for %d shareholders' % len(shareholders)
+    
+    # Build outputs for each shareholder (from 99% of reward)
     tx_outs = []
     total_distributed = 0
     
@@ -72,7 +90,7 @@ def build_merged_coinbase(template, shareholders, net):
             fraction = value
             addr_net = net.PARENT if hasattr(net, 'PARENT') else net
         
-        amount = int(total_reward * fraction)
+        amount = int(miners_reward * fraction)
         total_distributed += amount
         
         if amount > 0:  # Skip dust outputs
@@ -83,13 +101,31 @@ def build_merged_coinbase(template, shareholders, net):
                     'value': amount,
                     'script': script2,
                 })
-                print >>sys.stderr, '[PAYOUT] %s: %d satoshis (%.1f%%)' % (
-                    address[:20] + '...', amount, fraction * 100)
+                print >>sys.stderr, '[MINER PAYOUT] %s: %d satoshis (%.1f%% of %.1f%%)' % (
+                    address[:20] + '...', amount, fraction * 100, 100 - donation_percentage)
             except ValueError as e:
                 print >>sys.stderr, 'Warning: Failed to decode address %s: %s' % (address, e)
     
-    print >>sys.stderr, '[COINBASE] Total outputs: %d, Total distributed: %d/%d satoshis' % (
-        len(tx_outs), total_distributed, total_reward)
+    # Add OP_RETURN output with P2Pool identifier (0 value, data only)
+    # This marks the block as P2Pool-mined on the DOGECOIN blockchain
+    op_return_script = '\x6a' + chr(len(P2POOL_TAG)) + P2POOL_TAG  # OP_RETURN + length + data
+    tx_outs.append({
+        'value': 0,
+        'script': op_return_script,
+    })
+    print >>sys.stderr, '[OP_RETURN] Added P2Pool identifier to merged block: "%s"' % P2POOL_TAG
+    
+    # Add P2Pool author donation output (1% of block reward)
+    # This is SEPARATE from parent chain donation
+    tx_outs.append({
+        'value': donation_amount,
+        'script': DONATION_SCRIPT,
+    })
+    
+    print >>sys.stderr, '[DONATION] Added P2Pool author donation to merged block: %d satoshis (%.1f%%)' % (
+        donation_amount, donation_percentage)
+    print >>sys.stderr, '[MERGED COINBASE] Total outputs: %d (miners) + 1 (OP_RETURN) + 1 (donation) = %d' % (
+        len(tx_outs) - 2, len(tx_outs))
     
     # If no valid outputs, create a single output to a default address
     # (This should never happen in normal operation)

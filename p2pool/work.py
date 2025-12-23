@@ -136,9 +136,9 @@ class WorkerBridge(worker_interface.WorkerBridge):
                                     shareholders = {mining_address: 1.0} if mining_address else {}
                                     print >>sys.stderr, '[MERGED] Single address mode: %s' % mining_address
                                 
-                                # Build coinbase with P2Pool donation (1% of block reward)
+                                # Build coinbase with P2Pool donation (uses --give-author percentage)
                                 doge_coinbase_tx = merged_mining.build_merged_coinbase(
-                                    template, shareholders, self.node.net)
+                                    template, shareholders, self.node.net, self.donation_percentage)
                                 
                                 doge_coinbase_hash = bitcoin_data.hash256(bitcoin_data.tx_type.pack(doge_coinbase_tx))
                                 all_doge_tx_hashes = [doge_coinbase_hash] + doge_tx_hashes

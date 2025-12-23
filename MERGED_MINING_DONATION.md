@@ -1,79 +1,127 @@
-# P2Pool Merged Mining with Native Donation Support
+# P2Pool Merged Mining - Dual Coinbase Structure
 
 ## Overview
 
-P2Pool **already includes** donation and OP_RETURN functionality in its core protocol (see `p2pool/data.py` line 94). Every P2Pool share includes:
-- **P2Pool author donation script** (built into `gentx_before_refhash`)
-- **OP_RETURN tag** for blockchain identification
+P2Pool merged mining requires **TWO SEPARATE coinbase transactions**:
 
-This implementation extends P2Pool to support **merged mining** with **multiaddress coinbase transactions**, allowing proportional payouts to multiple miners on merged chains like Dogecoin.
+1. **Parent Chain Coinbase** (Litecoin) - Uses `gentx_before_refhash` from data.py
+2. **Merged Chain Coinbase** (Dogecoin) - Built by `merged_mining.py`
 
-## P2Pool Native Features
+Each chain has its own donation and OP_RETURN structure!
 
-### Built-in Donation (data.py)
+## Dual Coinbase Architecture
+
+### Parent Chain (Litecoin) - data.py
 ```python
-# Line 94 in p2pool/data.py
+# Line 94 in p2pool/data.py  
 gentx_before_refhash = pack.VarStrType().pack(DONATION_SCRIPT) + \
                        pack.IntType(64).pack(0) + \
-                       pack.VarStrType().pack('\x6a\x28' + pack.IntType(256).pack(0) + \
-                       pack.IntType(64).pack(0))[:3]
+                       pack.VarStrType().pack('\x6a\x28' + ...)
 ```
 
-This constant ensures **every P2Pool share** includes:
-1. **DONATION_SCRIPT**: P2Pool author donation output
-2. **\x6a\x28**: OP_RETURN opcode + length (40 bytes)
-3. **Additional data**: P2Pool protocol identifiers
+**Litecoin coinbase includes:**
+- Miner payouts (based on P2Pool share chain, PPLNS)
+- P2Pool donation (built into gentx_before_refhash)
+- OP_RETURN tag (built into gentx_before_refhash)
 
-### Coinbase Structure (Already in Protocol)
-```
-Output 0-N:  Miner payouts (based on share chain, PPLNS distribution)
-Output N+1:  P2Pool donation (built into gentx_before_refhash)
-Output N+2:  OP_RETURN tag (built into gentx_before_refhash)
+### Merged Chain (Dogecoin) - merged_mining.py
+```python
+def build_merged_coinbase(template, shareholders, net):
+    # Build separate coinbase for Dogecoin
+    # Includes: miner outputs + OP_RETURN + donation
 ```
 
-The donation and OP_RETURN are **automatically included** by the share chain protocol - we don't need to add them again in merged_mining.py!
+**Dogecoin coinbase includes:**
+- Miner payouts (99% of reward, distributed to shareholders)
+- OP_RETURN tag ("P2Pool merged mining" - identifies on Dogecoin blockchain)
+- P2Pool donation (1% of reward - SEPARATE from Litecoin donation)
+
+## Why Two Separate Coinbases?
+
+In merged mining:
+- **Litecoin block** is mined with its own coinbase (parent chain)
+- **Dogecoin block** references Litecoin block but has DIFFERENT coinbase (merged chain)
+- Each blockchain has independent reward structures
+- Each needs its own P2Pool identification
+
+## Coinbase Transaction Structure
+
+### Dogecoin Merged Block Coinbase
+```
+Output 0:    Miner 1 - (100-X)% × (their share %)
+Output 1:    Miner 2 - (100-X)% × (their share %)
+...
+Output N:    Miner N - (100-X)% × (their share %)
+Output N+1:  OP_RETURN - "P2Pool merged mining" (0 DOGE, data only)
+Output N+2:  P2Pool Donation - X% of block reward
+```
+
+Where **X** is the donation percentage set by `--give-author` (default 1.0%)
+
+**Total:** Miners get (100-X)%, P2Pool donation gets X%, OP_RETURN marks the block
+
+## CLI Option
+
+The donation percentage is controlled by the `--give-author` command line option:
+
+```bash
+# Default (1% donation on both Litecoin and Dogecoin)
+pypy run_p2pool.py --net litecoin --merged http://user:pass@host:port/ <address>
+
+# Custom donation (2.5% on both chains)
+pypy run_p2pool.py --net litecoin --merged http://user:pass@host:port/ --give-author 2.5 <address>
+
+# No donation (0% - not recommended, helps support P2Pool development)
+pypy run_p2pool.py --net litecoin --merged http://user:pass@host:port/ --give-author 0 <address>
+```
+
+**Important:** The same donation percentage applies to **BOTH** the parent chain (Litecoin) and merged chain (Dogecoin). This ensures consistent support for P2Pool development across all mined blocks.
 
 ## Technical Details
 
-### Donation Script (Already in P2Pool)
+### Donation Script (Used on BOTH Chains)
 - **Format**: P2PK (Pay-to-PubKey)
 - **Hex**: `4104ffd03de44a6e11b9917f3a29f9443283d9871c9d743ef30d5eddcd37094b64d1b3d8090496b53256786bf5c82932ec23c3b74d9f05a6f95a8b5529352656664bac`
-- **Address (testnet)**: `noBEfr9wTGgs94CdGVXGYwsQghEwBsXw4K`
-- **Address (mainnet)**: `1BHCtLJRhWftUQT9RZmhEBYx6QXJZbXRKL`
-- **Location**: Defined in `p2pool/data.py` as `DONATION_SCRIPT` constant
+- **Testnet Address**: `noBEfr9wTGgs94CdGVXGYwsQghEwBsXw4K`
+- **Mainnet Address**: `1BHCtLJRhWftUQT9RZmhEBYx6QXJZbXRKL`
 
-### OP_RETURN Tag (Already in P2Pool)
-- **Format**: OP_RETURN (0x6a) + length (0x28 = 40 bytes) + data
-- **Purpose**: Permanent on-chain identifier for P2Pool shares
-- **Location**: Built into `gentx_before_refhash` in `p2pool/data.py`
+### OP_RETURN Tag (Dogecoin Merged Blocks)
+- **Format**: OP_RETURN (0x6a) + length + "P2Pool merged mining"
+- **Purpose**: Identifies blocks as P2Pool-mined on Dogecoin blockchain
+- **Value**: 0 (data-only output, unprunable)
 
 ## Implementation
 
 ### File: `p2pool/merged_mining.py`
-Simplified coinbase builder that focuses on miner payouts only (donation/OP_RETURN already handled by protocol):
+Builds Dogecoin-specific coinbase with donation and OP_RETURN:
 
 ```python
-def build_merged_coinbase(template, shareholders, net):
+def build_merged_coinbase(template, shareholders, net, donation_percentage=1.0):
     """
-    Build coinbase transaction with multiple outputs for merged mining
-    
-    P2Pool donation and OP_RETURN are already included in gentx_before_refhash.
-    This function focuses on miner payouts.
+    Build coinbase for MERGED CHAIN (Dogecoin)
+    Separate from parent chain (Litecoin) coinbase!
+    Uses same donation_percentage as parent chain (--give-author option)
     """
     total_reward = template['coinbasevalue']
     
-    # Build outputs for each shareholder
-    tx_outs = []
-    for address, fraction in shareholders.iteritems():
-        amount = int(total_reward * fraction)
-        script = bitcoin_data.address_to_script2(address, net)
-        tx_outs.append({'value': amount, 'script': script})
+    # Calculate donation from configurable percentage
+    donation_amount = int(total_reward * donation_percentage / 100)
+    miners_reward = total_reward - donation_amount
     
-    # Donation and OP_RETURN are added automatically by share chain protocol
-    return coinbase_tx
+    # Build miner outputs (100-X% split proportionally)
+    for address, fraction in shareholders.iteritems():
+        amount = int(miners_reward * fraction)
+        tx_outs.append({'value': amount, 'script': address_script})
+    
+    # Add OP_RETURN identifier for Dogecoin blockchain
+    op_return_script = '\x6a' + chr(len(P2POOL_TAG)) + P2POOL_TAG
+    tx_outs.append({'value': 0, 'script': op_return_script})
+    
+    # Add donation output (X% from --give-author)
+    tx_outs.append({'value': donation_amount, 'script': DONATION_SCRIPT})
 ```
 
-**Key Point**: We removed the manual donation/OP_RETURN addition because P2Pool's core protocol **already handles this** through `gentx_before_refhash`.
+**Key Point**: The `donation_percentage` parameter comes from `args.donation_percentage` (the `--give-author` CLI option), ensuring both chains use the same donation rate.
 
 ### File: `p2pool/work.py`
 Fixed critical bugs that were preventing merged mining from working:
