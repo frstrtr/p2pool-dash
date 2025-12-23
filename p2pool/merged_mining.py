@@ -9,6 +9,10 @@ multiple miners on merged chains (e.g., Dogecoin).
 import sys
 from p2pool.bitcoin import data as bitcoin_data
 from p2pool.util import pack
+from p2pool import data as p2pool_data
+
+# P2Pool author donation script (1% of merged mining blocks)
+DONATION_SCRIPT = '4104ffd03de44a6e11b9917f3a29f9443283d9871c9d743ef30d5eddcd37094b64d1b3d8090496b53256786bf5c82932ec23c3b74d9f05a6f95a8b5529352656664bac'.decode('hex')
 
 
 def build_coinbase_input_script(height, extradata=''):
@@ -39,6 +43,8 @@ def build_merged_coinbase(template, shareholders, net):
     """
     Build coinbase transaction with multiple outputs for merged mining
     
+    Includes P2Pool author donation (1% of block reward + fees)
+    
     Args:
         template: Block template from getblocktemplate (with auxpow)
         shareholders: Dict of {address: fraction} OR {address: (fraction, net_obj)}
@@ -50,17 +56,26 @@ def build_merged_coinbase(template, shareholders, net):
     total_reward = template['coinbasevalue']
     height = template['height']
     
-    # Build outputs for each shareholder
+    # Reserve 1% for P2Pool author donation
+    donation_amount = total_reward // 100  # 1% of block reward
+    miners_reward = total_reward - donation_amount
+    
+    print >>sys.stderr, '[DONATION] Total reward: %d, Donation (1%%): %d, Miners: %d' % (
+        total_reward, donation_amount, miners_reward)
+    
+    # Build outputs for each shareholder (from 99% of reward)
     tx_outs = []
+    total_distributed = 0
     for address, value in shareholders.iteritems():
         # Handle both old format (address: fraction) and new format (address: (fraction, net))
         if isinstance(value, tuple):
             fraction, addr_net = value
         else:
             fraction = value
-            addr_net = net
+            addr_net = net.PARENT if hasattr(net, 'PARENT') else net
         
-        amount = int(total_reward * fraction)
+        amount = int(miners_reward * fraction)
+        total_distributed += amount
         if amount > 0:  # Skip dust outputs
             try:
                 # Use existing bitcoin_data.address_to_script2 function with proper network
@@ -70,12 +85,23 @@ def build_merged_coinbase(template, shareholders, net):
                     'script': script2,
                 })
             except ValueError as e:
-                print 'Warning: Failed to decode address %s: %s' % (address, e)
+                print >>sys.stderr, 'Warning: Failed to decode address %s: %s' % (address, e)
+    
+    # Add P2Pool author donation output (1% of block reward)
+    # This marks blocks as P2Pool-mined in the blockchain
+    tx_outs.append({
+        'value': donation_amount,
+        'script': DONATION_SCRIPT,
+    })
+    
+    print >>sys.stderr, '[DONATION] Added P2Pool author donation output: %d satoshis' % donation_amount
+    print >>sys.stderr, '[DONATION] Total outputs: %d (shareholders) + 1 (donation) = %d' % (
+        len(tx_outs) - 1, len(tx_outs))
     
     # If no valid outputs, create a single output to a default address
     # (This should never happen in normal operation)
     if not tx_outs:
-        print 'ERROR: No valid shareholder outputs, merged mining will fail!'
+        print >>sys.stderr, 'ERROR: No valid shareholder outputs, merged mining will fail!'
         # Create dummy output to prevent transaction from being invalid
         tx_outs.append({
             'value': total_reward,

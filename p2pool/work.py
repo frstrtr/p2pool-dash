@@ -115,26 +115,31 @@ class WorkerBridge(worker_interface.WorkerBridge):
                                 from p2pool import merged_mining
                                 
                                 # Step 1-2: Build Dogecoin coinbase and transactions, calculate merkle root
-                                # For now, use template transactions to calculate merkle root
-                                # TODO: Build custom coinbase with PPLNS payouts
                                 doge_tx_hashes = [int(tx['hash'], 16) for tx in template.get('transactions', [])]
                                 
-                                # Build a simple coinbase for Dogecoin (will be improved later with PPLNS)
-                                # For now, use a dummy output - we just need a valid transaction structure
-                                # The actual payout logic will be implemented in build_merged_coinbase later
-                                doge_coinbase_tx = dict(
-                                    version=1,
-                                    tx_ins=[dict(
-                                        previous_output=None,  # Coinbase input - None gets serialized as sentinel value
-                                        script=script.create_push_script([template['height'], 'MERGED MINING']),
-                                        sequence=None,  # Use None, not 0xffffffff which is the sentinel value
-                                    )],
-                                    tx_outs=[dict(
-                                        value=template['coinbasevalue'],
-                                        script='\x76\xa9\x14' + ('\x00' * 20) + '\x88\xac',  # OP_DUP OP_HASH160 <20 bytes> OP_EQUALVERIFY OP_CHECKSIG
-                                    )],
-                                    lock_time=0,
-                                )
+                                # Build merged mining coinbase with P2Pool author donation (1%)
+                                # Use multiaddress parsing if available, otherwise use single address
+                                if hasattr(self.args, 'multiaddress') and self.args.multiaddress:
+                                    # Parse multiaddress format: addr1:0.4,addr2:0.3,addr3:0.2,addr4:0.1
+                                    shareholders = {}
+                                    for part in self.args.multiaddress.split(','):
+                                        addr, fraction_str = part.strip().split(':')
+                                        shareholders[addr.strip()] = float(fraction_str)
+                                    print >>sys.stderr, '[MERGED] Building coinbase with %d shareholders' % len(shareholders)
+                                else:
+                                    # Single address mode - use the address from args or default
+                                    mining_address = getattr(self.args, 'address', None)
+                                    if not mining_address and self.my_pubkey_hash:
+                                        mining_address = bitcoin_data.pubkey_hash_to_address(
+                                            self.my_pubkey_hash, self.node.net.PARENT.ADDRESS_VERSION,
+                                            -1, self.node.net.PARENT)
+                                    shareholders = {mining_address: 1.0} if mining_address else {}
+                                    print >>sys.stderr, '[MERGED] Single address mode: %s' % mining_address
+                                
+                                # Build coinbase with P2Pool donation (1% of block reward)
+                                doge_coinbase_tx = merged_mining.build_merged_coinbase(
+                                    template, shareholders, self.node.net)
+                                
                                 doge_coinbase_hash = bitcoin_data.hash256(bitcoin_data.tx_type.pack(doge_coinbase_tx))
                                 all_doge_tx_hashes = [doge_coinbase_hash] + doge_tx_hashes
                                 
