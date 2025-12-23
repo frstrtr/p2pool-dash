@@ -61,6 +61,69 @@ def get_balance():
     """Get wallet balance"""
     return rpc_call("getbalance")
 
+def get_submission_stats():
+    """Parse block submission statistics from P2Pool logs"""
+    try:
+        # Count different submission results
+        cmd = "grep 'rpc_submitblock returned' " + P2POOL_LOG + " | sed 's/.*returned: //' | sort | uniq -c"
+        result = run_ssh_command(cmd)
+        
+        stats = {
+            'accepted': 0,
+            'inconclusive': 0,
+            'duplicate': 0,
+            'duplicate_inconclusive': 0,
+            'bad_cb_height': 0,
+            'other': 0
+        }
+        
+        for line in result.split('\n'):
+            if not line.strip():
+                continue
+            try:
+                count, result_type = line.strip().split(None, 1)
+                count = int(count)
+                
+                if 'None' in result_type:
+                    stats['accepted'] = count
+                elif 'inconclusive' in result_type and 'duplicate' not in result_type:
+                    stats['inconclusive'] = count
+                elif 'duplicate-inconclusive' in result_type:
+                    stats['duplicate_inconclusive'] = count
+                elif 'duplicate' in result_type:
+                    stats['duplicate'] = count
+                elif 'bad-cb-height' in result_type:
+                    stats['bad_cb_height'] = count
+                else:
+                    stats['other'] += count
+            except:
+                continue
+        
+        return stats
+    except:
+        return None
+
+def check_recent_accepted_blocks():
+    """Check coinbase outputs of recently accepted blocks"""
+    try:
+        # Find timestamps of accepted blocks
+        cmd = "grep -B10 'rpc_submitblock returned: None' " + P2POOL_LOG + " | grep 'Dogecoin block candidate' | tail -5"
+        result = run_ssh_command(cmd)
+        
+        blocks_info = []
+        for line in result.split('\n'):
+            if 'pow_hash=' in line:
+                try:
+                    # Extract pow_hash
+                    pow_hash = line.split('pow_hash=')[1].split()[0]
+                    blocks_info.append({'pow_hash': pow_hash[:16] + '...'})
+                except:
+                    continue
+        
+        return blocks_info
+    except:
+        return []
+
 def check_recent_blocks(num_blocks=10):
     """Check recent blocks for our mined blocks (optimized for speed)"""
     current_height = get_block_count()
@@ -142,26 +205,36 @@ def get_candidate_info():
     
     return total_candidates, list(recent_candidates)
 
-def calculate_local_hashrate(network_diff):
-    """Calculate approximate local hashrate based on candidate finding rate"""
+def calculate_local_stats(network_info):
+    """Calculate local mining statistics"""
     if len(candidate_times) < 2:
-        return 0
+        return {"candidates_per_min": 0, "network_share": 0}
     
-    # Calculate time span
+    # Calculate time span in seconds
     time_span = (candidate_times[-1] - candidate_times[0]).total_seconds()
     if time_span < 1:
-        return 0
+        return {"candidates_per_min": 0, "network_share": 0}
     
-    # Candidates per second
-    candidates_per_sec = len(candidate_times) / time_span
+    # Calculate candidates per minute
+    candidates_per_min = (len(candidate_times) / time_span) * 60
     
-    # Estimate hashrate: candidates/sec * (2^32 * difficulty)
-    # This is approximate based on probability of finding blocks
-    if network_diff > 0:
-        hashrate = candidates_per_sec * (2**32 * network_diff) / 1000  # Convert to KH/s
-        return max(0, hashrate)
+    # Estimate network share based on candidate rate vs block rate
+    # Network produces blocks at: network_hashps / (2^32 * difficulty) blocks/sec
+    # We produce candidates at: candidates_per_sec rate
+    # Our share ≈ (candidates_per_sec) / (network_blocks_per_sec) * (1/ratio_threshold)
+    if network_info and network_info.get('networkhashps', 0) > 0 and network_info.get('difficulty', 0) > 0:
+        network_blocks_per_sec = network_info['networkhashps'] / (2**32 * network_info['difficulty'])
+        candidates_per_sec = len(candidate_times) / time_span
+        # Rough estimate: assume candidates represent ~1% difficulty threshold
+        # This is very approximate since actual candidate difficulty varies
+        network_share = min(100, (candidates_per_sec / network_blocks_per_sec) * 100 * 0.01)
+    else:
+        network_share = 0
     
-    return 0
+    return {
+        "candidates_per_min": candidates_per_min,
+        "network_share": network_share
+    }
 
 def get_donation_balance(mined_blocks):
     """Get donation outputs from blocks we actually mined"""
@@ -237,12 +310,13 @@ def print_network_stats(info):
     print(f"  Chain:            {info.get('chain', 'unknown')}")
     print()
 
-def print_mining_stats(candidates, balance, hashrate, donation_info):
+def print_mining_stats(candidates, balance, local_stats, donation_info):
     """Print our mining statistics"""
     print("⛏️  MINING STATS")
     print("-" * 80)
     print(f"  Total Candidates: {candidates}")
-    print(f"  Local Hashrate:   {hashrate:.2f} KH/s (estimated)")
+    print(f"  Candidate Rate:   {local_stats['candidates_per_min']:.2f} per minute")
+    print(f"  Network Share:    ~{local_stats['network_share']:.2f}% (estimated)")
     print(f"  Wallet Balance:   {balance:,.1f} DOGE")
     
     if donation_info:
@@ -253,18 +327,43 @@ def print_mining_stats(candidates, balance, hashrate, donation_info):
         print(f"\n  💰 P2Pool Donation Fund: Scanning...")
     print()
 
-def print_recent_candidates(candidates_list):
-    """Print recent block candidates"""
-    print("🎯 RECENT CANDIDATES (Last 10)")
+def print_submission_stats(stats, accepted_blocks):
+    """Print block submission statistics"""
+    print("📤 BLOCK SUBMISSION STATS")
     print("-" * 80)
-    if not candidates_list:
-        print("  No candidates yet...")
+    if not stats:
+        print("  Unable to fetch submission stats")
+    else:
+        total = sum(stats.values())
+        print(f"  Total Submissions: {total}")
+        print(f"  ✅ Accepted:       {stats['accepted']} ({stats['accepted']*100//max(1,total)}%)")
+        print(f"  ⏱️  Too Late:        {stats['inconclusive']} ({stats['inconclusive']*100//max(1,total)}%)")
+        print(f"  🔄 Duplicate:      {stats['duplicate'] + stats['duplicate_inconclusive']}")
+        print(f"  ❌ Errors:         {stats['bad_cb_height'] + stats['other']}")
+        
+        if accepted_blocks:
+            print(f"\n  Recent Accepted Blocks (last 5):")
+            for block in accepted_blocks[-5:]:
+                print(f"    Hash: {block['pow_hash']}")
+    print()
+
+def print_recent_candidates(candidates_list):
+    """Print recent block candidates (95%+ only)"""
+    # Filter to show candidates that are very close to or exceeded block target
+    qualifying_candidates = [c for c in candidates_list if c['ratio'] >= 95.0]
+    
+    print("🎯 RECENT CANDIDATES (≥95% to Target)")
+    print("-" * 80)
+    if not qualifying_candidates:
+        print("  No qualifying candidates yet (need ≥95% to target)...")
     else:
         print(f"  {'Time':<12} {'Hash':<22} {'% to Target':>12}")
         print("  " + "-" * 78)
-        for c in reversed(candidates_list):  # Most recent first
+        for c in reversed(qualifying_candidates):  # Most recent first
             ratio_str = f"{c['ratio']:.2f}%"
-            print(f"  {c['time']:<12} {c['hash']:<22} {ratio_str:>12}")
+            # Highlight 100%+ candidates with a marker
+            marker = " ✓" if c['ratio'] >= 100.0 else ""
+            print(f"  {c['time']:<12} {c['hash']:<22} {ratio_str:>12}{marker}")
     print()
 
 def print_mined_blocks(blocks):
@@ -306,9 +405,12 @@ def main():
                 balance = get_balance()
                 total_candidates, recent = get_candidate_info()
                 
-                # Calculate local hashrate
-                network_diff = network_info.get('difficulty', 0) if network_info else 0
-                local_hashrate = calculate_local_hashrate(network_diff)
+                # Calculate local mining stats
+                local_stats = calculate_local_stats(network_info)
+                
+                # Get submission statistics
+                submission_stats = get_submission_stats()
+                accepted_blocks = check_recent_accepted_blocks()
                 
                 # Check for mined blocks (fast scan)
                 mined_blocks = check_recent_blocks(10)
@@ -320,7 +422,8 @@ def main():
                 clear_screen()
                 print_header()
                 print_network_stats(network_info)
-                print_mining_stats(total_candidates, balance, local_hashrate, donation_info)
+                print_mining_stats(total_candidates, balance, local_stats, donation_info)
+                print_submission_stats(submission_stats, accepted_blocks)
                 print_recent_candidates(recent)
                 print_mined_blocks(mined_blocks)
                 print_footer(datetime.now())
