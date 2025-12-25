@@ -186,17 +186,17 @@ class WorkerBridge(worker_interface.WorkerBridge):
                                         is_testnet = parent_symbol.lower().startswith('t') or 'test' in parent_symbol.lower()
                                         if is_testnet:
                                             merged_addr_net = dogecoin_testnet_net
-                                            print >>sys.stderr, '[MERGED] Setting merged_addr_net = dogecoin_testnet_net: %s' % merged_addr_net
+                                            # print >>sys.stderr, '[MERGED] Setting merged_addr_net = dogecoin_testnet_net: %s' % merged_addr_net
                                         else:
                                             merged_addr_net = dogecoin_net
-                                            print >>sys.stderr, '[MERGED] Setting merged_addr_net = dogecoin_net: %s' % merged_addr_net
+                                            # print >>sys.stderr, '[MERGED] Setting merged_addr_net = dogecoin_net: %s' % merged_addr_net
                                         if merged_addr_net is None:
                                             print >>sys.stderr, '[MERGED] Warning: Dogecoin network module not available, using parent chain addresses'
                                             merged_addr_net = self.node.net.PARENT if hasattr(self.node.net, 'PARENT') else self.node.net
-                                        print >>sys.stderr, '[MERGED] Final merged_addr_net: SYMBOL=%s, ADDRESS_VERSION=%d' % (merged_addr_net.SYMBOL, merged_addr_net.ADDRESS_VERSION)
+                                        # print >>sys.stderr, '[MERGED] Final merged_addr_net: SYMBOL=%s, ADDRESS_VERSION=%d' % (merged_addr_net.SYMBOL, merged_addr_net.ADDRESS_VERSION)
                                     else:
                                         # Unknown chain - fallback to parent network (may produce wrong addresses!)
-                                        print >>sys.stderr, '[MERGED] Warning: Unknown chainid %d, using parent chain address format' % chainid
+                                        # print >>sys.stderr, '[MERGED] Warning: Unknown chainid %d, using parent chain address format' % chainid
                                         merged_addr_net = self.node.net.PARENT if hasattr(self.node.net, 'PARENT') else self.node.net
                                     
                                     # Convert weights (script -> weight) to shareholders (address -> fraction)
@@ -209,7 +209,8 @@ class WorkerBridge(worker_interface.WorkerBridge):
                                             fraction = float(weight) / float(total_weight) if total_weight > 0 else 0
                                             shareholders[address] = fraction
                                         except Exception as e:
-                                            print >>sys.stderr, '[MERGED] Warning: Could not convert script to address: %s' % e
+                                            # print >>sys.stderr, '[MERGED] Warning: Could not convert script to address: %s' % e
+                                            pass
                                     
                                     print >>sys.stderr, '[MERGED] Using PPLNS distribution with %d shareholders from share chain' % len(shareholders)
                                 except (KeyError, AttributeError, TypeError) as e:
@@ -583,11 +584,11 @@ class WorkerBridge(worker_interface.WorkerBridge):
             ))
             mm_later = [(aux_work, mm_hashes.index(aux_work['hash']), mm_hashes) for chain_id, aux_work in self.merged_work.value.iteritems()]
             
-            # Debug: Show which chains and hashes are being embedded
-            print >>sys.stderr, '[DEBUG] Merged mining data being embedded in Litecoin coinbase:'
-            for chain_id, aux_work in self.merged_work.value.iteritems():
-                print >>sys.stderr, '[DEBUG]   Chain ID 0x%08x: hash=%064x' % (chain_id, aux_work['hash'])
-            print >>sys.stderr, '[DEBUG]   Merkle root of mm_hashes: %064x' % bitcoin_data.merkle_hash(mm_hashes)
+            # Debug: Uncomment to trace merged mining data in coinbase (prints frequently)
+            # print >>sys.stderr, '[DEBUG] Merged mining data being embedded in Litecoin coinbase:'
+            # for chain_id, aux_work in self.merged_work.value.iteritems():
+            #     print >>sys.stderr, '[DEBUG]   Chain ID 0x%08x: hash=%064x' % (chain_id, aux_work['hash'])
+            # print >>sys.stderr, '[DEBUG]   Merkle root of mm_hashes: %064x' % bitcoin_data.merkle_hash(mm_hashes)
         else:
             mm_data = ''
             mm_later = []
@@ -699,8 +700,8 @@ class WorkerBridge(worker_interface.WorkerBridge):
         # defines the block that will be submitted. The merkle_link must match this.
         # This is true for BOTH regular P2Pool AND merged mining.
         merkle_link = bitcoin_data.calculate_merkle_link([None] + other_transaction_hashes, 0)
-        if mm_later:
-            print >>sys.stderr, '[DEBUG] Merged mining: merkle_link uses other_transaction_hashes (%d txs)' % len(other_transaction_hashes)
+        # if mm_later:
+        #     print >>sys.stderr, '[DEBUG] Merged mining: merkle_link uses other_transaction_hashes (%d txs)' % len(other_transaction_hashes)
 
 
         if print_throttle is 0.0:
@@ -708,13 +709,13 @@ class WorkerBridge(worker_interface.WorkerBridge):
         else:
             current_time = time.time()
             if (current_time - print_throttle) > 5.0:
-                # DEBUG: Print actual target values to diagnose share difficulty issue
-                print >>sys.stderr, '[SHARE DEBUG] share_info[bits].target = %x' % share_info['bits'].target
-                print >>sys.stderr, '[SHARE DEBUG] share_info[bits].bits = %x' % share_info['bits'].bits
-                print >>sys.stderr, '[SHARE DEBUG] target (pseudoshare) = %x' % target
-                print >>sys.stderr, '[SHARE DEBUG] MAX_TARGET = %x' % self.node.net.MAX_TARGET
-                print >>sys.stderr, '[SHARE DEBUG] MIN_TARGET = %x' % self.node.net.MIN_TARGET
-                print >>sys.stderr, '[SHARE DEBUG] SANE_TARGET_RANGE = (%x, %x)' % self.node.net.PARENT.SANE_TARGET_RANGE
+                # Debug: Uncomment to trace share target/difficulty calculations (confirmed working)
+                # print >>sys.stderr, '[SHARE DEBUG] share_info[bits].target = %x' % share_info['bits'].target
+                # print >>sys.stderr, '[SHARE DEBUG] share_info[bits].bits = %x' % share_info['bits'].bits
+                # print >>sys.stderr, '[SHARE DEBUG] target (pseudoshare) = %x' % target
+                # print >>sys.stderr, '[SHARE DEBUG] MAX_TARGET = %x' % self.node.net.MAX_TARGET
+                # print >>sys.stderr, '[SHARE DEBUG] MIN_TARGET = %x' % self.node.net.MIN_TARGET
+                # print >>sys.stderr, '[SHARE DEBUG] SANE_TARGET_RANGE = (%x, %x)' % self.node.net.PARENT.SANE_TARGET_RANGE
                 print 'New work for worker %s! Difficulty: %.06f Share difficulty: %.06f (speed %.06f) Total block value: %.6f %s including %i transactions' % (
                     bitcoin_data.pubkey_hash_to_address(pubkey_hash, self.node.net.PARENT.ADDRESS_VERSION, -1, self.node.net.PARENT),
                     bitcoin_data.target_to_difficulty(target),
@@ -779,23 +780,24 @@ class WorkerBridge(worker_interface.WorkerBridge):
             # Show what we're actually using to construct new_packed_gentx
             coinb1_actual = packed_gentx_stripped[:-coinbase_payload_data_size_local-self.COINBASE_NONCE_LENGTH-4]
             coinb2_actual = packed_gentx_stripped[-coinbase_payload_data_size_local-4:]
-            print >>sys.stderr, '[WORK DEBUG] packed_gentx_stripped length: %d' % len(packed_gentx_stripped)
-            print >>sys.stderr, '[WORK DEBUG] coinbase_payload_data_size_local: %d' % coinbase_payload_data_size_local
-            print >>sys.stderr, '[WORK DEBUG] COINBASE_NONCE_LENGTH: %d' % self.COINBASE_NONCE_LENGTH
-            print >>sys.stderr, '[WORK DEBUG] coinb1_actual length: %d' % len(coinb1_actual)
-            print >>sys.stderr, '[WORK DEBUG] coinb2_actual length: %d' % len(coinb2_actual)
-            print >>sys.stderr, '[WORK DEBUG] coinbase_nonce hex: %s (len=%d)' % (coinbase_nonce.encode('hex'), len(coinbase_nonce))
+            # Debug: Uncomment to trace coinbase construction (confirmed working)
+            # print >>sys.stderr, '[WORK DEBUG] packed_gentx_stripped length: %d' % len(packed_gentx_stripped)
+            # print >>sys.stderr, '[WORK DEBUG] coinbase_payload_data_size_local: %d' % coinbase_payload_data_size_local
+            # print >>sys.stderr, '[WORK DEBUG] COINBASE_NONCE_LENGTH: %d' % self.COINBASE_NONCE_LENGTH
+            # print >>sys.stderr, '[WORK DEBUG] coinb1_actual length: %d' % len(coinb1_actual)
+            # print >>sys.stderr, '[WORK DEBUG] coinb2_actual length: %d' % len(coinb2_actual)
+            # print >>sys.stderr, '[WORK DEBUG] coinbase_nonce hex: %s (len=%d)' % (coinbase_nonce.encode('hex'), len(coinbase_nonce))
             # Use txid (stripped hash without SegWit witness data) for merkle root
             # This ensures consistency with auxpow serialization which uses tx_id_type
             work_coinbase_txid = bitcoin_data.get_txid(new_gentx)
             work_coinbase_hash = work_coinbase_txid  # For backward compatibility in debug output
             work_merkle_root = bitcoin_data.check_merkle_link(work_coinbase_txid, ba['merkle_link'])
-            print >>sys.stderr, '[WORK DEBUG] new_packed_gentx length: %d' % len(new_packed_gentx)
-            print >>sys.stderr, '[WORK DEBUG] coinbase txid (stripped): %064x' % work_coinbase_txid
-            print >>sys.stderr, '[WORK DEBUG] coinbase hash: %064x' % work_coinbase_hash
-            print >>sys.stderr, '[WORK DEBUG] header[merkle_root]: %064x' % header['merkle_root']
-            print >>sys.stderr, '[WORK DEBUG] calculated merkle_root: %064x' % work_merkle_root
-            print >>sys.stderr, '[WORK DEBUG] MATCH: %s' % (work_merkle_root == header['merkle_root'])
+            # print >>sys.stderr, '[WORK DEBUG] new_packed_gentx length: %d' % len(new_packed_gentx)
+            # print >>sys.stderr, '[WORK DEBUG] coinbase txid (stripped): %064x' % work_coinbase_txid
+            # print >>sys.stderr, '[WORK DEBUG] coinbase hash: %064x' % work_coinbase_hash
+            # print >>sys.stderr, '[WORK DEBUG] header[merkle_root]: %064x' % header['merkle_root']
+            # print >>sys.stderr, '[WORK DEBUG] calculated merkle_root: %064x' % work_merkle_root
+            # print >>sys.stderr, '[WORK DEBUG] MATCH: %s' % (work_merkle_root == header['merkle_root'])
             
             # CRITICAL FIX: Update header with recalculated merkle_root
             # The header from stratum has merkle_root based on the template coinbase,
@@ -869,10 +871,10 @@ class WorkerBridge(worker_interface.WorkerBridge):
             work_event_diff = self.new_work_event.times - lp_count
             on_time = work_event_diff <= 3  # Allow up to 3 work events behind
 
-            # DEBUG: Check what's in mm_later
-            print >>sys.stderr, '[DEBUG] mm_later has %d items, pow_hash=%064x' % (len(mm_later), pow_hash)
-            for aux_work, index, hashes in mm_later:
-                print >>sys.stderr, '[DEBUG] Checking aux_work target=%064x, meets=%s' % (aux_work['target'], pow_hash <= aux_work['target'])
+            # Debug: Uncomment to trace merged mining auxpow checking (prints on every share)
+            # print >>sys.stderr, '[DEBUG] mm_later has %d items, pow_hash=%064x' % (len(mm_later), pow_hash)
+            # for aux_work, index, hashes in mm_later:
+            #     print >>sys.stderr, '[DEBUG] Checking aux_work target=%064x, meets=%s' % (aux_work['target'], pow_hash <= aux_work['target'])
 
             for aux_work, index, hashes in mm_later:
                 try:
@@ -1175,21 +1177,22 @@ class WorkerBridge(worker_interface.WorkerBridge):
             # CRITICAL: Only attempt share creation if merkle_root matches current work template!
             # If work_merkle_root != header['merkle_root'], the submitted work is stale (from old template)
             if pow_hash <= share_info['bits'].target and header_hash not in received_header_hashes and work_merkle_root == header['merkle_root']:
-                print >>sys.stderr, '[DEBUG] Attempting to create P2Pool share:'
-                print >>sys.stderr, '  pow_hash: %064x' % pow_hash
-                print >>sys.stderr, '  target:   %064x' % share_info['bits'].target
-                print >>sys.stderr, '  passes:   %s' % (pow_hash <= share_info['bits'].target)
-                print >>sys.stderr, '  header: %s' % header
+                # Debug: Uncomment to trace P2Pool share creation (prints on every share)
+                # print >>sys.stderr, '[DEBUG] Attempting to create P2Pool share:'
+                # print >>sys.stderr, '  pow_hash: %064x' % pow_hash
+                # print >>sys.stderr, '  target:   %064x' % share_info['bits'].target
+                # print >>sys.stderr, '  passes:   %s' % (pow_hash <= share_info['bits'].target)
+                # print >>sys.stderr, '  header: %s' % header
                 last_txout_nonce = pack.IntType(8*self.COINBASE_NONCE_LENGTH).unpack(coinbase_nonce)
                 try:
                     share = get_share(header, last_txout_nonce)
                 except Exception as e:
-                    print >>sys.stderr, '[DEBUG] get_share failed: %s' % e
-                    print >>sys.stderr, '[DEBUG] Recalculating pow_hash with header:'
-                    recalc_pow = self.node.net.PARENT.POW_FUNC(bitcoin_data.block_header_type.pack(header))
-                    print >>sys.stderr, '  Recalc pow_hash: %064x' % recalc_pow
-                    print >>sys.stderr, '  Original pow_hash: %064x' % pow_hash
-                    print >>sys.stderr, '  Match: %s' % (recalc_pow == pow_hash)
+                    # print >>sys.stderr, '[DEBUG] get_share failed: %s' % e
+                    # print >>sys.stderr, '[DEBUG] Recalculating pow_hash with header:'
+                    # recalc_pow = self.node.net.PARENT.POW_FUNC(bitcoin_data.block_header_type.pack(header))
+                    # print >>sys.stderr, '  Recalc pow_hash: %064x' % recalc_pow
+                    # print >>sys.stderr, '  Original pow_hash: %064x' % pow_hash
+                    # print >>sys.stderr, '  Match: %s' % (recalc_pow == pow_hash)
                     raise
 
                 print 'GOT SHARE! %s %s prev %s age %.2fs%s' % (

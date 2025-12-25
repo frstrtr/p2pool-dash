@@ -31,20 +31,21 @@ hash_link_type = pack.ComposedType([
 
 def prefix_to_hash_link(prefix, const_ending=''):
     import sys
-    print >>sys.stderr, '[PREFIX_TO_HASH_LINK] prefix length: %d' % len(prefix)
-    print >>sys.stderr, '[PREFIX_TO_HASH_LINK] const_ending length: %d' % len(const_ending)
-    print >>sys.stderr, '[PREFIX_TO_HASH_LINK] const_ending: %s' % const_ending.encode('hex')
-    print >>sys.stderr, '[PREFIX_TO_HASH_LINK] last 50 bytes of prefix: %s' % prefix[-50:].encode('hex')
+    # Debug: Uncomment to trace hash_link SHA256 internals (confirmed working)
+    # print >>sys.stderr, '[PREFIX_TO_HASH_LINK] prefix length: %d' % len(prefix)
+    # print >>sys.stderr, '[PREFIX_TO_HASH_LINK] const_ending length: %d' % len(const_ending)
+    # print >>sys.stderr, '[PREFIX_TO_HASH_LINK] const_ending: %s' % const_ending.encode('hex')
+    # print >>sys.stderr, '[PREFIX_TO_HASH_LINK] last 50 bytes of prefix: %s' % prefix[-50:].encode('hex')
     
     assert prefix.endswith(const_ending), (prefix, const_ending)
     x = sha256.sha256(prefix)
     
-    print >>sys.stderr, '[PREFIX_TO_HASH_LINK] SHA256 state: %s (len=%d)' % (x.state.encode('hex'), len(x.state))
-    print >>sys.stderr, '[PREFIX_TO_HASH_LINK] SHA256 buf: %s (len=%d)' % (x.buf.encode('hex'), len(x.buf))
-    print >>sys.stderr, '[PREFIX_TO_HASH_LINK] SHA256 length: %d' % x.length
+    # print >>sys.stderr, '[PREFIX_TO_HASH_LINK] SHA256 state: %s (len=%d)' % (x.state.encode('hex'), len(x.state))
+    # print >>sys.stderr, '[PREFIX_TO_HASH_LINK] SHA256 buf: %s (len=%d)' % (x.buf.encode('hex'), len(x.buf))
+    # print >>sys.stderr, '[PREFIX_TO_HASH_LINK] SHA256 length: %d' % x.length
     extra_data = x.buf[:max(0, len(x.buf)-len(const_ending))]
-    print >>sys.stderr, '[PREFIX_TO_HASH_LINK] extra_data: %s (len=%d)' % (extra_data.encode('hex'), len(extra_data))
-    print >>sys.stderr, '[PREFIX_TO_HASH_LINK] length//8: %d' % (x.length//8)
+    # print >>sys.stderr, '[PREFIX_TO_HASH_LINK] extra_data: %s (len=%d)' % (extra_data.encode('hex'), len(extra_data))
+    # print >>sys.stderr, '[PREFIX_TO_HASH_LINK] length//8: %d' % (x.length//8)
     
     return dict(state=x.state, extra_data=extra_data, length=x.length//8)
 
@@ -540,23 +541,23 @@ class BaseShare(object):
             merkle_root = bitcoin_data.check_merkle_link(self.gentx_hash, self.share_info['segwit_data']['txid_merkle_link'] if segwit_activated else self.merkle_link)
         self.header = dict(self.min_header, merkle_root=merkle_root)
         
-        # DEBUG: Check if header merkle_root matches what we calculated
-        import sys
-        print >>sys.stderr, '[SHARE __init__] Calculated merkle_root: %064x' % merkle_root
-        print >>sys.stderr, '[SHARE __init__] gentx_hash: %064x' % self.gentx_hash
-        print >>sys.stderr, '[SHARE __init__] merkle_link branches: %d' % len(self.merkle_link['branch'])
+        # Debug: Uncomment to trace share creation (prints on every share)
+        # import sys
+        # print >>sys.stderr, '[SHARE __init__] Calculated merkle_root: %064x' % merkle_root
+        # print >>sys.stderr, '[SHARE __init__] gentx_hash: %064x' % self.gentx_hash
+        # print >>sys.stderr, '[SHARE __init__] merkle_link branches: %d' % len(self.merkle_link['branch'])
         
         self.pow_hash = net.PARENT.POW_FUNC(bitcoin_data.block_header_type.pack(self.header))
         self.hash = self.header_hash = bitcoin_data.hash256(bitcoin_data.block_header_type.pack(self.header))
         
-        # DEBUG: Print share validation info
-        import sys
-        print >>sys.stderr, '[SHARE VALIDATION DEBUG]'
-        print >>sys.stderr, '  gentx_hash:  %064x' % self.gentx_hash
-        print >>sys.stderr, '  merkle_root: %064x' % merkle_root
-        print >>sys.stderr, '  pow_hash:    %064x' % self.pow_hash
-        print >>sys.stderr, '  target:      %064x' % self.target
-        print >>sys.stderr, '  passes:      %s' % (self.pow_hash <= self.target)
+        # Debug: Uncomment to trace share validation (prints on every share)
+        # import sys
+        # print >>sys.stderr, '[SHARE VALIDATION DEBUG]'
+        # print >>sys.stderr, '  gentx_hash:  %064x' % self.gentx_hash
+        # print >>sys.stderr, '  merkle_root: %064x' % merkle_root
+        # print >>sys.stderr, '  pow_hash:    %064x' % self.pow_hash
+        # print >>sys.stderr, '  target:      %064x' % self.target
+        # print >>sys.stderr, '  passes:      %s' % (self.pow_hash <= self.target)
         
         if self.target > net.MAX_TARGET:
             from p2pool import p2p

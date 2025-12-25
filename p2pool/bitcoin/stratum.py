@@ -109,14 +109,15 @@ class StratumRPCMiningProvider(object):
             return False
         x, got_response = self.handler_map[job_id]
         coinb_nonce = extranonce2.decode('hex')
-        print >>sys.stderr, '[STRATUM DEBUG] extranonce2 raw: %s (len=%d)' % (extranonce2, len(extranonce2))
-        print >>sys.stderr, '[STRATUM DEBUG] coinb_nonce len: %d, expected: %d' % (len(coinb_nonce), self.wb.COINBASE_NONCE_LENGTH)
+        # Debug: Uncomment to trace stratum share submission (prints on every share)
+        # print >>sys.stderr, '[STRATUM DEBUG] extranonce2 raw: %s (len=%d)' % (extranonce2, len(extranonce2))
+        # print >>sys.stderr, '[STRATUM DEBUG] coinb_nonce len: %d, expected: %d' % (len(coinb_nonce), self.wb.COINBASE_NONCE_LENGTH)
         # Pad or truncate to match expected length
         if len(coinb_nonce) < self.wb.COINBASE_NONCE_LENGTH:
-            print >>sys.stderr, '[STRATUM DEBUG] Padding coinb_nonce from %d to %d bytes' % (len(coinb_nonce), self.wb.COINBASE_NONCE_LENGTH)
+            # print >>sys.stderr, '[STRATUM DEBUG] Padding coinb_nonce from %d to %d bytes' % (len(coinb_nonce), self.wb.COINBASE_NONCE_LENGTH)
             coinb_nonce = coinb_nonce + '\x00' * (self.wb.COINBASE_NONCE_LENGTH - len(coinb_nonce))
         elif len(coinb_nonce) > self.wb.COINBASE_NONCE_LENGTH:
-            print >>sys.stderr, '[STRATUM DEBUG] Truncating coinb_nonce from %d to %d bytes' % (len(coinb_nonce), self.wb.COINBASE_NONCE_LENGTH)
+            # print >>sys.stderr, '[STRATUM DEBUG] Truncating coinb_nonce from %d to %d bytes' % (len(coinb_nonce), self.wb.COINBASE_NONCE_LENGTH)
             coinb_nonce = coinb_nonce[:self.wb.COINBASE_NONCE_LENGTH]
         assert len(coinb_nonce) == self.wb.COINBASE_NONCE_LENGTH
         new_packed_gentx = x['coinb1'] + coinb_nonce + x['coinb2']
@@ -124,13 +125,13 @@ class StratumRPCMiningProvider(object):
         # Debug: Print stratum's calculation
         stratum_coinbase_hash = bitcoin_data.hash256(new_packed_gentx)
         stratum_merkle_root = bitcoin_data.check_merkle_link(stratum_coinbase_hash, x['merkle_link'])
-        print >>sys.stderr, '[STRATUM DEBUG] coinb1 length: %d' % len(x['coinb1'])
-        print >>sys.stderr, '[STRATUM DEBUG] coinb2 length: %d' % len(x['coinb2'])
-        print >>sys.stderr, '[STRATUM DEBUG] coinb_nonce hex: %s' % coinb_nonce.encode('hex')
-        print >>sys.stderr, '[STRATUM DEBUG] new_packed_gentx length: %d' % len(new_packed_gentx)
-        print >>sys.stderr, '[STRATUM DEBUG] coinbase hash: %064x' % stratum_coinbase_hash
-        print >>sys.stderr, '[STRATUM DEBUG] merkle_link branch length: %d' % len(x['merkle_link']['branch'])
-        print >>sys.stderr, '[STRATUM DEBUG] calculated merkle_root: %064x' % stratum_merkle_root
+        # print >>sys.stderr, '[STRATUM DEBUG] coinb1 length: %d' % len(x['coinb1'])
+        # print >>sys.stderr, '[STRATUM DEBUG] coinb2 length: %d' % len(x['coinb2'])
+        # print >>sys.stderr, '[STRATUM DEBUG] coinb_nonce hex: %s' % coinb_nonce.encode('hex')
+        # print >>sys.stderr, '[STRATUM DEBUG] new_packed_gentx length: %d' % len(new_packed_gentx)
+        # print >>sys.stderr, '[STRATUM DEBUG] coinbase hash: %064x' % stratum_coinbase_hash
+        # print >>sys.stderr, '[STRATUM DEBUG] merkle_link branch length: %d' % len(x['merkle_link']['branch'])
+        # print >>sys.stderr, '[STRATUM DEBUG] calculated merkle_root: %064x' % stratum_merkle_root
 
         job_version = x['version']
         nversion = job_version
@@ -148,7 +149,7 @@ class StratumRPCMiningProvider(object):
         # hash256(new_packed_gentx) equals get_txid() of the transaction.
         # The miner computes the same hash, so merkle roots will match.
         coinbase_hash = bitcoin_data.hash256(new_packed_gentx)
-        print >>sys.stderr, '[STRATUM DEBUG] coinbase_hash (stripped): %064x' % coinbase_hash
+        # print >>sys.stderr, '[STRATUM DEBUG] coinbase_hash (stripped): %064x' % coinbase_hash
         
         header = dict(
             version=nversion,
