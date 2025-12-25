@@ -1011,7 +1011,19 @@ class WorkerBridge(worker_interface.WorkerBridge):
                                 
                                 # Reconstruct Dogecoin block using pre-built header and transactions
                                 # The doge_coinbase and transactions were locked in during Phase A
-                                doge_tx_list = [doge_coinbase] + [template['transactions'][i] for i in range(len(template.get('transactions', [])))]
+                                # Parse template transactions into proper transaction objects
+                                doge_tx_objects = []
+                                for tx_dict in template.get('transactions', []):
+                                    try:
+                                        # Decode hex transaction data and unpack into transaction object
+                                        tx_packed = tx_dict['data'].decode('hex')
+                                        tx_obj = bitcoin_data.tx_type.unpack(tx_packed)
+                                        doge_tx_objects.append(tx_obj)
+                                    except Exception as tx_e:
+                                        print >>sys.stderr, '[ERROR] Failed to parse Dogecoin transaction: %s' % tx_e
+                                        raise
+                                
+                                doge_tx_list = [doge_coinbase] + doge_tx_objects
                                 
                                 merged_block = dict(
                                     header=doge_header,

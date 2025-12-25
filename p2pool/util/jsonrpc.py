@@ -51,16 +51,17 @@ class Proxy(object):
 
 @defer.inlineCallbacks
 def _handle(data, provider, preargs=(), response_handler=None):
-        print '[DEBUG jsonrpc] _handle called with data:', repr(str(data)[:200])
+        # Debug: Uncomment to trace JSON-RPC calls (prints on every stratum request)
+        # print '[DEBUG jsonrpc] _handle called with data:', repr(str(data)[:200])
         id_ = None
         
         try:
             try:
                 try:
                     req = json.loads(data)
-                    print '[DEBUG jsonrpc] Parsed JSON request:', req
+                    # print '[DEBUG jsonrpc] Parsed JSON request:', req
                 except Exception as e:
-                    print '[DEBUG jsonrpc] JSON parse error:', e
+                    # print '[DEBUG jsonrpc] JSON parse error:', e
                     raise Error_for_code(-32700)(u'Parse error')
                 
                 if 'result' in req or 'error' in req:
@@ -143,23 +144,25 @@ class HTTPServer(deferred_resource.DeferredResource):
         self._provider = provider
     
     def render(self, request):
-        print '[DEBUG jsonrpc] render called, method=%s, path=%s' % (request.method, request.path)
+        # Debug: Uncomment to trace JSON-RPC render calls
+        # print '[DEBUG jsonrpc] render called, method=%s, path=%s' % (request.method, request.path)
         return deferred_resource.DeferredResource.render(self, request)
     
     @defer.inlineCallbacks
     def render_POST(self, request):
-        print '[DEBUG jsonrpc] render_POST called'
+        # Debug: Uncomment to trace JSON-RPC POST requests
+        # print '[DEBUG jsonrpc] render_POST called'
         try:
             content_data = request.content.read()
-            print '[DEBUG jsonrpc] Request data:', repr(str(content_data)[:200])
+            # print '[DEBUG jsonrpc] Request data:', repr(str(content_data)[:200])
             data = yield _handle(content_data, self._provider, preargs=[request])
-            print '[DEBUG jsonrpc] _handle returned:', repr(str(data)[:200])
+            # print '[DEBUG jsonrpc] _handle returned:', repr(str(data)[:200])
             assert data is not None
             request.setHeader('Content-Type', 'application/json')
             request.setHeader('Content-Length', str(len(data)))
             request.write(data)
         except Exception as e:
-            print '[DEBUG jsonrpc] Exception in render_POST:', repr(e)
+            # print '[DEBUG jsonrpc] Exception in render_POST:', repr(e)
             import traceback
             traceback.print_exc()
             raise
