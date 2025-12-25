@@ -330,8 +330,12 @@ class BaseShare(object):
         if not(segwit_activated or known_txs is None) and any(bitcoin_data.is_segwit_tx(known_txs[h]) for h in other_transaction_hashes):
             raise ValueError('segwit transaction included before activation')
         if segwit_activated and known_txs is not None:
-            share_txs = [(known_txs[h], bitcoin_data.get_txid(known_txs[h]), h) for h in other_transaction_hashes]
-            segwit_data = dict(txid_merkle_link=bitcoin_data.calculate_merkle_link([None] + [tx[1] for tx in share_txs], 0), wtxid_merkle_root=bitcoin_data.merkle_hash([0] + [bitcoin_data.get_wtxid(tx[0], tx[1], tx[2]) for tx in share_txs]))
+            # Build list of (tx, txid) tuples for share transactions
+            share_txs = [(known_txs[h], bitcoin_data.get_txid(known_txs[h])) for h in other_transaction_hashes]
+            # IMPORTANT: For wtxid calculation, do NOT pass 'h' as txhash - 'h' is the txid (lookup key),
+            # not the wtxid. Pass None for txhash so get_wtxid() computes the actual wtxid by hashing
+            # the full transaction including witness data.
+            segwit_data = dict(txid_merkle_link=bitcoin_data.calculate_merkle_link([None] + [tx[1] for tx in share_txs], 0), wtxid_merkle_root=bitcoin_data.merkle_hash([0] + [bitcoin_data.get_wtxid(tx[0], tx[1], None) for tx in share_txs]))
         if segwit_activated and segwit_data is not None:
             witness_reserved_value_str = '[P2Pool]'*4
             witness_reserved_value = pack.IntType(256).unpack(witness_reserved_value_str)

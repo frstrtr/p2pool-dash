@@ -902,6 +902,33 @@ class WorkerBridge(worker_interface.WorkerBridge):
                         print 'Explorer:    %s%064x' % (self.node.net.PARENT.BLOCK_EXPLORER_URL_PREFIX, header_hash)
                         print '#' * 70
                         print
+                    
+                    # Debug: Check witness merkle root before block submission
+                    if bitcoin_data.is_segwit_tx(new_gentx):
+                        # Calculate witness merkle root from transactions being submitted
+                        all_txs = [new_gentx] + other_transactions
+                        wtxids = [0]  # coinbase wtxid is always 0
+                        for tx in other_transactions:
+                            txid = bitcoin_data.get_txid(tx)
+                            wtxid = bitcoin_data.get_wtxid(tx, txid, None)
+                            wtxids.append(wtxid)
+                        calculated_wtxid_merkle_root = bitcoin_data.merkle_hash(wtxids)
+                        
+                        # Get the witness commitment from coinbase output[0]
+                        # Format: OP_RETURN + aa21a9ed + 32-byte commitment
+                        if new_gentx['tx_outs'] and len(new_gentx['tx_outs'][0]['script']) == 38:
+                            committed_hash = pack.IntType(256).unpack(new_gentx['tx_outs'][0]['script'][6:])
+                            # Witness commitment = hash256(witness_merkle_root || witness_reserved_value)
+                            witness_reserved_value_str = '[P2Pool]'*4
+                            witness_reserved_value = pack.IntType(256).unpack(witness_reserved_value_str)
+                            expected_commitment = bitcoin_data.get_witness_commitment_hash(calculated_wtxid_merkle_root, witness_reserved_value)
+                            print >>sys.stderr, '[WITNESS DEBUG] calculated wtxid_merkle_root: %064x' % calculated_wtxid_merkle_root
+                            print >>sys.stderr, '[WITNESS DEBUG] committed hash in coinbase: %064x' % committed_hash
+                            print >>sys.stderr, '[WITNESS DEBUG] expected commitment: %064x' % expected_commitment
+                            print >>sys.stderr, '[WITNESS DEBUG] MATCH: %s' % (committed_hash == expected_commitment)
+                            if 'segwit_data' in share_info:
+                                print >>sys.stderr, '[WITNESS DEBUG] share_info wtxid_merkle_root: %064x' % share_info['segwit_data']['wtxid_merkle_root']
+                    
                     # Submit block and add error callback to catch any failures
                     block_submission = helper.submit_block(dict(header=header, txs=[new_gentx] + other_transactions), False, self.node)
                     @block_submission.addErrback
