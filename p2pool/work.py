@@ -165,14 +165,16 @@ class WorkerBridge(worker_interface.WorkerBridge):
                                 try:
                                     if (previous_share is not None and 
                                         hasattr(previous_share, 'share_data')):
-                                        # Get PPLNS weights from share chain (same logic as parent chain in data.py)
-                                        # Use the target from auxpow (already parsed as integer)
-                                        # Note: previous_share_hash can be None for first share - skiplist handles it
+                                        # Get PPLNS weights from share chain
+                                        # Use best_share_hash directly (not grandparent) - merged mining should
+                                        # include all current shareholders, unlike generate_transaction which
+                                        # excludes the finder of the new share being generated.
                                         target = int(target_hex, 16)
-                                        prev_hash = previous_share.share_data.get('previous_share_hash')
+                                        best_share_hash = self.node.best_share_var.value
+                                        share_height = self.node.tracker.get_height(best_share_hash)
                                         weights, total_weight, donation_weight = self.node.tracker.get_cumulative_weights(
-                                            prev_hash,  # Can be None for first share
-                                            max(0, min(template['height'], self.node.net.REAL_CHAIN_LENGTH) - 1),
+                                            best_share_hash,  # Use best share, not grandparent
+                                            max(0, min(share_height, self.node.net.REAL_CHAIN_LENGTH)),
                                             65535 * self.node.net.SPREAD * bitcoin_data.target_to_average_attempts(target),
                                         )
                                     
