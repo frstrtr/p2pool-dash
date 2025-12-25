@@ -48,7 +48,7 @@ def build_coinbase_input_script(height, extradata=''):
     return script_bytes
 
 
-def build_merged_coinbase(template, shareholders, net, donation_percentage=1.0, node_operator_address=None, worker_fee=0):
+def build_merged_coinbase(template, shareholders, net, donation_percentage=1.0, node_operator_address=None, worker_fee=0, parent_net=None):
     """
     Build coinbase transaction for MERGED CHAIN (Dogecoin) with multiple outputs
     
@@ -63,18 +63,19 @@ def build_merged_coinbase(template, shareholders, net, donation_percentage=1.0, 
     
     ADDRESS CONVERSION:
     Shareholder addresses are auto-converted from pubkey_hash stored in share chain.
-    This provides automatic cross-chain compatibility without protocol changes.
-    For truly discrete per-chain addresses would require P2Pool protocol modification
-    (new share format with merged_addresses field).
+    If a parent chain address is provided (e.g., LTC), it will be automatically
+    converted to the merged chain address by extracting the pubkey_hash and
+    re-encoding with the merged chain's ADDRESS_VERSION.
     
     Args:
         template: Block template from getblocktemplate (with auxpow)
         shareholders: Dict of {address: fraction} OR {address: (fraction, net_obj)}
-                     Addresses are already converted to merged chain format by caller
-        net: Network object (default if shareholders don't specify network per address)
+                     Addresses can be in parent chain format - will be auto-converted
+        net: Merged chain network object (e.g., Dogecoin testnet)
         donation_percentage: Donation percentage (0-100, default 1.0 for 1%)
         node_operator_address: Address of P2Pool node operator (for worker_fee)
         worker_fee: Node operator fee percentage (0-100, default 0)
+        parent_net: Parent chain network object (e.g., Litecoin testnet) for address conversion
     
     Returns:
         Dict representing the coinbase transaction
@@ -112,7 +113,7 @@ def build_merged_coinbase(template, shareholders, net, donation_percentage=1.0, 
         
         if amount > 0:  # Skip dust outputs
             try:
-                # Use existing bitcoin_data.address_to_script2 function with proper network
+                # First try: address is already in merged chain format
                 script2 = bitcoin_data.address_to_script2(address, addr_net)
                 tx_outs.append({
                     'value': amount,
@@ -121,13 +122,34 @@ def build_merged_coinbase(template, shareholders, net, donation_percentage=1.0, 
                 print >>sys.stderr, '[MINER PAYOUT] %s: %d satoshis (%.1f%% of %.1f%%)' % (
                     address[:20] + '...', amount, fraction * 100, 100 - donation_percentage - worker_fee)
             except ValueError as e:
-                print >>sys.stderr, 'Warning: Failed to decode address %s: %s' % (address, e)
+                # Second try: address might be in parent chain format - convert it
+                if parent_net is not None:
+                    try:
+                        # Extract pubkey_hash from parent chain address
+                        pubkey_hash_info = bitcoin_data.address_to_pubkey_hash(address, parent_net)
+                        pubkey_hash = pubkey_hash_info[0]
+                        
+                        # Re-encode with merged chain address version
+                        converted_address = bitcoin_data.pubkey_hash_to_address(
+                            pubkey_hash, addr_net.ADDRESS_VERSION, -1, addr_net)
+                        
+                        script2 = bitcoin_data.address_to_script2(converted_address, addr_net)
+                        tx_outs.append({
+                            'value': amount,
+                            'script': script2,
+                        })
+                        print >>sys.stderr, '[MINER PAYOUT] %s -> %s: %d satoshis (%.1f%% of %.1f%%) [auto-converted from parent chain]' % (
+                            address[:15] + '...', converted_address[:15] + '...', amount, fraction * 100, 100 - donation_percentage - worker_fee)
+                    except Exception as conv_e:
+                        print >>sys.stderr, 'Warning: Failed to decode/convert address %s: %s (original: %s)' % (address, conv_e, e)
+                else:
+                    print >>sys.stderr, 'Warning: Failed to decode address %s: %s (no parent_net for conversion)' % (address, e)
     
     # Add node operator fee output (if configured)
     if worker_fee_amount > 0 and node_operator_address:
         try:
-            addr_net = net  # Use the passed merged chain network directly
-            node_script = bitcoin_data.address_to_script2(node_operator_address, addr_net)
+            # First try: address is already in merged chain format
+            node_script = bitcoin_data.address_to_script2(node_operator_address, net)
             tx_outs.append({
                 'value': worker_fee_amount,
                 'script': node_script,
@@ -135,7 +157,31 @@ def build_merged_coinbase(template, shareholders, net, donation_percentage=1.0, 
             print >>sys.stderr, '[NODE FEE] %s: %d satoshis (%.1f%%)' % (
                 node_operator_address[:20] + '...', worker_fee_amount, worker_fee)
         except ValueError as e:
-            print >>sys.stderr, 'Warning: Failed to decode node operator address %s: %s' % (node_operator_address, e)
+            # Second try: address might be in parent chain format - convert it
+            if parent_net is not None:
+                try:
+                    # Extract pubkey_hash from parent chain address
+                    pubkey_hash_info = bitcoin_data.address_to_pubkey_hash(node_operator_address, parent_net)
+                    pubkey_hash = pubkey_hash_info[0]
+                    
+                    # Re-encode with merged chain address version
+                    converted_address = bitcoin_data.pubkey_hash_to_address(
+                        pubkey_hash, net.ADDRESS_VERSION, -1, net)
+                    
+                    node_script = bitcoin_data.address_to_script2(converted_address, net)
+                    tx_outs.append({
+                        'value': worker_fee_amount,
+                        'script': node_script,
+                    })
+                    print >>sys.stderr, '[NODE FEE] %s -> %s: %d satoshis (%.1f%%) [auto-converted from parent chain]' % (
+                        node_operator_address[:15] + '...', converted_address[:15] + '...', worker_fee_amount, worker_fee)
+                except Exception as conv_e:
+                    print >>sys.stderr, 'Warning: Failed to decode/convert node operator address %s: %s (original: %s)' % (
+                        node_operator_address, conv_e, e)
+                    print >>sys.stderr, '         Skipping node operator fee.'
+            else:
+                print >>sys.stderr, 'Warning: Failed to decode node operator address %s for merged chain: %s' % (node_operator_address, e)
+                print >>sys.stderr, '         Skipping node operator fee. Check --merged-operator-address matches merged chain network.'
     
     # Add OP_RETURN output with P2Pool identifier (0 value, data only)
     # This marks the block as P2Pool-mined on the DOGECOIN blockchain

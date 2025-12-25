@@ -18,12 +18,16 @@ from p2pool import merged_mining
 # Import merged chain networks for address conversion
 # These are used when converting pubkey_hash from share chain to merged chain addresses
 try:
-    from bitcoin.networks import dogecoin_testnet as dogecoin_testnet_net
-except ImportError:
+    from p2pool.bitcoin.networks import dogecoin_testnet as dogecoin_testnet_net
+    print >>sys.stderr, '[IMPORT] Successfully imported dogecoin_testnet: %s' % dogecoin_testnet_net
+except ImportError as e:
+    print >>sys.stderr, '[IMPORT] Failed to import dogecoin_testnet: %s' % e
     dogecoin_testnet_net = None
 try:
-    from bitcoin.networks import dogecoin as dogecoin_net
-except ImportError:
+    from p2pool.bitcoin.networks import dogecoin as dogecoin_net
+    print >>sys.stderr, '[IMPORT] Successfully imported dogecoin: %s' % dogecoin_net
+except ImportError as e:
+    print >>sys.stderr, '[IMPORT] Failed to import dogecoin: %s' % e
     dogecoin_net = None
 
 print_throttle = 0.0
@@ -160,17 +164,23 @@ class WorkerBridge(worker_interface.WorkerBridge):
                                     )
                                     
                                     # Determine the correct merged chain network for address conversion
-                                    # We detect based on chainid: Dogecoin chainid = 2
+                                    # We detect based on chainid: Dogecoin chainid = 98 (0x62)
                                     # This converts pubkey_hash from share chain to merged chain address format
-                                    if chainid == 2:  # Dogecoin
+                                    if chainid == 98:  # Dogecoin
                                         # Use Dogecoin testnet or mainnet based on parent chain
-                                        if hasattr(self.node.net, 'PARENT') and 'test' in getattr(self.node.net.PARENT, 'SYMBOL', '').lower():
+                                        # Check for 't' prefix in symbol (e.g., tLTC) or 'test' in name
+                                        parent_symbol = getattr(self.node.net.PARENT, 'SYMBOL', '') if hasattr(self.node.net, 'PARENT') else ''
+                                        is_testnet = parent_symbol.lower().startswith('t') or 'test' in parent_symbol.lower()
+                                        if is_testnet:
                                             merged_addr_net = dogecoin_testnet_net
+                                            print >>sys.stderr, '[MERGED] Setting merged_addr_net = dogecoin_testnet_net: %s' % merged_addr_net
                                         else:
                                             merged_addr_net = dogecoin_net
+                                            print >>sys.stderr, '[MERGED] Setting merged_addr_net = dogecoin_net: %s' % merged_addr_net
                                         if merged_addr_net is None:
                                             print >>sys.stderr, '[MERGED] Warning: Dogecoin network module not available, using parent chain addresses'
                                             merged_addr_net = self.node.net.PARENT if hasattr(self.node.net, 'PARENT') else self.node.net
+                                        print >>sys.stderr, '[MERGED] Final merged_addr_net: SYMBOL=%s, ADDRESS_VERSION=%d' % (merged_addr_net.SYMBOL, merged_addr_net.ADDRESS_VERSION)
                                     else:
                                         # Unknown chain - fallback to parent network (may produce wrong addresses!)
                                         print >>sys.stderr, '[MERGED] Warning: Unknown chainid %d, using parent chain address format' % chainid
@@ -192,15 +202,24 @@ class WorkerBridge(worker_interface.WorkerBridge):
                                 else:
                                     # Fallback: No shares yet, use single address mode
                                     # Need to convert to merged chain address format
-                                    if chainid == 2:  # Dogecoin
-                                        if hasattr(self.node.net, 'PARENT') and 'test' in getattr(self.node.net.PARENT, 'SYMBOL', '').lower():
+                                    print >>sys.stderr, '[MERGED] Entering no-shares fallback path, chainid=%s' % chainid
+                                    if chainid == 98:  # Dogecoin
+                                        # Check for 't' prefix in symbol (e.g., tLTC) or 'test' in name
+                                        parent_symbol = getattr(self.node.net.PARENT, 'SYMBOL', '') if hasattr(self.node.net, 'PARENT') else ''
+                                        is_testnet = parent_symbol.lower().startswith('t') or 'test' in parent_symbol.lower()
+                                        if is_testnet:
                                             merged_addr_net = dogecoin_testnet_net
+                                            print >>sys.stderr, '[MERGED] FALLBACK: Set merged_addr_net = dogecoin_testnet_net: %s' % merged_addr_net
                                         else:
                                             merged_addr_net = dogecoin_net
+                                            print >>sys.stderr, '[MERGED] FALLBACK: Set merged_addr_net = dogecoin_net: %s' % merged_addr_net
                                         if merged_addr_net is None:
                                             merged_addr_net = self.node.net.PARENT if hasattr(self.node.net, 'PARENT') else self.node.net
+                                            print >>sys.stderr, '[MERGED] FALLBACK: merged_addr_net was None, using parent: %s' % merged_addr_net
+                                        print >>sys.stderr, '[MERGED] FALLBACK: Final merged_addr_net: SYMBOL=%s, ADDRESS_VERSION=%d' % (merged_addr_net.SYMBOL, merged_addr_net.ADDRESS_VERSION)
                                     else:
                                         merged_addr_net = self.node.net.PARENT if hasattr(self.node.net, 'PARENT') else self.node.net
+                                        print >>sys.stderr, '[MERGED] FALLBACK: Using parent chain (unknown chainid): %s' % merged_addr_net
                                     
                                     mining_address = getattr(self.args, 'address', None)
                                     if not mining_address and self.my_pubkey_hash:
@@ -210,6 +229,21 @@ class WorkerBridge(worker_interface.WorkerBridge):
                                             -1, merged_addr_net)
                                     shareholders = {mining_address: 1.0} if mining_address else {}
                                     print >>sys.stderr, '[MERGED] No share chain yet, using single address: %s' % mining_address
+                                
+                                # Setup merged chain network for address operations
+                                # Must be done BEFORE node operator address handling
+                                if chainid == 98:  # Dogecoin
+                                    # Check for 't' prefix in symbol (e.g., tLTC) or 'test' in name
+                                    parent_symbol = getattr(self.node.net.PARENT, 'SYMBOL', '') if hasattr(self.node.net, 'PARENT') else ''
+                                    is_testnet = parent_symbol.lower().startswith('t') or 'test' in parent_symbol.lower()
+                                    if is_testnet:
+                                        merged_addr_net = dogecoin_testnet_net
+                                    else:
+                                        merged_addr_net = dogecoin_net
+                                    if merged_addr_net is None:
+                                        merged_addr_net = self.node.net.PARENT if hasattr(self.node.net, 'PARENT') else self.node.net
+                                else:
+                                    merged_addr_net = self.node.net.PARENT if hasattr(self.node.net, 'PARENT') else self.node.net
                                 
                                 # Determine node operator address for merged chain
                                 # Priority: 1) --merged-operator-address, 2) convert parent pubkey_hash to merged chain
@@ -221,25 +255,18 @@ class WorkerBridge(worker_interface.WorkerBridge):
                                         print >>sys.stderr, '[MERGED] Using provided node operator address: %s' % node_operator_address
                                     else:
                                         # Convert pubkey_hash to merged chain address format (NOT parent chain!)
-                                        if chainid == 2:  # Dogecoin
-                                            if hasattr(self.node.net, 'PARENT') and 'test' in getattr(self.node.net.PARENT, 'SYMBOL', '').lower():
-                                                merged_addr_net = dogecoin_testnet_net
-                                            else:
-                                                merged_addr_net = dogecoin_net
-                                            if merged_addr_net is None:
-                                                merged_addr_net = self.node.net.PARENT if hasattr(self.node.net, 'PARENT') else self.node.net
-                                        else:
-                                            merged_addr_net = self.node.net.PARENT if hasattr(self.node.net, 'PARENT') else self.node.net
-                                        
                                         node_operator_address = bitcoin_data.pubkey_hash_to_address(
                                             self.my_pubkey_hash, merged_addr_net.ADDRESS_VERSION,
                                             -1, merged_addr_net)
                                         print >>sys.stderr, '[MERGED] Converted node operator address to merged chain: %s' % node_operator_address
                                 
                                 # Build coinbase with P2Pool donation and node fee
+                                # Pass parent_net for automatic address conversion (LTC -> DOGE)
+                                parent_net = self.node.net.PARENT if hasattr(self.node.net, 'PARENT') else self.node.net
+                                print >>sys.stderr, '[MERGED] Calling build_merged_coinbase with net=%s (ADDRESS_VERSION=%d), parent_net=%s' % (merged_addr_net.SYMBOL, merged_addr_net.ADDRESS_VERSION, parent_net.SYMBOL)
                                 doge_coinbase_tx = merged_mining.build_merged_coinbase(
                                     template, shareholders, merged_addr_net, self.donation_percentage,
-                                    node_operator_address, self.worker_fee)
+                                    node_operator_address, self.worker_fee, parent_net)
                                 
                                 doge_coinbase_hash = bitcoin_data.hash256(bitcoin_data.tx_type.pack(doge_coinbase_tx))
                                 all_doge_tx_hashes = [doge_coinbase_hash] + doge_tx_hashes
