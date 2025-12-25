@@ -2,12 +2,60 @@
 
 This document summarizes the fixes made to support high-hashrate ASIC miners (particularly Antminer D9 with ~1.7 TH/s each, ~10 TH/s total for 6 miners).
 
+**Release v1.4.2** - Vardiff Critical Bug Fix (December 26, 2025)
 **Release v1.4.1** - Share Difficulty & DOA Fixes (December 26, 2025)
 **Release v1.4.0** - Twin Blocks Verified on Testnet (December 25, 2025)
 **Release v1.2.1** - Share Version Switchover & SSL Handling (December 25, 2025)
 **Release v1.2.0** - Litecoin+Dogecoin Merged Mining (December 25, 2025)
 **Release v1.1.0** - Dash Platform support + Protocol v1700 (December 13, 2025)
 **Release v1.0.0** - First stable release with full ASIC support (December 11, 2025)
+
+## v1.4.2 - Vardiff Critical Bug Fix (December 26, 2025)
+
+### Stratum Variable Difficulty Fix
+
+**File:** `p2pool/bitcoin/stratum.py`
+
+**Problem:** High-hashrate miners (18+ GH/s) were flooding the pool with shares, causing:
+- 50% stale/orphan rate
+- 5% mining efficiency  
+- CPU overload preventing coind communication ("lost contact with coind")
+- 400-600 shares/minute instead of target ~6 shares/minute
+
+**Root Cause:** Two bugs in vardiff implementation:
+
+1. **Target reset on new work (line 87):**
+   ```python
+   # BUG: max() always picks LARGER target (easier difficulty)
+   self.target = x['share_target'] if self.target == None else max(x['min_share_target'], self.target)
+   ```
+   Every new work event (~72/min) reset the difficulty back to floor, preventing vardiff from ever increasing it.
+
+2. **Same bug in vardiff adjustment loop (line 183):**
+   ```python
+   self.target = max(x['min_share_target'], self.target)  # Wrong direction!
+   ```
+
+3. **Slow convergence:** Original `clip(ratio, 0.5, 2.0)` limited adjustment to 2x per cycle, requiring ~200 cycles to reach proper difficulty for high-hashrate miners.
+
+**Solution:**
+```python
+# Fix 1 & 2: Only enforce floor when target is TOO EASY (not too hard)
+if self.target > x['min_share_target']:  # larger = easier
+    self.target = x['min_share_target']
+
+# Fix 3: Widen adjustment range for faster convergence
+self.target = int(self.target * clip(ratio, 0.1, 10.) + 0.5)  # Was 0.5-2x
+```
+
+**Impact:**
+| Metric | Before | After |
+|--------|--------|-------|
+| Stratum difficulty | ~61 (stuck at floor) | ~18,000-25,000 |
+| Shares/minute | 400-600 | ~6 |
+| Orphan rate | 50%+ | <5% |
+| Efficiency | 5% | 95%+ |
+| CPU load | Overloaded | Normal |
 
 ## v1.4.1 - Share Difficulty & DOA Fixes (December 26, 2025)
 

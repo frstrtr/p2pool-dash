@@ -84,7 +84,14 @@ class StratumRPCMiningProvider(object):
             self.target = max(self.target, int(x['bits'].target))
         else:
             self.fixed_target = False
-            self.target = x['share_target'] if self.target == None else max(x['min_share_target'], self.target)
+            if self.target is None:
+                # Initial target: start at the share_target (floor)
+                self.target = x['share_target']
+            # Enforce floor: don't let target be easier than min_share_target
+            # (larger target value = easier difficulty)
+            # But preserve harder targets that vardiff has set
+            if self.target > x['min_share_target']:
+                self.target = x['min_share_target']
         jobid = str(random.randrange(2**128))
         self.other.svc_mining.rpc_set_difficulty(bitcoin_data.target_to_difficulty(self.target)*self.wb.net.DUMB_SCRYPT_DIFF).addErrback(lambda err: None)
         self.other.svc_mining.rpc_notify(
@@ -161,19 +168,25 @@ class StratumRPCMiningProvider(object):
         )
         result = got_response(header, worker_name, coinb_nonce, self.target)
 
-        # adjust difficulty on this stratum to target ~10sec/pseudoshare
+        # adjust difficulty on this stratum to target ~share_rate sec/pseudoshare
         if not self.fixed_target:
             self.recent_shares.append(time.time())
             if len(self.recent_shares) > 12 or (time.time() - self.recent_shares[0]) > 10*len(self.recent_shares)*self.share_rate:
                 old_time = self.recent_shares[0]
                 del self.recent_shares[0]
                 olddiff = bitcoin_data.target_to_difficulty(self.target)
-                self.target = int(self.target * clip((time.time() - old_time)/(len(self.recent_shares)*self.share_rate), 0.5, 2.) + 0.5)
+                # Widen adjustment range from 0.5-2x to 0.1-10x for faster convergence
+                # This helps high-hashrate miners reach appropriate difficulty quickly
+                ratio = (time.time() - old_time)/(len(self.recent_shares)*self.share_rate)
+                self.target = int(self.target * clip(ratio, 0.1, 10.) + 0.5)
                 newtarget = clip(self.target, self.wb.net.SANE_TARGET_RANGE[0], self.wb.net.SANE_TARGET_RANGE[1])
                 if newtarget != self.target:
                     print "Clipping target from %064x to %064x" % (self.target, newtarget)
                     self.target = newtarget
-                self.target = max(x['min_share_target'], self.target)
+                # Enforce floor: target cannot be easier than min_share_target
+                # (larger target = easier, so use min to keep harder targets)
+                if self.target > x['min_share_target']:
+                    self.target = x['min_share_target']
                 self.recent_shares = [time.time()]
                 self._send_work()
 
