@@ -28,6 +28,8 @@ CONF_FILE_FUNC = lambda: os.path.join(os.path.join(os.environ['APPDATA'], 'Litec
 BLOCK_EXPLORER_URL_PREFIX = 'https://chainz.cryptoid.info/ltc/block.dws?'
 ADDRESS_EXPLORER_URL_PREFIX = 'https://chainz.cryptoid.info/ltc/address.dws?'
 TX_EXPLORER_URL_PREFIX = 'https://chainz.cryptoid.info/ltc/tx.dws?'
-SANE_TARGET_RANGE = (2**256//1000000000000000 - 1, 2**256//1000 - 1)
+# SANE_TARGET_RANGE: (hardest/min_target, easiest/max_target)
+# Floor at 2**256//4000000 gives stratum diff ~61, L9 (16GH/s) gets ~16 sec/share
+SANE_TARGET_RANGE = (2**256//1000000000000000 - 1, 2**256//4000000 - 1)
 DUMB_SCRYPT_DIFF = 2**16
 DUST_THRESHOLD = 0.03e8

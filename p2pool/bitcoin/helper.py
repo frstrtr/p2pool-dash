@@ -109,8 +109,10 @@ def getwork(coind, net, use_getblocktemplate=False, txidcache={}, feecache={}, f
                 # Skip and log - losing this tx's fee is better than crashing
                 skipped_mweb += 1
                 if skipped_mweb <= 3:  # Only print first 3 warnings
+                    # txid is an integer (hash256 result), convert to hex string for display
+                    txid_hex = '%064x' % txid
                     print >>sys.stderr, '[WARN] Failed to parse tx %s (fee=%s): %s' % (
-                        txid.encode('hex')[:16], fee, e)
+                        txid_hex[:16], fee, e)
                     print >>sys.stderr, '[WARN] First 100 bytes: %s' % packed[:100].encode('hex')
                 continue
         # Only add to lists if successfully parsed

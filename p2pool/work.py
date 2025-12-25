@@ -947,10 +947,28 @@ class WorkerBridge(worker_interface.WorkerBridge):
             # Don't recalculate it here because worker_interface.py prepends additional nonce data
             assert header['bits'] == ba['bits']
 
-            # Allow shares that are within 3 work events of current (grace period for network latency)
-            # Work events fire on new blocks, new best shares, etc. - can be rapid
+            # DOA (Dead On Arrival) Share Prevention
+            # =============================================
+            # Shares are marked DOA if work has changed too many times since the share was issued.
+            # Work events fire on: new blocks, new best shares, merged mining updates, etc.
+            #
+            # Problem: With fast miners or isolated testing, shares arrive after many work events:
+            #   - Each new share triggers best_share_var.changed -> new_work_event.happened()
+            #   - At 13 GH/s with diff 32, shares come every ~10 sec
+            #   - But work events can fire much faster (every share found)
+            #   - If tolerance is too low (e.g., 3), most shares become DOA
+            #
+            # DOA shares don't contribute to the share chain, so:
+            #   - Chain height stays low (< TARGET_LOOKBEHIND = 200)
+            #   - Vardiff can't adjust (stuck at MAX_TARGET floor)
+            #   - More rapid shares -> more DOA -> vicious cycle
+            #
+            # Solution: Higher tolerance for isolated/testing nodes (PERSIST=False)
             work_event_diff = self.new_work_event.times - lp_count
-            on_time = work_event_diff <= 3  # Allow up to 3 work events behind
+            # PERSIST=False (isolated testing): 30 events tolerance - allows chain to grow
+            # PERSIST=True (production): 3 events - tighter for network consistency
+            max_work_events = 30 if not self.node.net.PERSIST else 3
+            on_time = work_event_diff <= max_work_events
 
             # Debug: Uncomment to trace merged mining auxpow checking (prints on every share)
             # print >>sys.stderr, '[DEBUG] mm_later has %d items, pow_hash=%064x' % (len(mm_later), pow_hash)

@@ -2,10 +2,65 @@
 
 This document summarizes the fixes made to support high-hashrate ASIC miners (particularly Antminer D9 with ~1.7 TH/s each, ~10 TH/s total for 6 miners).
 
+**Release v1.4.1** - Share Difficulty & DOA Fixes (December 26, 2025)
+**Release v1.4.0** - Twin Blocks Verified on Testnet (December 25, 2025)
 **Release v1.2.1** - Share Version Switchover & SSL Handling (December 25, 2025)
 **Release v1.2.0** - Litecoin+Dogecoin Merged Mining (December 25, 2025)
 **Release v1.1.0** - Dash Platform support + Protocol v1700 (December 13, 2025)
 **Release v1.0.0** - First stable release with full ASIC support (December 11, 2025)
+
+## v1.4.1 - Share Difficulty & DOA Fixes (December 26, 2025)
+
+### Mainnet Share Difficulty Tuning
+
+**Files:** `p2pool/networks/litecoin.py`, `p2pool/bitcoin/networks/litecoin.py`, `p2pool/bitcoin/networks/dogecoin.py`
+
+**Problem:** With modern Scrypt ASICs (L9 at 16 GH/s each), the default MAX_TARGET was causing issues:
+- Original `2**256//2**20` (diff 16) was too easy for ASIC farms
+- At 160 GH/s pool hashrate, shares came every 0.4 seconds
+- This caused massive orphan flooding (97% of shares wasted)
+
+**Solution:** Adjusted MAX_TARGET to `2**256//2**21` (diff 32):
+- At 13 GH/s: ~10.6 seconds per share (good balance)
+- At 160 GH/s: ~1.4 seconds per share (acceptable, vardiff adjusts up)
+- Larger pools auto-adjust to higher difficulty via vardiff
+
+**Reference Table:**
+| MAX_TARGET | Stratum Diff | 13 GH/s Time | 160 GH/s Time |
+|------------|--------------|--------------|---------------|
+| 2**256//2**20 | 16 | 5.3s | 0.4s (floods) |
+| 2**256//2**21 | 32 | 10.6s ✓ | 0.9s |
+| 2**256//2**24 | 256 | 84.6s (slow) | 6.9s |
+
+### DOA (Dead On Arrival) Share Fix
+
+**Files:** `p2pool/work.py`
+
+**Problem:** In isolated testing (PERSIST=False, no peers), shares were marked "DEAD ON ARRIVAL" at 100% rate:
+- Each new share triggers `new_work_event.happened()`
+- With rapid share finding, work events fire faster than shares arrive
+- Original tolerance of 3 work events was too tight
+- All shares DOA → chain never grows → vardiff stuck at floor
+
+**Solution:** Increased tolerance for isolated/testing nodes:
+```python
+# PERSIST=False (isolated testing): 30 events tolerance
+# PERSIST=True (production): 3 events tolerance
+max_work_events = 30 if not self.node.net.PERSIST else 3
+on_time = work_event_diff <= max_work_events
+```
+
+### Transaction Parsing Bug Fix
+
+**Files:** `p2pool/bitcoin/helper.py`
+
+**Problem:** Error "AttributeError: 'long' object has no attribute 'encode'" when parsing failed transactions.
+
+**Root Cause:** `txid` from `hash256()` is an integer, but code tried `txid.encode('hex')`.
+
+**Solution:** Use format string instead: `'%064x' % txid`
+
+---
 
 ## v1.2.1 - Share Version Switchover & SSL Handling (December 25, 2025)
 

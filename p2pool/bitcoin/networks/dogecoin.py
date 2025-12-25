@@ -59,8 +59,10 @@ BLOCK_EXPLORER_URL_PREFIX = 'https://dogechain.info/block/'
 ADDRESS_EXPLORER_URL_PREFIX = 'https://dogechain.info/address/'
 TX_EXPLORER_URL_PREFIX = 'https://dogechain.info/tx/'
 
-# Dogecoin mainnet target range
-SANE_TARGET_RANGE = (2**256 // 1000000000 - 1, 2**256 // 1000 - 1)
+# Dogecoin mainnet target range for stratum vardiff
+# Floor (hardest): diff ~15B for large ASIC farms, Ceiling (easiest): diff ~61 for small miners
+# These bounds apply if running standalone Dogecoin P2Pool (rare - most use merged mining via Litecoin)
+SANE_TARGET_RANGE = (2**256 // 10**15 - 1, 2**256 // 4000000 - 1)
 DUMB_SCRYPT_DIFF = 2**16
 DUST_THRESHOLD = 1 * 100000000  # 1 DOGE dust threshold
 
