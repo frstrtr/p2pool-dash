@@ -75,6 +75,7 @@ class WorkerBridge(worker_interface.WorkerBridge):
         self.my_doa_share_hashes = set()
 
         self.address_throttle = 0
+        self.address = None  # Dynamic address, set later if --dynamic-address used
         self.share_rate = args.share_rate  # Stratum vardiff target (seconds per pseudoshare)
 
         self.tracker_view = forest.TrackerView(self.node.tracker, forest.get_attributedelta_type(dict(forest.AttributeDelta.attrs,

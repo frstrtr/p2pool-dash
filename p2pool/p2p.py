@@ -713,10 +713,10 @@ class Node(object):
         self.forgiveness_task.start(3600.)
 
     def forgive_transgressions(self):
-        for host in self.banscores:
-            self.banscore[host] -= 1
-            if self.banscore[host] < 0:
-                self.banscore[host] = 0
+        for host in list(self.banscores.keys()):
+            self.banscores[host] -= 1
+            if self.banscores[host] <= 0:
+                del self.banscores[host]
     
     def _think(self):
         try:

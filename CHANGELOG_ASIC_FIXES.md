@@ -2,6 +2,7 @@
 
 This document summarizes the fixes made to support high-hashrate ASIC miners (particularly Antminer D9 with ~1.7 TH/s each, ~10 TH/s total for 6 miners).
 
+**Release v1.4.3** - Bug Fixes from Production Logs (December 26, 2025)
 **Release v1.4.2** - Vardiff Critical Bug Fix (December 26, 2025)
 **Release v1.4.1** - Share Difficulty & DOA Fixes (December 26, 2025)
 **Release v1.4.0** - Twin Blocks Verified on Testnet (December 25, 2025)
@@ -9,6 +10,35 @@ This document summarizes the fixes made to support high-hashrate ASIC miners (pa
 **Release v1.2.0** - Litecoin+Dogecoin Merged Mining (December 25, 2025)
 **Release v1.1.0** - Dash Platform support + Protocol v1700 (December 13, 2025)
 **Release v1.0.0** - First stable release with full ASIC support (December 11, 2025)
+
+## v1.4.3 - Bug Fixes from Production Logs (December 26, 2025)
+
+### P2PNode banscore Typo Fix
+
+**File:** `p2pool/p2p.py`
+
+**Problem:** `AttributeError: 'P2PNode' object has no attribute 'banscore'`
+
+The `forgive_transgressions()` method used `self.banscore` (singular) but the attribute is defined as `self.banscores` (plural).
+
+**Fix:** Corrected typo and improved cleanup logic:
+```python
+def forgive_transgressions(self):
+    for host in list(self.banscores.keys()):
+        self.banscores[host] -= 1
+        if self.banscores[host] <= 0:
+            del self.banscores[host]
+```
+
+### WorkerBridge.address Missing Attribute
+
+**File:** `p2pool/work.py`
+
+**Problem:** `AttributeError: 'WorkerBridge' object has no attribute 'address'`
+
+The `/payout_addr` web endpoint tried to access `wb.address` but this attribute was only set if `--dynamic-address` mode was used.
+
+**Fix:** Initialize `self.address = None` in `__init__` so the attribute always exists.
 
 ## v1.4.2 - Vardiff Critical Bug Fix (December 26, 2025)
 
