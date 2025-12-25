@@ -74,10 +74,12 @@ def getwork(coind, net, use_getblocktemplate=False, txidcache={}, feecache={}, f
     t0 = time.time()
     unpacked_transactions = []
     txhashes = []
+    txfees = []
     cachehits = 0
     cachemisses = 0
     knownhits = 0
     knownmisses = 0
+    skipped_mweb = 0
     for x in work['transactions']:
         fee = x['fee']
         x = x['data'] if isinstance(x, dict) else x
@@ -85,13 +87,11 @@ def getwork(coind, net, use_getblocktemplate=False, txidcache={}, feecache={}, f
         if x in txidcache:
             cachehits += 1
             txid = (txidcache[x])
-            txhashes.append(txid)
         else:
             cachemisses += 1
             packed = x.decode('hex')
             txid = bitcoin_data.hash256(packed)
             txidcache[x] = txid
-            txhashes.append(txid)
         if txid in known_txs:
             knownhits += 1
             unpacked = known_txs[txid]
@@ -99,13 +99,32 @@ def getwork(coind, net, use_getblocktemplate=False, txidcache={}, feecache={}, f
             knownmisses += 1
             if not packed:
                 packed = x.decode('hex')
-            unpacked = bitcoin_data.tx_type.unpack(packed)
+            try:
+                unpacked = bitcoin_data.tx_type.unpack(packed)
+            except Exception as e:
+                # Transaction parsing failed - could be:
+                # 1. Malformed transaction in mempool
+                # 2. Unknown transaction type/format
+                # 3. Truncated data from RPC
+                # Skip and log - losing this tx's fee is better than crashing
+                skipped_mweb += 1
+                if skipped_mweb <= 3:  # Only print first 3 warnings
+                    print >>sys.stderr, '[WARN] Failed to parse tx %s (fee=%s): %s' % (
+                        txid.encode('hex')[:16], fee, e)
+                    print >>sys.stderr, '[WARN] First 100 bytes: %s' % packed[:100].encode('hex')
+                continue
+        # Only add to lists if successfully parsed
+        txhashes.append(txid)
         unpacked_transactions.append(unpacked)
+        txfees.append(fee)
         # The only place where we can get information on transaction fees is in GBT results, so we need to store those
         # for a while so we can spot shares that miscalculate the block reward
         if not txid in feecache:
             feecache[txid] = fee
             feefifo.append(txid)
+    
+    if skipped_mweb > 0:
+        print >>sys.stderr, '[WARN] Skipped %d unparseable transaction(s) - fees lost for those txs' % skipped_mweb
 
     if time.time() - txidcache['start'] > 30*60.:
         keepers = {(x['data'] if isinstance(x, dict) else x):txid for x, txid in zip(work['transactions'], txhashes)}
@@ -127,7 +146,7 @@ def getwork(coind, net, use_getblocktemplate=False, txidcache={}, feecache={}, f
         previous_block=int(work['previousblockhash'], 16),
         transactions=unpacked_transactions,
         transaction_hashes=txhashes,
-        transaction_fees=[x.get('fee', None) if isinstance(x, dict) else None for x in work['transactions']],
+        transaction_fees=txfees,
         subsidy=work['coinbasevalue'],
         time=work['time'] if 'time' in work else work['curtime'],
         bits=bitcoin_data.FloatingIntegerType().unpack(work['bits'].decode('hex')[::-1]) if isinstance(work['bits'], (str, unicode)) else bitcoin_data.FloatingInteger(work['bits']),
