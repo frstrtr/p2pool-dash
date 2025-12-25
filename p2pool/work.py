@@ -787,6 +787,14 @@ class WorkerBridge(worker_interface.WorkerBridge):
             # modifies coinb1 and stratum uses the modified version.
             new_packed_gentx = packed_gentx_stripped[:-coinbase_payload_data_size_local-self.COINBASE_NONCE_LENGTH-4] + coinbase_nonce + packed_gentx_stripped[-coinbase_payload_data_size_local-4:]
             new_gentx = bitcoin_data.tx_id_type.unpack(new_packed_gentx)
+            
+            # Restore SegWit witness data if original gentx had it
+            # This is required for block submission to work with SegWit-activated chains
+            if 'marker' in gentx and gentx.get('flag'):
+                new_gentx = dict(new_gentx)  # Make mutable copy
+                new_gentx['marker'] = gentx['marker']
+                new_gentx['flag'] = gentx['flag']
+                new_gentx['witness'] = gentx['witness']
 
             # Debug: Print work.py's calculation for comparison with stratum
             # Show what we're actually using to construct new_packed_gentx

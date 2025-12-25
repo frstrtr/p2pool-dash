@@ -61,9 +61,9 @@ CONF_FILE_FUNC = lambda: os.path.join(
     else os.path.expanduser('~/.dogecoin'), 
     'dogecoin.conf'
 )
-BLOCK_EXPLORER_URL_PREFIX = 'https://sochain.com/block/DOGETEST/'
-ADDRESS_EXPLORER_URL_PREFIX = 'https://sochain.com/address/DOGETEST/'
-TX_EXPLORER_URL_PREFIX = 'https://sochain.com/tx/DOGETEST/'
+BLOCK_EXPLORER_URL_PREFIX = 'https://blockexplorer.one/dogecoin/testnet/blockHash/'
+ADDRESS_EXPLORER_URL_PREFIX = 'https://blockexplorer.one/dogecoin/testnet/address/'
+TX_EXPLORER_URL_PREFIX = 'https://blockexplorer.one/dogecoin/testnet/tx/'
 
 # Dogecoin has very easy difficulty on testnet
 SANE_TARGET_RANGE = ((1 << 200) - 1, (1 << 256) - 1)
