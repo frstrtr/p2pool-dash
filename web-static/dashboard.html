@@ -2743,7 +2743,6 @@
 
             // Sort blocks by timestamp
             var sortedBlocks = blocks.slice().sort(function(a, b) { return a.ts - b.ts; });
-            var diffRatioLines = [];
             
             sortedBlocks.forEach(function(b) {
                 var blockTime = b.ts * 1000;
@@ -2766,30 +2765,18 @@
                             closestIdx = i;
                         }
                     }
-                    var baseY = (data[closestIdx][1] && data[closestIdx][1].good) ? data[closestIdx][1].good : 0;
-                    var yVal = baseY;
+                    var yVal = (data[closestIdx][1] && data[closestIdx][1].good) ? data[closestIdx][1].good : 0;
                     // Use a minimum y value so block is visible even if hashrate is 0
                     if (yVal === 0 && values.length > 0) {
                         yVal = Math.max.apply(null, values) * 0.1 || 1000000000;
-                        baseY = yVal;
                     }
                     
                     // Position block higher based on difficulty ratio (softer elevation using square root)
-                    var diffRatio = 1;
                     if (b.actual_hash_difficulty && b.network_difficulty && b.network_difficulty > 0) {
-                        diffRatio = b.actual_hash_difficulty / b.network_difficulty;
+                        var diffRatio = b.actual_hash_difficulty / b.network_difficulty;
                         var heightMultiplier = 1 + (Math.sqrt(diffRatio) - 1) * 0.5;
                         yVal = yVal * heightMultiplier;
                     }
-                    
-                    // Add vertical line going UP from block diamond showing Hash Diff / Net Diff ratio
-                    // Use log scale: log2(ratio + 1) to compress large values (34x → ~5.1, 2x → ~1.6)
-                    var logRatio = Math.log2(diffRatio + 1); // log2(1+1)=1, log2(34+1)≈5.1
-                    var lineLength = baseY * logRatio * 0.15; // Scale factor for visual balance
-                    var lineTop = yVal + lineLength;
-                    diffRatioLines.push({x: blockTime, y: yVal, marker: {enabled: false}});
-                    diffRatioLines.push({x: blockTime, y: lineTop, marker: {enabled: false}});
-                    diffRatioLines.push(null); // Break line between blocks
                     
                     // Determine color based on luck
                     var color = '#10b981'; // Default green (good luck >= 100%)
@@ -3198,19 +3185,6 @@
                     visible: seriesVisibility.doa,
                     yAxis: 0
                 }, {
-                    type: 'line',
-                    name: 'Diff Ratio',
-                    data: diffRatioLines,
-                    color: '#10b981',
-                    lineWidth: 3,
-                    yAxis: 0,
-                    visible: true,
-                    enableMouseTracking: false,
-                    states: { hover: { enabled: false } },
-                    marker: { enabled: false },
-                    zoneAxis: 'x',
-                    connectNulls: false
-                }, {
                     type: 'scatter',
                     name: 'Blocks',
                     data: blockMarkers.map(function(m) {
@@ -3426,7 +3400,6 @@
             
             // Sort blocks by timestamp
             var sortedBlocks = blocks.slice().sort(function(a, b) { return a.ts - b.ts; });
-            var diffRatioLines = [];
             
             sortedBlocks.forEach(function(b) {
                 var blockTime = b.ts * 1000;
@@ -3449,30 +3422,18 @@
                             closestIdx = i;
                         }
                     }
-                    var baseY = (data[closestIdx][1] && data[closestIdx][1].good) ? data[closestIdx][1].good : 0;
-                    var yVal = baseY;
+                    var yVal = (data[closestIdx][1] && data[closestIdx][1].good) ? data[closestIdx][1].good : 0;
                     // Use a minimum y value so block is visible even if hashrate is 0
                     if (yVal === 0 && values.length > 0) {
                         yVal = Math.max.apply(null, values) * 0.1 || 1000000000;
-                        baseY = yVal;
                     }
                     
                     // Position block higher based on difficulty ratio (softer elevation using square root)
-                    var diffRatio = 1;
                     if (b.actual_hash_difficulty && b.network_difficulty && b.network_difficulty > 0) {
-                        diffRatio = b.actual_hash_difficulty / b.network_difficulty;
+                        var diffRatio = b.actual_hash_difficulty / b.network_difficulty;
                         var heightMultiplier = 1 + (Math.sqrt(diffRatio) - 1) * 0.5;
                         yVal = yVal * heightMultiplier;
                     }
-                    
-                    // Add vertical line going UP from block diamond showing Hash Diff / Net Diff ratio
-                    // Use log scale: log2(ratio + 1) to compress large values (34x → ~5.1, 2x → ~1.6)
-                    var logRatio = Math.log2(diffRatio + 1); // log2(1+1)=1, log2(34+1)≈5.1
-                    var lineLength = baseY * logRatio * 0.15; // Scale factor for visual balance
-                    var lineTop = yVal + lineLength;
-                    diffRatioLines.push({x: blockTime, y: yVal, marker: {enabled: false}});
-                    diffRatioLines.push({x: blockTime, y: lineTop, marker: {enabled: false}});
-                    diffRatioLines.push(null); // Break line between blocks
                     
                     // Determine color based on luck
                     var color = '#10b981'; // Default green (good luck >= 100%)
@@ -3858,19 +3819,6 @@
                     color: '#ff6b6b',
                     visible: seriesVisibility.doa,
                     yAxis: 0
-                }, {
-                    type: 'line',
-                    name: 'Diff Ratio',
-                    data: diffRatioLines,
-                    color: '#10b981',
-                    lineWidth: 3,
-                    yAxis: 0,
-                    visible: true,
-                    enableMouseTracking: false,
-                    states: { hover: { enabled: false } },
-                    marker: { enabled: false },
-                    zoneAxis: 'x',
-                    connectNulls: false
                 }, {
                     type: 'scatter',
                     name: 'Blocks',
