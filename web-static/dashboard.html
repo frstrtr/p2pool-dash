@@ -2596,6 +2596,79 @@
             el.style.color = color;
         }
 
+        // Draw vertical bars behind block diamonds showing Hash/Net difficulty ratio
+        // Uses log scale: bar height = log2(ratio) * scale
+        function drawDiffRatioBars(chart) {
+            // Remove any existing ratio bars
+            if (chart.diffRatioBars) {
+                chart.diffRatioBars.forEach(function(bar) {
+                    if (bar && bar.destroy) bar.destroy();
+                });
+            }
+            chart.diffRatioBars = [];
+            
+            // Find the Blocks series
+            var blocksSeries = chart.series.find(function(s) { return s.name === 'Blocks'; });
+            if (!blocksSeries || !blocksSeries.points) return;
+            
+            var plotTop = chart.plotTop;
+            var plotHeight = chart.plotHeight;
+            var plotBottom = plotTop + plotHeight;
+            
+            blocksSeries.points.forEach(function(point) {
+                if (!point.block) return;
+                var b = point.block;
+                
+                // Calculate diff ratio
+                if (!b.actual_hash_difficulty || !b.network_difficulty || b.network_difficulty <= 0) return;
+                var diffRatio = b.actual_hash_difficulty / b.network_difficulty;
+                if (diffRatio <= 1) return; // No bar for ratio <= 1
+                
+                // Log2 scale: height based on log2(ratio)
+                // ratio 2x = 1 unit, 4x = 2 units, 8x = 3 units, 16x = 4 units, etc.
+                var logRatio = Math.log2(diffRatio);
+                var maxLogRatio = 6; // Cap at 64x (log2(64) = 6)
+                logRatio = Math.min(logRatio, maxLogRatio);
+                
+                // Scale to pixels: max height ~80px
+                var maxBarHeight = 80;
+                var barHeight = (logRatio / maxLogRatio) * maxBarHeight;
+                
+                // Get point position
+                var x = point.plotX + chart.plotLeft;
+                var y = point.plotY + plotTop;
+                
+                // Bar width
+                var barWidth = 6;
+                
+                // Color based on ratio
+                var barColor;
+                if (diffRatio >= 10) {
+                    barColor = 'rgba(255, 0, 255, 0.7)'; // Magenta for exceptional
+                } else if (diffRatio >= 5) {
+                    barColor = 'rgba(0, 255, 255, 0.6)'; // Cyan for great
+                } else if (diffRatio >= 2) {
+                    barColor = 'rgba(0, 255, 136, 0.5)'; // Green for good
+                } else {
+                    barColor = 'rgba(255, 255, 255, 0.3)'; // White for minor
+                }
+                
+                // Draw bar extending downward from diamond position
+                var barX = x - barWidth / 2;
+                var barY = y;
+                
+                // Create SVG rect
+                var bar = chart.renderer.rect(barX, barY, barWidth, barHeight, 1)
+                    .attr({
+                        fill: barColor,
+                        zIndex: 2 // Behind markers (markers are zIndex 3)
+                    })
+                    .add();
+                
+                chart.diffRatioBars.push(bar);
+            });
+        }
+
         function renderHashrateGraph(data, minerData, uniqueMinersData, connectedData, blocks, networkDiffSamples, luckStats) {
             var container = document.getElementById('hashrate-graph');
             blocks = blocks || [];
@@ -2964,7 +3037,11 @@
                     marginLeft: 80,
                     panning: { enabled: true, type: 'x' },
                     panKey: 'shift',
-                    zoomType: 'x'
+                    zoomType: 'x',
+                    events: {
+                        load: function() { drawDiffRatioBars(this); },
+                        redraw: function() { drawDiffRatioBars(this); }
+                    }
                 },
                 credits: { enabled: false },
                 title: { text: null },
@@ -3100,6 +3177,16 @@
                                 s += 'Hash Diff: <b style="color:#00d4ff">' + format_hashrate(actualHashrate) + '</b><br/>';
                                 s += '<span style="font-size:10px;color:#aaa">(bdiff: ' + d3.format(',.2f')(b.actual_hash_difficulty) + ', pdiff: ' + d3.format('.2e')(actualPdiff) + ')</span><br/>';
                             }
+                            // Show Hash/Net difficulty ratio (how many more leading zeroes than required)
+                            if (b.actual_hash_difficulty && b.network_difficulty && b.network_difficulty > 0) {
+                                var diffRatio = b.actual_hash_difficulty / b.network_difficulty;
+                                var ratioColor = diffRatio >= 10 ? '#ff00ff' : (diffRatio >= 5 ? '#00ffff' : (diffRatio >= 2 ? '#00ff88' : '#ffffff'));
+                                s += 'Diff Ratio: <b style="color:' + ratioColor + '">' + d3.format('.2f')(diffRatio) + 'x</b>';
+                                if (diffRatio >= 10) s += ' <span style="color:#ff00ff">★★★</span>';
+                                else if (diffRatio >= 5) s += ' <span style="color:#00ffff">★★</span>';
+                                else if (diffRatio >= 2) s += ' <span style="color:#00ff88">★</span>';
+                                s += '<br/>';
+                            }
                             s += 'Status: <b style="color:' + (b.status === 'confirmed' ? '#00ff88' : '#ffc107') + '">' + (b.status || 'unknown') + '</b>';
                             return s;
                         }
@@ -3218,6 +3305,16 @@
                             }
                             if (b.expected_time) {
                                 s += 'Expected: ' + format_dt(b.expected_time) + '<br/>';
+                            }
+                            // Show Hash/Net difficulty ratio
+                            if (b.actual_hash_difficulty && b.network_difficulty && b.network_difficulty > 0) {
+                                var diffRatio = b.actual_hash_difficulty / b.network_difficulty;
+                                var ratioColor = diffRatio >= 10 ? '#ff00ff' : (diffRatio >= 5 ? '#00ffff' : (diffRatio >= 2 ? '#00ff88' : '#ffffff'));
+                                s += 'Diff Ratio: <b style="color:' + ratioColor + '">' + d3.format('.2f')(diffRatio) + 'x</b>';
+                                if (diffRatio >= 10) s += ' <span style="color:#ff00ff">★★★</span>';
+                                else if (diffRatio >= 5) s += ' <span style="color:#00ffff">★★</span>';
+                                else if (diffRatio >= 2) s += ' <span style="color:#00ff88">★</span>';
+                                s += '<br/>';
                             }
                             s += 'Status: <b>' + (b.status || 'unknown') + '</b>';
                             return s;
@@ -3594,7 +3691,11 @@
                     marginLeft: 80,
                     panning: { enabled: true, type: 'x' },
                     panKey: 'shift',
-                    zoomType: 'x'
+                    zoomType: 'x',
+                    events: {
+                        load: function() { drawDiffRatioBars(this); },
+                        redraw: function() { drawDiffRatioBars(this); }
+                    }
                 },
                 credits: { enabled: false },
                 title: { text: null },
@@ -3722,6 +3823,16 @@
                                 s += 'Hash Diff: <b style="color:#00d4ff">' + format_hashrate(actualHashrate) + '</b><br/>';
                                 s += '<span style="font-size:11px;color:#888">(Hashrate equivalent of found hash)</span><br/>';
                                 s += '<span style="font-size:11px;color:#aaa">bdiff: ' + d3.format(',.2f')(b.actual_hash_difficulty) + ', pdiff: ' + d3.format('.2e')(actualPdiff) + '</span><br/>';
+                            }
+                            // Show Hash/Net difficulty ratio
+                            if (b.actual_hash_difficulty && b.network_difficulty && b.network_difficulty > 0) {
+                                var diffRatio = b.actual_hash_difficulty / b.network_difficulty;
+                                var ratioColor = diffRatio >= 10 ? '#ff00ff' : (diffRatio >= 5 ? '#00ffff' : (diffRatio >= 2 ? '#00ff88' : '#ffffff'));
+                                s += 'Diff Ratio: <b style="color:' + ratioColor + '">' + d3.format('.2f')(diffRatio) + 'x</b>';
+                                if (diffRatio >= 10) s += ' <span style="color:#ff00ff">★★★</span>';
+                                else if (diffRatio >= 5) s += ' <span style="color:#00ffff">★★</span>';
+                                else if (diffRatio >= 2) s += ' <span style="color:#00ff88">★</span>';
+                                s += '<br/>';
                             }
                             s += 'Status: <b style="color:' + (b.status === 'confirmed' ? '#00ff88' : '#ffc107') + '">' + (b.status || 'unknown') + '</b>';
                             return s;
@@ -3853,6 +3964,16 @@
                             }
                             if (b.expected_time) {
                                 s += 'Expected: ' + format_dt(b.expected_time) + '<br/>';
+                            }
+                            // Show Hash/Net difficulty ratio
+                            if (b.actual_hash_difficulty && b.network_difficulty && b.network_difficulty > 0) {
+                                var diffRatio = b.actual_hash_difficulty / b.network_difficulty;
+                                var ratioColor = diffRatio >= 10 ? '#ff00ff' : (diffRatio >= 5 ? '#00ffff' : (diffRatio >= 2 ? '#00ff88' : '#ffffff'));
+                                s += 'Diff Ratio: <b style="color:' + ratioColor + '">' + d3.format('.2f')(diffRatio) + 'x</b>';
+                                if (diffRatio >= 10) s += ' <span style="color:#ff00ff">★★★</span>';
+                                else if (diffRatio >= 5) s += ' <span style="color:#00ffff">★★</span>';
+                                else if (diffRatio >= 2) s += ' <span style="color:#00ff88">★</span>';
+                                s += '<br/>';
                             }
                             s += 'Status: <b>' + (b.status || 'unknown') + '</b>';
                             return s;
