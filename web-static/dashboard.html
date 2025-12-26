@@ -2641,8 +2641,11 @@
                 var x = point.plotX + chart.plotLeft;
                 var y = point.plotY + plotTop;
                 
-                // Bar width
-                var barWidth = 6;
+                // Bar width (matches diamond visual width)
+                var barWidth = 4;
+                
+                // Diamond radius is 5px, so offset bar start to diamond center
+                var diamondRadius = 5;
                 
                 // Color based on ratio
                 var barColor;
@@ -2656,12 +2659,12 @@
                     barColor = 'rgba(255, 255, 255, 0.3)'; // White for minor
                 }
                 
-                // Draw bar extending downward from diamond position
+                // Draw bar extending downward from diamond center
                 var barX = x - barWidth / 2;
-                var barY = y;
+                var barY = y + diamondRadius; // Start just below diamond center
                 
                 // Create SVG rect
-                var bar = chart.renderer.rect(barX, barY, barWidth, barHeight, 1)
+                var bar = chart.renderer.rect(barX, barY, barWidth, barHeight, 0)
                     .attr({
                         fill: barColor,
                         zIndex: 2 // Behind markers (markers are zIndex 3)
@@ -3248,13 +3251,13 @@
                     },
                     scatter: {
                         marker: {
-                            radius: 12,
+                            radius: 8,
                             symbol: 'diamond',
                             lineWidth: 2,
                             lineColor: '#00ff88'
                         },
                         states: { 
-                            hover: { marker: { radius: 14 } },
+                            hover: { marker: { radius: 10 } },
                             inactive: { opacity: 1 }
                         },
                         stickyTracking: false
@@ -3907,13 +3910,13 @@
                     },
                     scatter: {
                         marker: {
-                            radius: 14,
+                            radius: 10,
                             symbol: 'diamond',
                             lineWidth: 2,
                             lineColor: '#00ff88'
                         },
                         states: { 
-                            hover: { marker: { radius: 16 } },
+                            hover: { marker: { radius: 12 } },
                             inactive: { opacity: 1 }
                         },
                         stickyTracking: false
@@ -3944,7 +3947,7 @@
                             marker: {
                                 fillColor: m.color || '#10b981',
                                 symbol: 'diamond',
-                                radius: 6
+                                radius: 5
                             }
                         };
                     }),
