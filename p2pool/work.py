@@ -534,7 +534,9 @@ class WorkerBridge(worker_interface.WorkerBridge):
                 
                 # Update local rate monitor for shares (they are also pseudoshares)
                 # Use effective_target (vardiff target) for work calculation
-                self.local_rate_monitor.add_datum(dict(work=dash_data.target_to_average_attempts(effective_target), dead=not on_time, user=user, share_target=share_info['bits'].target))
+                # Convert pubkey_hash to address string for consistent tracking with API
+                user_address = dash_data.pubkey_hash_to_address(pubkey_hash, self.node.net.PARENT)
+                self.local_rate_monitor.add_datum(dict(work=dash_data.target_to_average_attempts(effective_target), dead=not on_time, user=user_address, share_target=share_info['bits'].target))
                 self.local_addr_rate_monitor.add_datum(dict(work=dash_data.target_to_average_attempts(effective_target), pubkey_hash=pubkey_hash))
                 received_header_hashes.add(header_hash)
             elif pow_hash > effective_target:
@@ -551,7 +553,9 @@ class WorkerBridge(worker_interface.WorkerBridge):
                 self.recent_shares_ts_work.append((time.time(), work_value))
                 while len(self.recent_shares_ts_work) > 50:
                     self.recent_shares_ts_work.pop(0)
-                self.local_rate_monitor.add_datum(dict(work=work_value, dead=not on_time, user=user, share_target=share_info['bits'].target))
+                # Convert pubkey_hash to address string for consistent tracking with API
+                user_address = dash_data.pubkey_hash_to_address(pubkey_hash, self.node.net.PARENT)
+                self.local_rate_monitor.add_datum(dict(work=work_value, dead=not on_time, user=user_address, share_target=share_info['bits'].target))
                 self.local_addr_rate_monitor.add_datum(dict(work=work_value, pubkey_hash=pubkey_hash))
 
             return on_time
