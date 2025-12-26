@@ -540,13 +540,44 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                 current_txouts = node.get_current_txouts()
                 address_script = bitcoin_data.address_to_script2(address, node.net.PARENT)
                 
-                # For historical blocks, we need to estimate the payout
-                # In P2Pool, all miners with shares in the window get paid proportionally
-                # The block finder doesn't get extra reward in standard P2Pool
+                # Calculate actual payout using PPLNS formula
+                # Based on share weight at block time
                 estimated_payout = 0
                 if address_script and block_reward > 0:
-                    # This is an approximation - actual payout depends on share distribution at block time
-                    estimated_payout = block_reward * 0.1  # Rough estimate, actual varies
+                    try:
+                        # Get expected payouts for this block using the share tracker
+                        # Use the share hash from when the block was found
+                        share_hash_int = block_data.get('share_hash', 0)
+                        if share_hash_int and share_hash_int in node.tracker.items:
+                            share = node.tracker.items[share_hash_int]
+                            # Calculate payouts at the time this block was found
+                            expected_payouts = p2pool_data.get_expected_payouts(
+                                node.tracker, 
+                                share_hash_int,
+                                share.header['bits'].target,  # Use network target from share
+                                int(block_reward * 1e8),  # Convert to satoshis
+                                node.net
+                            )
+                            # Get payout for this address from expected payouts
+                            if address_script in expected_payouts:
+                                estimated_payout = expected_payouts[address_script] / 1e8
+                        else:
+                            # Fallback: estimate based on current share distribution
+                            # This is less accurate but still better than 10%
+                            if node.best_share_var.value:
+                                expected_payouts_current = p2pool_data.get_expected_payouts(
+                                    node.tracker,
+                                    node.best_share_var.value,
+                                    node.dashd_work.value['bits'].target,
+                                    int(block_reward * 1e8),
+                                    node.net
+                                )
+                                if address_script in expected_payouts_current:
+                                    estimated_payout = expected_payouts_current[address_script] / 1e8
+                    except Exception as e:
+                        # If calculation fails, set to 0 rather than guessing
+                        estimated_payout = 0
+                        print 'Error calculating PPLNS payout for block %s: %s' % (block_hash[:16], str(e))
                 
                 block_info = {
                     'timestamp': block_data.get('ts', 0),
