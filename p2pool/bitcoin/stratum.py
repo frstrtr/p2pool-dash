@@ -1,6 +1,7 @@
 import random
 import sys
 import time
+import weakref
 
 from twisted.internet import protocol, reactor
 from twisted.python import log
@@ -11,6 +12,235 @@ from p2pool.util import expiring_dict, jsonrpc, pack
 def clip(num, bot, top):
     return min(top, max(bot, num))
 
+
+# ==============================================================================
+# GLOBAL POOL STATISTICS AND CONNECTION MANAGEMENT
+# ==============================================================================
+
+class PoolStatistics(object):
+    """
+    Global pool statistics tracker for performance monitoring and load management.
+    
+    This class tracks:
+    - Total connected workers
+    - Per-worker hash rates and share counts
+    - Global share submission rate
+    - Connection history for monitoring
+    """
+    
+    # Class-level singleton instance
+    _instance = None
+    
+    @classmethod
+    def get_instance(cls):
+        if cls._instance is None:
+            cls._instance = PoolStatistics()
+        return cls._instance
+    
+    def __init__(self):
+        # Connection tracking (weak refs to auto-cleanup disconnected workers)
+        self.connections = weakref.WeakValueDictionary()
+        self.connection_count = 0
+        
+        # Per-worker statistics {worker_name: {shares, hash_rate, last_seen, ...}}
+        self.worker_stats = {}
+        
+        # Global submission rate tracking
+        self.global_submissions = []  # List of (timestamp, difficulty) tuples
+        self.global_submission_window = 60  # Track last 60 seconds
+        
+        # Per-IP connection tracking
+        self.ip_connections = {}  # {ip: count}
+        
+        # Performance metrics
+        self.total_shares_accepted = 0
+        self.total_shares_rejected = 0
+        self.startup_time = time.time()
+    
+    def register_connection(self, conn_id, connection, ip=None):
+        """Register a new stratum connection"""
+        self.connections[conn_id] = connection
+        self.connection_count = len(self.connections)
+        
+        # Track per-IP connections
+        if ip:
+            self.ip_connections[ip] = self.ip_connections.get(ip, 0) + 1
+        
+        return True
+    
+    def unregister_connection(self, conn_id, ip=None):
+        """Unregister a stratum connection"""
+        if conn_id in self.connections:
+            del self.connections[conn_id]
+        self.connection_count = len(self.connections)
+        
+        # Update per-IP count
+        if ip and ip in self.ip_connections:
+            self.ip_connections[ip] = max(0, self.ip_connections[ip] - 1)
+            if self.ip_connections[ip] == 0:
+                del self.ip_connections[ip]
+    
+    def get_worker_connections(self, worker_name):
+        """Get all active connections for a worker name"""
+        connections = []
+        for conn_id, conn in self.connections.items():
+            if hasattr(conn, 'username') and conn.username == worker_name:
+                connections.append(conn)
+        return connections
+    
+    def get_worker_aggregate_stats(self, worker_name):
+        """Get aggregated stats across all connections for a worker"""
+        connections = self.get_worker_connections(worker_name)
+        if not connections:
+            return None
+        
+        aggregate = {
+            'connection_count': len(connections),
+            'total_shares_submitted': 0,
+            'total_shares_accepted': 0,
+            'total_shares_rejected': 0,
+            'difficulties': [],
+            'active_connections': 0,  # Connections that have submitted shares
+            'backup_connections': 0,  # Connections with no shares (backup/redundant)
+        }
+        
+        for conn in connections:
+            aggregate['total_shares_submitted'] += getattr(conn, 'shares_submitted', 0)
+            aggregate['total_shares_accepted'] += getattr(conn, 'shares_accepted', 0)
+            aggregate['total_shares_rejected'] += getattr(conn, 'shares_rejected', 0)
+            if getattr(conn, 'shares_submitted', 0) > 0:
+                aggregate['active_connections'] += 1
+            else:
+                aggregate['backup_connections'] += 1
+            if hasattr(conn, 'target') and conn.target:
+                aggregate['difficulties'].append(bitcoin_data.target_to_difficulty(conn.target))
+        
+        return aggregate
+
+    def record_share(self, worker_name, difficulty, accepted=True):
+        """Record a share submission for statistics"""
+        now = time.time()
+        
+        # Update global submission tracking
+        self.global_submissions.append((now, difficulty))
+        # Prune old entries
+        cutoff = now - self.global_submission_window
+        self.global_submissions = [(t, d) for t, d in self.global_submissions if t > cutoff]
+        
+        # Update worker stats
+        if worker_name not in self.worker_stats:
+            self.worker_stats[worker_name] = {
+                'shares': 0,
+                'accepted': 0,
+                'rejected': 0,
+                'hash_rate': 0.0,
+                'last_seen': now,
+                'first_seen': now,
+                'difficulties': [],
+            }
+        
+        stats = self.worker_stats[worker_name]
+        stats['shares'] += 1
+        stats['last_seen'] = now
+        
+        if accepted:
+            stats['accepted'] += 1
+            self.total_shares_accepted += 1
+        else:
+            stats['rejected'] += 1
+            self.total_shares_rejected += 1
+        
+        # Track recent difficulties for hash rate estimation
+        stats['difficulties'].append((now, difficulty))
+        # Keep last 100 entries
+        if len(stats['difficulties']) > 100:
+            stats['difficulties'] = stats['difficulties'][-100:]
+        
+        # Estimate hash rate from recent shares
+        if len(stats['difficulties']) >= 2:
+            oldest_t, oldest_d = stats['difficulties'][0]
+            time_span = now - oldest_t
+            if time_span > 0:
+                total_work = sum(d for t, d in stats['difficulties'])
+                # Hash rate = total_difficulty * 2^32 / time_span
+                stats['hash_rate'] = (total_work * (2**32)) / time_span
+    
+    def get_global_submission_rate(self):
+        """Get current global submission rate (shares/second)"""
+        now = time.time()
+        cutoff = now - self.global_submission_window
+        recent = [(t, d) for t, d in self.global_submissions if t > cutoff]
+        if len(recent) == 0:
+            return 0.0
+        return len(recent) / self.global_submission_window
+    
+    def get_worker_stats(self, worker_name=None):
+        """Get statistics for a specific worker or all workers"""
+        if worker_name:
+            return self.worker_stats.get(worker_name)
+        return self.worker_stats
+    
+    def get_unique_connected_addresses(self):
+        """Get set of unique miner addresses currently connected"""
+        connected_addresses = set()
+        for conn_id, conn in self.connections.items():
+            if hasattr(conn, 'address') and conn.address:
+                connected_addresses.add(conn.address)
+        return connected_addresses
+    
+    def get_connected_workers(self):
+        """Get dict of connected workers with their info"""
+        workers = {}
+        for conn_id, conn in self.connections.items():
+            if hasattr(conn, 'username') and conn.username:
+                worker_name = conn.username
+                if worker_name not in workers:
+                    workers[worker_name] = {
+                        'connections': 0,
+                        'address': getattr(conn, 'address', None),
+                        'difficulties': [],
+                        'ips': set(),
+                    }
+                workers[worker_name]['connections'] += 1
+                if hasattr(conn, 'target') and conn.target:
+                    workers[worker_name]['difficulties'].append(
+                        bitcoin_data.target_to_difficulty(conn.target))
+                if hasattr(conn, 'worker_ip') and conn.worker_ip:
+                    workers[worker_name]['ips'].add(conn.worker_ip)
+        
+        # Convert sets to lists for JSON serialization
+        for w in workers:
+            workers[w]['ips'] = list(workers[w]['ips'])
+        
+        return workers
+    
+    def get_pool_stats(self):
+        """Get overall pool statistics"""
+        now = time.time()
+        # Calculate rate directly from recent submissions
+        cutoff = now - self.global_submission_window
+        recent = [(t, d) for t, d in self.global_submissions if t > cutoff]
+        rate = len(recent) / float(self.global_submission_window) if recent else 0.0
+        
+        # Count unique workers currently connected
+        connected_workers = self.get_connected_workers()
+        
+        return {
+            'connections': self.connection_count,
+            'workers': len(connected_workers),
+            'unique_addresses': len(self.get_unique_connected_addresses()),
+            'total_accepted': self.total_shares_accepted,
+            'total_rejected': self.total_shares_rejected,
+            'submission_rate': rate,
+            'uptime': now - self.startup_time,
+            'ip_connections': dict(self.ip_connections),
+        }
+
+
+# Global pool statistics instance
+pool_stats = PoolStatistics.get_instance()
+
+
 class StratumRPCMiningProvider(object):
     def __init__(self, wb, other, transport):
         self.pool_version_mask = 0x1fffe000
@@ -19,6 +249,8 @@ class StratumRPCMiningProvider(object):
         self.transport = transport
         
         self.username = None
+        self.address = None  # Payout address extracted from username
+        self.worker_ip = transport.getPeer().host if transport else None
         self.handler_map = expiring_dict.ExpiringDict(300)
         
         self.watch_id = self.wb.new_work_event.watch(self._send_work)
@@ -29,6 +261,16 @@ class StratumRPCMiningProvider(object):
         self.fixed_target = False
         self.desired_pseudoshare_target = None
         self.merged_addresses = {}
+        
+        # Connection tracking
+        self.conn_id = id(self)
+        self.connection_time = time.time()
+        pool_stats.register_connection(self.conn_id, self, self.worker_ip)
+        
+        # Per-connection statistics
+        self.shares_submitted = 0
+        self.shares_accepted = 0
+        self.shares_rejected = 0
 
     
     def rpc_subscribe(self, miner_version=None, session_id=None, *args):
@@ -167,6 +409,16 @@ class StratumRPCMiningProvider(object):
             nonce=pack.IntType(32).unpack(getwork._swap4(nonce.decode('hex'))),
         )
         result = got_response(header, worker_name, coinb_nonce, self.target)
+        
+        # Track share submission statistics
+        self.shares_submitted += 1
+        current_diff = bitcoin_data.target_to_difficulty(self.target) if self.target else 1
+        if result:
+            self.shares_accepted += 1
+            pool_stats.record_share(worker_name, current_diff, accepted=True)
+        else:
+            self.shares_rejected += 1
+            pool_stats.record_share(worker_name, current_diff, accepted=False)
 
         # adjust difficulty on this stratum to target ~share_rate sec/pseudoshare
         if not self.fixed_target:
@@ -195,6 +447,9 @@ class StratumRPCMiningProvider(object):
     
     def close(self):
         self.wb.new_work_event.unwatch(self.watch_id)
+        
+        # Unregister connection from pool stats
+        pool_stats.unregister_connection(self.conn_id, self.worker_ip)
 
 class StratumProtocol(jsonrpc.LineBasedPeer):
     def connectionMade(self):

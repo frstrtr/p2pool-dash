@@ -2,6 +2,7 @@
 
 This document summarizes the fixes made to support high-hashrate ASIC miners (particularly Antminer D9 with ~1.7 TH/s each, ~10 TH/s total for 6 miners).
 
+**Release v1.4.4** - Stratum Statistics & Connected Miners API (December 29, 2025)
 **Release v1.4.3** - Bug Fixes from Production Logs (December 26, 2025)
 **Release v1.4.2** - Vardiff Critical Bug Fix (December 26, 2025)
 **Release v1.4.1** - Share Difficulty & DOA Fixes (December 26, 2025)
@@ -11,7 +12,70 @@ This document summarizes the fixes made to support high-hashrate ASIC miners (pa
 **Release v1.1.0** - Dash Platform support + Protocol v1700 (December 13, 2025)
 **Release v1.0.0** - First stable release with full ASIC support (December 11, 2025)
 
+## v1.4.4 - Stratum Statistics & Connected Miners API (December 29, 2025)
+
+### PoolStatistics Class Added to Stratum
+
+**File:** `p2pool/bitcoin/stratum.py`
+
+**Problem:** The web interface showed empty "Active miners" table because `miner_hash_rates` only tracked miners who submitted work within the activity window (~17 minutes). The `/payout_addrs` endpoint showed operator addresses, not connected miners.
+
+**Solution:** Added `PoolStatistics` class (adapted from `p2pool-dash-backup/dash/stratum.py`) that tracks:
+
+- **Connected workers** via weak references (auto-cleanup on disconnect)
+- **Per-worker statistics**: shares, accepted/rejected, hash rate, last seen
+- **Per-IP connection counts**
+- **Global submission rate**
+
+Key integration points:
+```python
+# On connection
+pool_stats.register_connection(self.conn_id, self, self.worker_ip)
+
+# On share submission
+pool_stats.record_share(worker_name, current_diff, accepted=True/False)
+
+# On disconnect
+pool_stats.unregister_connection(self.conn_id, self.worker_ip)
+```
+
+### New API Endpoints
+
+**File:** `p2pool/web.py`
+
+Added two new endpoints:
+
+1. **`/stratum_stats`** - Detailed stratum statistics:
+```json
+{
+  "pool": {
+    "connections": 5,
+    "workers": 3,
+    "unique_addresses": 2,
+    "total_accepted": 1234,
+    "total_rejected": 5,
+    "submission_rate": 0.5,
+    "uptime": 3600
+  },
+  "workers": {
+    "LKNsF7AKzKHjN6neEbGn94ncc2qXbfYPkL.worker1": {
+      "shares": 100,
+      "accepted": 99,
+      "rejected": 1,
+      "hash_rate": 2190466744,
+      "connections": 2
+    }
+  }
+}
+```
+
+2. **`/connected_miners`** - List of currently connected miner addresses:
+```json
+["LKNsF7AKzKHjN6neEbGn94ncc2qXbfYPkL", "LTss57coTsCM58iGwox5wqExvKP37J6Ddt"]
+```
+
 ## v1.4.3 - Bug Fixes from Production Logs (December 26, 2025)
+
 
 ### P2PNode banscore Typo Fix
 

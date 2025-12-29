@@ -229,6 +229,92 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     web_root.putChild('payout_addr', WebInterface(lambda: wb.address))
     web_root.putChild('payout_addrs', WebInterface(
         lambda: list(add['address'] for add in wb.pubkeys.keys)))
+    
+    # ==== Stratum statistics endpoint ====
+    def get_stratum_stats():
+        """Get stratum pool statistics including per-worker data"""
+        try:
+            from p2pool.bitcoin.stratum import pool_stats
+            stats = pool_stats.get_pool_stats()
+            worker_stats = pool_stats.get_worker_stats()
+            connected_workers = pool_stats.get_connected_workers()
+            
+            # Format worker stats for JSON
+            formatted_workers = {}
+            for worker_name, wstats in worker_stats.items():
+                # Get aggregate connection stats
+                conn_aggregate = pool_stats.get_worker_aggregate_stats(worker_name)
+                
+                formatted_workers[worker_name] = {
+                    'shares': wstats.get('shares', 0),
+                    'accepted': wstats.get('accepted', 0),
+                    'rejected': wstats.get('rejected', 0),
+                    'hash_rate': wstats.get('hash_rate', 0),
+                    'last_seen': wstats.get('last_seen', 0),
+                    'first_seen': wstats.get('first_seen', 0),
+                    # Connection aggregate stats
+                    'connections': conn_aggregate.get('connection_count', 0) if conn_aggregate else 0,
+                    'active_connections': conn_aggregate.get('active_connections', 0) if conn_aggregate else 0,
+                    'backup_connections': conn_aggregate.get('backup_connections', 0) if conn_aggregate else 0,
+                    'connection_difficulties': conn_aggregate.get('difficulties', []) if conn_aggregate else [],
+                }
+            
+            # Also include currently connected workers (even if no shares yet)
+            for worker_name, winfo in connected_workers.items():
+                if worker_name not in formatted_workers:
+                    formatted_workers[worker_name] = {
+                        'shares': 0,
+                        'accepted': 0,
+                        'rejected': 0,
+                        'hash_rate': 0,
+                        'last_seen': 0,
+                        'first_seen': 0,
+                        'connections': winfo.get('connections', 0),
+                        'active_connections': 0,
+                        'backup_connections': winfo.get('connections', 0),
+                        'connection_difficulties': winfo.get('difficulties', []),
+                    }
+                else:
+                    # Update connection info for existing workers
+                    formatted_workers[worker_name]['connections'] = winfo.get('connections', 0)
+                    formatted_workers[worker_name]['connection_difficulties'] = winfo.get('difficulties', [])
+            
+            return {
+                'pool': stats,
+                'workers': formatted_workers,
+            }
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return {'error': str(e)}
+    
+    web_root.putChild('stratum_stats', WebInterface(get_stratum_stats))
+    
+    # ==== Connected miners endpoint (all miners currently connected via stratum) ====
+    def get_connected_miners():
+        """Get list of all currently connected miner addresses"""
+        try:
+            from p2pool.bitcoin.stratum import pool_stats
+            connected_workers = pool_stats.get_connected_workers()
+            
+            # Extract unique addresses from connected workers
+            addresses = set()
+            for worker_name, winfo in connected_workers.items():
+                addr = winfo.get('address')
+                if addr:
+                    addresses.add(addr)
+                else:
+                    # Try to extract address from worker name (format: address.worker or address)
+                    base_addr = worker_name.split('+')[0].split('/')[0].split('.')[0].split('_')[0]
+                    if base_addr:
+                        addresses.add(base_addr)
+            
+            return list(addresses)
+        except Exception as e:
+            return []
+    
+    web_root.putChild('connected_miners', WebInterface(get_connected_miners))
+    
     web_root.putChild('recent_blocks', WebInterface(lambda: [dict(
         ts=s.timestamp,
         hash='%064x' % s.header_hash,
