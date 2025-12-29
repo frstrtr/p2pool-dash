@@ -2,6 +2,7 @@
 
 This document summarizes the fixes made to support high-hashrate ASIC miners (particularly Antminer D9 with ~1.7 TH/s each, ~10 TH/s total for 6 miners).
 
+**Release v1.4.6** - Share Hash Rate Tracking Bug Fix (December 29, 2025)
 **Release v1.4.5** - Protocol Version & Bootstrap Nodes Update (December 29, 2025)
 **Release v1.4.4** - Stratum Statistics & Connected Miners API (December 29, 2025)
 **Release v1.4.3** - Bug Fixes from Production Logs (December 26, 2025)
@@ -12,6 +13,55 @@ This document summarizes the fixes made to support high-hashrate ASIC miners (pa
 **Release v1.2.0** - Litecoin+Dogecoin Merged Mining (December 25, 2025)
 **Release v1.1.0** - Dash Platform support + Protocol v1700 (December 13, 2025)
 **Release v1.0.0** - First stable release with full ASIC support (December 11, 2025)
+
+## v1.4.6 - Share Hash Rate Tracking Bug Fix (December 29, 2025)
+
+### Critical Bug: Miner Hash Rate Not Tracked for Valid Shares
+
+**File:** `p2pool/work.py`
+
+**Problem:** Valid P2Pool shares were not being tracked in `local_rate_monitor`, causing:
+- Only 1 of 4 miners appearing in `miner_hash_rates` 
+- Incorrect hash rate attribution
+- Share broadcast and tracking code was inside wrong `elif` branch
+
+**Root Cause:** Code flow bug in `got_response()`:
+```python
+# BEFORE (broken):
+if pow_hash <= share_info['bits'].target and ... and work_merkle_root == header['merkle_root']:
+    share = get_share(...)
+    self.node.tracker.add(share)
+    self.node.set_best_share()
+    # Missing: share broadcast, share_received, local_rate_monitor!
+elif pow_hash <= share_info['bits'].target and work_merkle_root != header['merkle_root']:
+    pass  # Stale work
+    # Code below was unreachable for valid shares!
+    self.node.p2p_node.broadcast_share(share.hash)  # share undefined!
+    self.share_received.happened(...)
+    self.local_rate_monitor.add_datum(...)
+```
+
+**Solution:** Moved share broadcast and rate tracking into the valid share block:
+```python
+# AFTER (fixed):
+if pow_hash <= share_info['bits'].target and ... and work_merkle_root == header['merkle_root']:
+    share = get_share(...)
+    self.node.tracker.add(share)
+    self.node.set_best_share()
+    # Now properly broadcasts and tracks valid shares
+    self.node.p2p_node.broadcast_share(share.hash)
+    self.share_received.happened(...)
+    self.local_rate_monitor.add_datum(...)
+elif pow_hash <= share_info['bits'].target and work_merkle_root != header['merkle_root']:
+    # Stale work - track as dead, don't create share
+    print 'Worker submitted P2Pool-quality share on stale work template'
+    self.local_rate_monitor.add_datum(..., dead=True, ...)
+```
+
+**Impact:**
+- All miners now properly tracked in `miner_hash_rates`
+- Shares broadcast to P2P network when found
+- Stale P2Pool shares counted as dead work (not lost)
 
 ## v1.4.5 - Protocol Version & Bootstrap Nodes Update (December 29, 2025)
 

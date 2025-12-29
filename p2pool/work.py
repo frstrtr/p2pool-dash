@@ -1370,10 +1370,8 @@ class WorkerBridge(worker_interface.WorkerBridge):
 
                 self.node.tracker.add(share)
                 self.node.set_best_share()
-            elif pow_hash <= share_info['bits'].target and work_merkle_root != header['merkle_root']:
-                # Stale work - silently skip
-                pass
-
+                
+                # Broadcast share to P2P network
                 try:
                     if (pow_hash <= header['bits'].target or p2pool.DEBUG) and self.node.p2p_node is not None:
                         self.node.p2p_node.broadcast_share(share.hash)
@@ -1385,6 +1383,14 @@ class WorkerBridge(worker_interface.WorkerBridge):
                 # Update local rate monitor for shares (they are also pseudoshares)
                 # Use effective_target (vardiff target) for work calculation
                 self.local_rate_monitor.add_datum(dict(work=bitcoin_data.target_to_average_attempts(effective_target), dead=not on_time, user=user, share_target=share_info['bits'].target))
+                self.local_addr_rate_monitor.add_datum(dict(work=bitcoin_data.target_to_average_attempts(effective_target), pubkey_hash=pubkey_hash))
+                received_header_hashes.add(header_hash)
+            elif pow_hash <= share_info['bits'].target and work_merkle_root != header['merkle_root']:
+                # Stale work - share meets P2Pool difficulty but merkle_root mismatch
+                # This means the miner submitted work based on an old template
+                # We still count it for hash rate but don't create a share
+                print >>sys.stderr, 'Worker %s submitted P2Pool-quality share on stale work template' % (user,)
+                self.local_rate_monitor.add_datum(dict(work=bitcoin_data.target_to_average_attempts(effective_target), dead=True, user=user, share_target=share_info['bits'].target))
                 self.local_addr_rate_monitor.add_datum(dict(work=bitcoin_data.target_to_average_attempts(effective_target), pubkey_hash=pubkey_hash))
                 received_header_hashes.add(header_hash)
             elif pow_hash > effective_target:
