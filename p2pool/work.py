@@ -372,13 +372,34 @@ class WorkerBridge(worker_interface.WorkerBridge):
                     # Try createauxblock first (requires payout address, no wallet needed)
                     # Then fall back to getauxblock (requires wallet with keypool)
                     auxblock = None
-                    if merged_payout_address:
+                    
+                    # Auto-convert parent chain address to merged chain (Dogecoin) format if not provided
+                    effective_payout_address = merged_payout_address
+                    if not effective_payout_address and self.my_pubkey_hash:
+                        # Dogecoin testnet uses address version 113 (0x71)
+                        # Detect testnet from parent chain symbol
+                        parent_symbol = getattr(self.node.net.PARENT, 'SYMBOL', '') if hasattr(self.node.net, 'PARENT') else ''
+                        is_testnet = parent_symbol.lower().startswith('t') or 'test' in parent_symbol.lower()
+                        
+                        if is_testnet and dogecoin_testnet_net:
+                            effective_payout_address = bitcoin_data.pubkey_hash_to_address(
+                                self.my_pubkey_hash, dogecoin_testnet_net.ADDRESS_VERSION,
+                                -1, dogecoin_testnet_net)
+                        elif dogecoin_net:
+                            effective_payout_address = bitcoin_data.pubkey_hash_to_address(
+                                self.my_pubkey_hash, dogecoin_net.ADDRESS_VERSION,
+                                -1, dogecoin_net)
+                        
+                        if effective_payout_address:
+                            print 'Auto-converted parent address to merged chain: %s' % effective_payout_address
+                    
+                    if effective_payout_address:
                         try:
                             auxblock = yield deferral.retry('Error while calling merged createauxblock on %s:' % (merged_url,), 30)(
                                 merged_proxy.rpc_createauxblock
-                            )(merged_payout_address)
+                            )(effective_payout_address)
                             if auxpow_capable is None:
-                                print 'Using createauxblock API at %s with address %s' % (merged_url, merged_payout_address)
+                                print 'Using createauxblock API at %s with address %s' % (merged_url, effective_payout_address)
                         except Exception as create_err:
                             print 'createauxblock failed at %s: %s, trying getauxblock' % (merged_url, create_err)
                     
