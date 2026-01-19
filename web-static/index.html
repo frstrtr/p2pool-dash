@@ -170,25 +170,25 @@
                         .style('color', '#6f42c1')
                         .text(function(block){return block.symbol || block.network || 'AUX'});
                     tr.append('td').text(function(block){return block.chainid || '-'});
-                    // Display block hash with explorer link
+                    // Display pow_hash (unique per found block) with explorer link
                     tr.append('td').append('a')
                         .text(function(block){
-                            // Show the block hash (template hash) which is the actual block identifier
-                            var display_hash = block.hash || '-';
+                            // Show pow_hash which is unique per found block
+                            var display_hash = block.pow_hash || '-';
                             return display_hash.substring(0, 16) + '...';
                         })
                         .attr('href', function(block){
                             var explorer_config = merged_explorers[block.chainid];
-                            if (explorer_config && block.hash) {
+                            if (explorer_config && block.pow_hash) {
                                 // Use testnet explorer for now (could detect from network name)
                                 var explorer = explorer_config.testnet;
-                                return explorer + block.hash;
+                                return explorer + block.pow_hash;
                             }
                             return '#';
                         })
                         .attr('target', '_blank')
                         .attr('title', function(block){
-                            return 'Block Hash: ' + (block.hash || 'N/A') + '\nPOW Hash: ' + (block.pow_hash || 'N/A');
+                            return 'POW Hash: ' + (block.pow_hash || 'N/A') + '\nTemplate Hash: ' + (block.hash || 'N/A');
                         });
                     tr.append('td').text(function(block){return block.miner || '-'});
                     tr.append('td').text(function(block){return block.txs || '-'});

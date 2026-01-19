@@ -1482,6 +1482,22 @@ class WorkerBridge(worker_interface.WorkerBridge):
                                         merged_net_name = aux_work.get('merged_net_name', 'Dogecoin' if chainid == 98 else 'Unknown')
                                         merged_net_symbol = aux_work.get('merged_net_symbol', 'DOGE' if chainid == 98 else 'UNKNOWN')
                                         
+                                        # Convert miner address to merged chain format
+                                        miner_merged_address = user  # Default to original
+                                        try:
+                                            if chainid == 98:  # Dogecoin
+                                                parent_symbol = getattr(self.node.net.PARENT, 'SYMBOL', '') if hasattr(self.node.net, 'PARENT') else ''
+                                                is_testnet = parent_symbol.lower().startswith('t') or 'test' in parent_symbol.lower()
+                                                merged_net = dogecoin_testnet_net if is_testnet else dogecoin_net
+                                                if merged_net:
+                                                    parent_net = self.node.net.PARENT if hasattr(self.node.net, 'PARENT') else self.node.net
+                                                    is_convertible, pubkey_hash, _ = is_pubkey_hash_address(user, parent_net)
+                                                    if is_convertible and pubkey_hash:
+                                                        miner_merged_address = bitcoin_data.pubkey_hash_to_address(
+                                                            pubkey_hash, merged_net.ADDRESS_VERSION, -1, merged_net)
+                                        except Exception as e:
+                                            pass  # Keep original address on error
+                                        
                                         self.recent_merged_blocks.append(dict(
                                             ts=time.time(),
                                             hash='%064x' % aux_work['hash'],
@@ -1489,7 +1505,8 @@ class WorkerBridge(worker_interface.WorkerBridge):
                                             target='%064x' % aux_work['target'],
                                             network=merged_net_name,
                                             symbol=merged_net_symbol,
-                                            miner=user,
+                                            miner=miner_merged_address,
+                                            miner_parent=user,  # Also store original parent chain address
                                             chainid=chainid,
                                         ))
                                         # Keep only last 100 merged blocks
