@@ -574,27 +574,27 @@ def run():
         help='Auto-adjust mining difficulty on each connection to target this many seconds per pseudoshare (default: %3.0f)' % 3.,
         type=float, action='store', default=3., dest='share_rate')
     
-    bitcoind_group = parser.add_argument_group('bitcoind interface')
-    bitcoind_group.add_argument('--bitcoind-config-path', metavar='BITCOIND_CONFIG_PATH',
-        help='custom configuration file path (when bitcoind -conf option used)',
+    bitcoind_group = parser.add_argument_group('coin daemon interface')
+    bitcoind_group.add_argument('--bitcoind-config-path', '--coind-config-path', metavar='COIND_CONFIG_PATH',
+        help='custom configuration file path (when coind -conf option used)',
         type=str, action='store', default=None, dest='bitcoind_config_path')
-    bitcoind_group.add_argument('--bitcoind-address', metavar='BITCOIND_ADDRESS',
-        help='connect to this address (default: 127.0.0.1)',
+    bitcoind_group.add_argument('--bitcoind-address', '--coind-address', metavar='COIND_ADDRESS',
+        help='connect to coin daemon at this address (default: 127.0.0.1)',
         type=str, action='store', default='127.0.0.1', dest='bitcoind_address')
-    bitcoind_group.add_argument('--bitcoind-rpc-port', metavar='BITCOIND_RPC_PORT',
-        help='''connect to JSON-RPC interface at this port (default: %s <read from bitcoin.conf if password not provided>)''' % ', '.join('%s:%i' % (name, net.PARENT.RPC_PORT) for name, net in sorted(realnets.items())),
+    bitcoind_group.add_argument('--bitcoind-rpc-port', '--coind-rpc-port', metavar='COIND_RPC_PORT',
+        help='''connect to JSON-RPC interface at this port (default: %s <read from coin.conf if password not provided>)''' % ', '.join('%s:%i' % (name, net.PARENT.RPC_PORT) for name, net in sorted(realnets.items())),
         type=int, action='store', default=None, dest='bitcoind_rpc_port')
-    bitcoind_group.add_argument('--bitcoind-rpc-ssl',
+    bitcoind_group.add_argument('--bitcoind-rpc-ssl', '--coind-rpc-ssl',
         help='connect to JSON-RPC interface using SSL',
         action='store_true', default=False, dest='bitcoind_rpc_ssl')
-    bitcoind_group.add_argument('--bitcoind-p2p-port', metavar='BITCOIND_P2P_PORT',
-        help='''connect to P2P interface at this port (default: %s <read from bitcoin.conf if password not provided>)''' % ', '.join('%s:%i' % (name, net.PARENT.P2P_PORT) for name, net in sorted(realnets.items())),
+    bitcoind_group.add_argument('--bitcoind-p2p-port', '--coind-p2p-port', metavar='COIND_P2P_PORT',
+        help='''connect to P2P interface at this port (default: %s <read from coin.conf if password not provided>)''' % ', '.join('%s:%i' % (name, net.PARENT.P2P_PORT) for name, net in sorted(realnets.items())),
         type=int, action='store', default=None, dest='bitcoind_p2p_port')
-    bitcoind_group.add_argument(metavar='BITCOIND_RPCUSERPASS',
-        help='bitcoind RPC interface username, then password, space-separated (only one being provided will cause the username to default to being empty, and none will cause P2Pool to read them from bitcoin.conf)',
+    bitcoind_group.add_argument(metavar='COIND_RPCUSERPASS',
+        help='coin daemon RPC interface username, then password, space-separated (only one being provided will cause the username to default to being empty, and none will cause P2Pool to read them from coin.conf)',
         type=str, action='store', default=[], nargs='*', dest='bitcoind_rpc_userpass')
-    bitcoind_group.add_argument('--allow-obsolete-bitcoind',
-        help='allow the use of coin daemons (bitcoind) that do not support all of the required softforks for this network (e.g. Bitcoin Core and segwit2x)',
+    bitcoind_group.add_argument('--allow-obsolete-bitcoind', '--allow-obsolete-coind',
+        help='allow the use of coin daemons that do not support all of the required softforks for this network',
         action='store_const', const=True, default=False, dest='allow_obsolete_bitcoind')
     
     args = parser.parse_args()
