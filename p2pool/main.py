@@ -524,6 +524,26 @@ def run():
     parser.add_argument('--merged-operator-address',
         help='node operator payout address for merged chain (e.g., Dogecoin address). If not provided, parent chain address will be converted to merged chain format',
         type=str, action='store', default=None, dest='merged_operator_address')
+    
+    # Merged mining coin daemon interface (alternative to URL-based --merged)
+    merged_group = parser.add_argument_group('merged mining daemon interface',
+        'Alternative to --merged URL. Specify merged mining daemon connection parameters separately.')
+    merged_group.add_argument('--merged-coind-address', metavar='MERGED_COIND_ADDRESS',
+        help='connect to merged mining daemon at this address (e.g., Dogecoin node IP)',
+        type=str, action='store', default=None, dest='merged_coind_address')
+    merged_group.add_argument('--merged-coind-rpc-port', metavar='MERGED_COIND_RPC_PORT',
+        help='connect to merged mining daemon RPC at this port',
+        type=int, action='store', default=None, dest='merged_coind_rpc_port')
+    merged_group.add_argument('--merged-coind-rpc-user', metavar='MERGED_COIND_RPC_USER',
+        help='merged mining daemon RPC username',
+        type=str, action='store', default=None, dest='merged_coind_rpc_user')
+    merged_group.add_argument('--merged-coind-rpc-password', metavar='MERGED_COIND_RPC_PASSWORD',
+        help='merged mining daemon RPC password',
+        type=str, action='store', default=None, dest='merged_coind_rpc_password')
+    merged_group.add_argument('--merged-coind-rpc-ssl',
+        help='connect to merged mining daemon RPC using SSL',
+        action='store_true', default=False, dest='merged_coind_rpc_ssl')
+    
     parser.add_argument('--coinbtext',
         help='append this text to the coinbase',
         type=str, action='append', default=[], dest='coinb_texts')
@@ -695,6 +715,20 @@ def run():
         return urlparse.urlunsplit(s._replace(netloc=new_netloc)), userpass, paddr
     merged_urls = map(separate_url, args.merged_urls)
     merged_urls += [separate_url(x, addr=True) for x in args.merged_urls_addr]
+    
+    # Build merged URL from --merged-coind-* parameters if provided
+    if args.merged_coind_address is not None:
+        if args.merged_coind_rpc_port is None:
+            parser.error('--merged-coind-rpc-port is required when using --merged-coind-address')
+        if args.merged_coind_rpc_user is None or args.merged_coind_rpc_password is None:
+            parser.error('--merged-coind-rpc-user and --merged-coind-rpc-password are required when using --merged-coind-address')
+        
+        merged_scheme = 'https' if args.merged_coind_rpc_ssl else 'http'
+        merged_url = '%s://%s:%s/' % (merged_scheme, args.merged_coind_address, args.merged_coind_rpc_port)
+        merged_userpass = '%s:%s' % (args.merged_coind_rpc_user, args.merged_coind_rpc_password)
+        merged_paddr = args.merged_operator_address  # Can be None, will use parent address conversion
+        merged_urls.append((merged_url, merged_userpass, merged_paddr))
+        print 'Merged mining daemon: %s:%s (user: %s)' % (args.merged_coind_address, args.merged_coind_rpc_port, args.merged_coind_rpc_user)
     
     if args.logfile is None:
         args.logfile = os.path.join(datadir_path, 'log')
