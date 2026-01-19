@@ -579,7 +579,8 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             hd.datastreams['worker_count'].add_datum(t, connected_miners_count)
         except:
             if p2pool.DEBUG:
-                traceback.print_exc()    x = deferral.RobustLoopingCall(add_point)
+                traceback.print_exc()
+    x = deferral.RobustLoopingCall(add_point)
     x.start(5)
     stop_event.watch(x.stop)
     @node.bitcoind_work.changed.watch
