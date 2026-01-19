@@ -32,6 +32,51 @@ except ImportError as e:
 
 print_throttle = 0.0
 
+def is_pubkey_hash_address(address, net):
+    """
+    Check if an address contains a pubkey hash (convertible to other chains).
+    
+    Returns (is_convertible, pubkey_hash, error_message)
+    
+    Convertible address types:
+    - P2PKH (legacy, version = ADDRESS_VERSION): 20-byte pubkey hash
+    - P2WPKH (native segwit v0, 20 bytes): 20-byte pubkey hash
+    
+    Non-convertible address types (script hashes - cannot be converted!):
+    - P2SH (legacy, version = ADDRESS_P2SH_VERSION): 20-byte script hash
+    - P2WSH (native segwit v0, 32 bytes): 32-byte script hash  
+    - P2TR (taproot, witness v1): 32-byte tweaked pubkey
+    """
+    try:
+        pubkey_hash, version, witver = bitcoin_data.address_to_pubkey_hash(address, net)
+        
+        # Check for P2SH (script hash, not pubkey hash)
+        if version == net.ADDRESS_P2SH_VERSION:
+            return (False, None, 'P2SH address (script hash) cannot be converted to merged chain')
+        
+        # Check for P2WPKH vs P2WSH (both are witness v0, but different lengths)
+        if witver == 0:
+            # Witness v0: P2WPKH is 20 bytes (160 bits), P2WSH is 32 bytes (256 bits)
+            # Check the actual size by examining the pubkey_hash value
+            if pubkey_hash > (1 << 160) - 1:  # Larger than 20 bytes
+                return (False, None, 'P2WSH address (script hash) cannot be converted to merged chain')
+            else:
+                return (True, pubkey_hash, None)  # P2WPKH - convertible
+        
+        # Check for Taproot (witness v1) - not convertible
+        if witver == 1:
+            return (False, None, 'P2TR address (taproot) cannot be converted to merged chain')
+        
+        # P2PKH (legacy) - convertible
+        if version == net.ADDRESS_VERSION:
+            return (True, pubkey_hash, None)
+        
+        # Unknown address type
+        return (False, None, 'Unknown address type (version=%s, witver=%s)' % (version, witver))
+        
+    except Exception as e:
+        return (False, None, 'Failed to parse address: %s' % str(e))
+
 class WorkerBridge(worker_interface.WorkerBridge):
     COINBASE_NONCE_LENGTH = 8
 
@@ -202,6 +247,7 @@ class WorkerBridge(worker_interface.WorkerBridge):
                                     # In VERSION >= 34, the key is an address string (from share.address)
                                     # In older versions, the key is a P2PKH script that needs conversion
                                     shareholders = {}
+                                    skipped_addresses = []
                                     for key, weight in weights.iteritems():
                                         try:
                                             # Check if key is already an address string (VERSION >= 34)
@@ -213,11 +259,17 @@ class WorkerBridge(worker_interface.WorkerBridge):
                                                 # VERSION >= 34: key is already a parent chain address string
                                                 # Need to convert to merged chain address
                                                 parent_address = key
-                                                # Decode parent address to get pubkey_hash
                                                 parent_net = self.node.net.PARENT if hasattr(self.node.net, 'PARENT') else self.node.net
-                                                # address_to_pubkey_hash returns (pubkey_hash, version, witver)
-                                                pubkey_hash_tuple = bitcoin_data.address_to_pubkey_hash(parent_address, parent_net)
-                                                pubkey_hash = pubkey_hash_tuple[0]  # Extract just the pubkey_hash
+                                                
+                                                # CRITICAL: Validate that address contains a pubkey hash (not script hash)
+                                                # P2SH, P2WSH, P2TR addresses CANNOT be converted to merged chain!
+                                                is_convertible, pubkey_hash, error_msg = is_pubkey_hash_address(parent_address, parent_net)
+                                                
+                                                if not is_convertible:
+                                                    # Cannot convert this address - skip it with warning
+                                                    skipped_addresses.append((parent_address[:20] + '...', error_msg))
+                                                    continue
+                                                
                                                 # Re-encode as merged chain address
                                                 merged_address = bitcoin_data.pubkey_hash_to_address(pubkey_hash, merged_addr_net.ADDRESS_VERSION, -1, merged_addr_net)
                                             else:
@@ -228,6 +280,14 @@ class WorkerBridge(worker_interface.WorkerBridge):
                                             shareholders[merged_address] = fraction
                                         except Exception as e:
                                             print >>sys.stderr, '[MERGED] Warning: Could not convert key to address: %s' % e
+                                    
+                                    if skipped_addresses:
+                                        print >>sys.stderr, '[MERGED] WARNING: %d miner address(es) skipped - not convertible to merged chain:' % len(skipped_addresses)
+                                        for addr, reason in skipped_addresses[:5]:  # Show first 5
+                                            print >>sys.stderr, '[MERGED]   - %s: %s' % (addr, reason)
+                                        if len(skipped_addresses) > 5:
+                                            print >>sys.stderr, '[MERGED]   ... and %d more' % (len(skipped_addresses) - 5)
+                                        print >>sys.stderr, '[MERGED]   These miners should use P2PKH or P2WPKH addresses for merged mining rewards!'
                                     
                                     print >>sys.stderr, '[MERGED] Using PPLNS distribution with %d shareholders from share chain' % len(shareholders)
                                 except (KeyError, AttributeError, TypeError) as e:
@@ -586,7 +646,19 @@ class WorkerBridge(worker_interface.WorkerBridge):
             pubkey_hash = self.my_pubkey_hash
         else:
             try:
-                pubkey_hash, _, _ = bitcoin_data.address_to_pubkey_hash(user, self.node.net.PARENT)
+                # Validate that miner's address is convertible for merged mining
+                is_convertible, validated_pubkey_hash, error_msg = is_pubkey_hash_address(user, self.node.net.PARENT)
+                
+                if is_convertible:
+                    pubkey_hash = validated_pubkey_hash
+                else:
+                    # Address is not convertible (P2SH, P2WSH, P2TR)
+                    # Log warning but still allow mining on parent chain
+                    # Merged mining rewards will be skipped for this miner
+                    print >>sys.stderr, '[WARN] Miner address %s is not convertible for merged mining: %s' % (user[:30] + '...' if len(user) > 30 else user, error_msg)
+                    print >>sys.stderr, '[WARN] This miner will NOT receive merged mining rewards! Use P2PKH or P2WPKH address.'
+                    # Fall back to parsing anyway for parent chain mining
+                    pubkey_hash, _, _ = bitcoin_data.address_to_pubkey_hash(user, self.node.net.PARENT)
             except: # XXX blah
                 pubkey_hash = self.my_pubkey_hash
         
