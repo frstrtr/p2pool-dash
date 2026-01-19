@@ -102,7 +102,7 @@ class WorkerBridge(worker_interface.WorkerBridge):
         self.merged_work = variable.Variable({})
 
         @defer.inlineCallbacks
-        def set_merged_work(merged_url, merged_userpass):
+        def set_merged_work(merged_url, merged_userpass, merged_payout_address=None):
             merged_proxy = jsonrpc.HTTPProxy(merged_url, dict(Authorization='Basic ' + base64.b64encode(merged_userpass)))
             
             # Try to detect auxpow capability on first call
@@ -359,24 +359,47 @@ class WorkerBridge(worker_interface.WorkerBridge):
                         else:
                             # getblocktemplate succeeded but no auxpow - shouldn't happen
                             if auxpow_capable is None:
-                                print 'Warning: getblocktemplate succeeded but no auxpow object at %s, falling back to getauxblock' % (merged_url,)
+                                print 'Warning: getblocktemplate succeeded but no auxpow object at %s, falling back to createauxblock/getauxblock' % (merged_url,)
                             auxpow_capable = False
                             raise ValueError('No auxpow in template')
                             
                 except Exception as e:
-                    # Fall back to standard getauxblock (single address)
+                    # Fall back to createauxblock (with address) or getauxblock (wallet-based)
                     if auxpow_capable is None:
-                        print 'Auxpow not supported at %s, using standard getauxblock (single address mode)' % (merged_url,)
+                        print 'Auxpow not supported at %s, using createauxblock/getauxblock (single address mode)' % (merged_url,)
                     auxpow_capable = False
                     
-                    auxblock = yield deferral.retry('Error while calling merged getauxblock on %s:' % (merged_url,), 30)(
-                        merged_proxy.rpc_getauxblock
-                    )()
+                    # Try createauxblock first (requires payout address, no wallet needed)
+                    # Then fall back to getauxblock (requires wallet with keypool)
+                    auxblock = None
+                    if merged_payout_address:
+                        try:
+                            auxblock = yield deferral.retry('Error while calling merged createauxblock on %s:' % (merged_url,), 30)(
+                                merged_proxy.rpc_createauxblock
+                            )(merged_payout_address)
+                            if auxpow_capable is None:
+                                print 'Using createauxblock API at %s with address %s' % (merged_url, merged_payout_address)
+                        except Exception as create_err:
+                            print 'createauxblock failed at %s: %s, trying getauxblock' % (merged_url, create_err)
+                    
+                    # Track whether we used createauxblock (for submitauxblock) or getauxblock
+                    use_submitauxblock = False
+                    
+                    if auxblock is None:
+                        # Fall back to getauxblock (requires wallet)
+                        auxblock = yield deferral.retry('Error while calling merged getauxblock on %s:' % (merged_url,), 30)(
+                            merged_proxy.rpc_getauxblock
+                        )()
+                    else:
+                        # We used createauxblock, so we need submitauxblock for submission
+                        use_submitauxblock = True
+                    
                     self.merged_work.set(math.merge_dicts(self.merged_work.value, {auxblock['chainid']: dict(
                         hash=int(auxblock['hash'], 16),
                         target='p2pool' if auxblock['target'] == 'p2pool' else pack.IntType(256).unpack(auxblock['target'].decode('hex')),
                         merged_proxy=merged_proxy,
                         multiaddress=False,
+                        use_submitauxblock=use_submitauxblock,
                     )}))
                 
                 yield deferral.sleep(1)
@@ -388,7 +411,7 @@ class WorkerBridge(worker_interface.WorkerBridge):
             else:
                 merged_url, merged_userpass = merged_url_tuple
                 merged_payout = None
-            set_merged_work(merged_url, merged_userpass)
+            set_merged_work(merged_url, merged_userpass, merged_payout)
 
         @self.merged_work.changed.watch
         def _(new_merged_work):
@@ -1309,18 +1332,29 @@ class WorkerBridge(worker_interface.WorkerBridge):
                                 log.err(None, 'Error building multiaddress merged block:')
                         else:
                             # Standard getauxblock submission (backward compatible)
-                            df = deferral.retry('Error submitting merged block: (will retry)', 10, 10)(aux_work['merged_proxy'].rpc_getauxblock)(
-                                pack.IntType(256, 'big').pack(aux_work['hash']).encode('hex'),
-                                bitcoin_data.aux_pow_type.pack(dict(
-                                    merkle_tx=dict(
-                                        tx=new_gentx,
-                                        block_hash=header_hash,
-                                        merkle_link=merkle_link,
-                                    ),
-                                    merkle_link=bitcoin_data.calculate_merkle_link(hashes, index),
-                                    parent_block_header=header,
-                                )).encode('hex'),
-                            )
+                            # Choose submission method based on how we got the work
+                            # If we used createauxblock, use submitauxblock; otherwise use getauxblock
+                            auxpow_hex = bitcoin_data.aux_pow_type.pack(dict(
+                                merkle_tx=dict(
+                                    tx=new_gentx,
+                                    block_hash=header_hash,
+                                    merkle_link=merkle_link,
+                                ),
+                                merkle_link=bitcoin_data.calculate_merkle_link(hashes, index),
+                                parent_block_header=header,
+                            )).encode('hex')
+                            hash_hex = pack.IntType(256, 'big').pack(aux_work['hash']).encode('hex')
+                            
+                            if aux_work.get('use_submitauxblock'):
+                                df = deferral.retry('Error submitting merged block via submitauxblock: (will retry)', 10, 10)(aux_work['merged_proxy'].rpc_submitauxblock)(
+                                    hash_hex,
+                                    auxpow_hex,
+                                )
+                            else:
+                                df = deferral.retry('Error submitting merged block: (will retry)', 10, 10)(aux_work['merged_proxy'].rpc_getauxblock)(
+                                    hash_hex,
+                                    auxpow_hex,
+                                )
                             @df.addCallback
                             def _(result, aux_work=aux_work):
                                 if result != (pow_hash <= aux_work['target']):
