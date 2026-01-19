@@ -7,7 +7,7 @@ import re
 import sys
 import time
 
-from twisted.internet import defer
+from twisted.internet import defer, reactor
 from twisted.python import log
 
 from bitcoin import getwork, data as bitcoin_data, helper, script, worker_interface
