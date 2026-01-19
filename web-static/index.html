@@ -154,10 +154,13 @@
                     d3.select('#merged_blocks_section').style('display', 'block');
                     
                     // Block explorer URLs for different merged mining chains
+                    // Note: Use block hash (not pow_hash) for explorer links
                     var merged_explorers = {
-                        98: 'https://sochain.com/tx/DOGETEST/',  // Dogecoin testnet (chainid 98)
+                        98: {  // Dogecoin (chainid 98)
+                            testnet: 'https://blockexplorer.one/dogecoin/testnet/blockHash/',
+                            mainnet: 'https://blockexplorer.one/dogecoin/mainnet/blockHash/',
+                        },
                         // Add more chain explorers here as needed
-                        // 99: 'https://blockchair.com/dogecoin/block/',  // Dogecoin mainnet example
                     };
                     
                     var tr = d3.select('#merged_blocks').selectAll().data(merged_blocks).enter().append('tr');
@@ -167,23 +170,25 @@
                         .style('color', '#6f42c1')
                         .text(function(block){return block.symbol || block.network || 'AUX'});
                     tr.append('td').text(function(block){return block.chainid || '-'});
-                    // Use pow_hash (unique per found block) instead of hash (template hash)
+                    // Display block hash with explorer link
                     tr.append('td').append('a')
                         .text(function(block){
-                            // Show pow_hash (the actual proof-of-work hash) as it's unique per found block
-                            var display_hash = block.pow_hash || block.hash || '-';
+                            // Show the block hash (template hash) which is the actual block identifier
+                            var display_hash = block.hash || '-';
                             return display_hash.substring(0, 16) + '...';
                         })
                         .attr('href', function(block){
-                            var explorer = merged_explorers[block.chainid];
-                            if (explorer && block.pow_hash) {
-                                return explorer + block.pow_hash;
+                            var explorer_config = merged_explorers[block.chainid];
+                            if (explorer_config && block.hash) {
+                                // Use testnet explorer for now (could detect from network name)
+                                var explorer = explorer_config.testnet;
+                                return explorer + block.hash;
                             }
                             return '#';
                         })
                         .attr('target', '_blank')
                         .attr('title', function(block){
-                            return 'POW Hash: ' + (block.pow_hash || 'N/A') + '\nTemplate Hash: ' + (block.hash || 'N/A');
+                            return 'Block Hash: ' + (block.hash || 'N/A') + '\nPOW Hash: ' + (block.pow_hash || 'N/A');
                         });
                     tr.append('td').text(function(block){return block.miner || '-'});
                     tr.append('td').text(function(block){return block.txs || '-'});
@@ -241,7 +246,7 @@
             <h2>Merged Mining Blocks found recently:</h2>
             <p>Blocks found on auxiliary chains via merged mining.</p>
             <table border="1" id="merged_blocks">
-                <tr><th>time</th><th>network</th><th>chain id</th><th>pow hash/explorer</th><th>miner</th><th>txs</th><th>status</th></tr>
+                <tr><th>time</th><th>network</th><th>chain id</th><th>block hash/explorer</th><th>miner</th><th>txs</th><th>status</th></tr>
             </table>
         </div>
         
