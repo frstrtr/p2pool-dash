@@ -586,7 +586,15 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     @node.bitcoind_work.changed.watch
     def _(new_work):
         hd.datastreams['getwork_latency'].add_datum(time.time(), new_work['latency'])
-    new_root.putChild('graph_data', WebInterface(lambda source, view: hd.datastreams[source].dataviews[view].get_data(time.time())))
+    
+    def get_graph_data(source, view):
+        if source not in hd.datastreams:
+            return []  # Return empty data for missing datastreams
+        if view not in hd.datastreams[source].dataviews:
+            return []
+        return hd.datastreams[source].dataviews[view].get_data(time.time())
+    
+    new_root.putChild('graph_data', WebInterface(get_graph_data))
     
     if static_dir is None:
         static_dir = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), 'web-static')
