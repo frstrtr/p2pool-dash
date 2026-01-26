@@ -18,3 +18,4 @@ enable_opnsense_ssh.sh
 # Sensitive configuration files with passwords
 SETUP_GUIDE.md
 monitor_sync.sh
+claude.md

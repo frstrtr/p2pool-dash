@@ -1143,6 +1143,34 @@
                 <button id="blocks_show_more" style="display: none; width: 100%; padding: 10px; margin-top: 10px; background: var(--card-bg); color: var(--text-secondary); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 14px;">Show 5 more...</button>
             </div>
             
+            <!-- Merged Mining Blocks -->
+            <div class="table-container" id="merged_blocks_section" style="display: none;">
+                <div class="section-header" style="flex-wrap: wrap;">
+                    <h2>⛏️ Merged Mining Blocks</h2>
+                    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                        <span class="badge" id="merged_blocks_count" style="background: var(--primary);">0</span>
+                        <span class="badge" id="merged_chain_name" style="background: #6f42c1;">AUX</span>
+                    </div>
+                </div>
+                <div class="table-scroll">
+                    <table id="merged_blocks">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Network</th>
+                                <th>Chain ID</th>
+                                <th>Block Hash</th>
+                                <th>Miner</th>
+                                <th title="Block status">✓</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+                <div class="loading" id="merged_blocks_loading">Loading merged blocks</div>
+                <button id="merged_blocks_show_more" style="display: none; width: 100%; padding: 10px; margin-top: 10px; background: var(--card-bg); color: var(--text-secondary); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 14px;">Show 5 more...</button>
+            </div>
+            
             <!-- Payouts -->
             <div class="table-container">
                 <div class="section-header">
@@ -1459,6 +1487,7 @@
             // Now load everything else
             loadStats();
             loadBlocks();
+            loadMergedBlocks();
             loadPayouts();
             loadPoolLuck();
             loadPeers();
@@ -1715,6 +1744,116 @@
                 d3.select('#blocks_show_more').on('click', function() {
                     window.blocksDisplayCount = Math.min(window.blocksDisplayCount + 5, window.allBlocks.length);
                     renderBlocks();
+                });
+            });
+        }
+        
+        function loadMergedBlocks() {
+            d3.json('../recent_merged_blocks', function(blocks) {
+                d3.select('#merged_blocks_loading').style('display', 'none');
+                
+                if (!blocks || blocks.length === 0) {
+                    d3.select('#merged_blocks_section').style('display', 'none');
+                    return;
+                }
+                
+                // Show the section
+                d3.select('#merged_blocks_section').style('display', 'block');
+                d3.select('#merged_blocks_count').text(blocks.length);
+                
+                // Update chain name badge
+                if (blocks[0] && (blocks[0].symbol || blocks[0].network)) {
+                    d3.select('#merged_chain_name').text(blocks[0].symbol || blocks[0].network);
+                }
+                
+                // Clear existing rows
+                d3.select('#merged_blocks tbody').selectAll('tr').remove();
+                
+                // Store all blocks and current display count
+                window.allMergedBlocks = blocks;
+                window.mergedBlocksDisplayCount = Math.min(5, blocks.length);
+                
+                // Block explorer URLs for different merged mining chains
+                var merged_explorers = {
+                    98: {  // Dogecoin (chainid 98)
+                        testnet: 'https://blockexplorer.one/dogecoin/testnet/blockHash/',
+                        mainnet: 'https://blockexplorer.one/dogecoin/mainnet/blockHash/',
+                    },
+                };
+                
+                // Function to render merged blocks
+                function renderMergedBlocks() {
+                    var displayBlocks = window.allMergedBlocks.slice(0, window.mergedBlocksDisplayCount);
+                    
+                    d3.select('#merged_blocks tbody').selectAll('tr').remove();
+                    var tr = d3.select('#merged_blocks tbody').selectAll('tr').data(displayBlocks).enter().append('tr');
+                    
+                    tr.append('td').text(function(b) { return format_time_short(b.ts); });
+                    tr.append('td')
+                        .style('font-weight', 'bold')
+                        .style('color', '#6f42c1')
+                        .text(function(b) { return b.symbol || b.network || 'AUX'; });
+                    tr.append('td').text(function(b) { return b.chainid || '-'; });
+                    tr.append('td').append('a')
+                        .attr('class', 'hash-link')
+                        .attr('href', function(b) {
+                            var explorer_config = merged_explorers[b.chainid];
+                            if (explorer_config && b.pow_hash) {
+                                return explorer_config.testnet + b.pow_hash;
+                            }
+                            return '#';
+                        })
+                        .attr('target', '_blank')
+                        .attr('title', function(b) {
+                            return 'POW Hash: ' + (b.pow_hash || 'N/A');
+                        })
+                        .text(function(b) {
+                            var hash = b.pow_hash || '-';
+                            return '...' + hash.substr(-12);
+                        });
+                    tr.append('td')
+                        .style('font-family', 'monospace')
+                        .style('font-size', '11px')
+                        .text(function(b) {
+                            if (!b.miner) return '-';
+                            return b.miner.substr(0, 8) + '...';
+                        })
+                        .attr('title', function(b) { return b.miner || ''; });
+                    tr.append('td')
+                        .attr('class', function(b) {
+                            if (b.verified === true) return 'status-confirmed';
+                            if (b.verified === false) return 'status-orphaned';
+                            return 'status-pending';
+                        })
+                        .attr('style', 'text-align: center; font-size: 18px;')
+                        .attr('title', function(b) {
+                            if (b.verified === true) return 'Verified on chain';
+                            if (b.verified === false) return 'Orphaned';
+                            return 'Pending verification';
+                        })
+                        .text(function(b) {
+                            if (b.verified === true) return '✓';
+                            if (b.verified === false) return '✗';
+                            return '⏳';
+                        });
+                    
+                    // Update show more button
+                    var showMoreBtn = d3.select('#merged_blocks_show_more');
+                    if (window.mergedBlocksDisplayCount < window.allMergedBlocks.length) {
+                        showMoreBtn.style('display', 'block')
+                            .text('Show 5 more... (' + (window.allMergedBlocks.length - window.mergedBlocksDisplayCount) + ' remaining)');
+                    } else {
+                        showMoreBtn.style('display', 'none');
+                    }
+                }
+                
+                // Initial render
+                renderMergedBlocks();
+                
+                // Show more button handler
+                d3.select('#merged_blocks_show_more').on('click', function() {
+                    window.mergedBlocksDisplayCount = Math.min(window.mergedBlocksDisplayCount + 5, window.allMergedBlocks.length);
+                    renderMergedBlocks();
                 });
             });
         }
@@ -3160,6 +3299,7 @@
                 autoRefreshInterval = setInterval(function() {
                     loadStats();
                     loadBlocks();
+                    loadMergedBlocks();
                     loadPayouts();
                     loadPoolLuck();
                     loadShares();
@@ -3174,6 +3314,7 @@
         function manualRefresh() {
             loadStats();
             loadBlocks();
+            loadMergedBlocks();
             loadPayouts();
             loadPoolLuck();
             loadShares();

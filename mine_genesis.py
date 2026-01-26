@@ -9,20 +9,38 @@ Uses scrypt algorithm like Dogecoin/Litecoin.
 import hashlib
 import struct
 import time
+import sys
+
+# Try ltc_scrypt first (P2Pool module), then fallback to scrypt
+import os
+script_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.expanduser('~/litecoin_scrypt'))
+sys.path.insert(0, script_dir)
+
+USE_LTC_SCRYPT = False
+HAS_SCRYPT = False
 
 try:
-    import scrypt
+    import ltc_scrypt
     HAS_SCRYPT = True
+    USE_LTC_SCRYPT = True
+    print("Using ltc_scrypt module (P2Pool)")
 except ImportError:
-    HAS_SCRYPT = False
-    print("Warning: scrypt not available, using hashlib (won't match Dogecoin)")
+    try:
+        import scrypt
+        HAS_SCRYPT = True
+        print("Using scrypt module")
+    except ImportError:
+        print("Warning: scrypt not available, using hashlib (won't match Dogecoin)")
 
 def double_sha256(data):
     return hashlib.sha256(hashlib.sha256(data).digest()).digest()
 
 def scrypt_hash(header):
     """Scrypt hash as used by Dogecoin/Litecoin"""
-    if HAS_SCRYPT:
+    if USE_LTC_SCRYPT:
+        return ltc_scrypt.getPoWHash(header)
+    elif HAS_SCRYPT:
         return scrypt.hash(header, header, N=1024, r=1, p=1, buflen=32)
     else:
         return double_sha256(header)

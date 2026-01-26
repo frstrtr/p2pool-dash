@@ -1,6 +1,6 @@
 # Dogecoin Testnet4 Patch - P2Pool Merged Mining
 #
-# This patch adds a new "testnet4" network to Dogecoin Core with fixed
+# This patch adds a new "testnet4alpha" network to Dogecoin Core with fixed
 # difficulty adjustment rules to work around the testnet block storm bug.
 #
 # BUG: The official testnet allows unlimited minimum difficulty blocks via
@@ -11,7 +11,7 @@
 # Official fix PR: https://github.com/dogecoin/dogecoin/pull/3967
 # Bug location: https://github.com/dogecoin/dogecoin/blob/master/src/dogecoin.cpp#L22-L39
 #
-# When Dogecoin Core releases official testnet4, migrate to that instead.
+# When Dogecoin Core releases official testnet4alpha, migrate to that instead.
 #
 diff --git a/src/chainparams.cpp b/src/chainparams.cpp
 --- a/src/chainparams.cpp
@@ -37,7 +37,7 @@ diff --git a/src/chainparams.cpp b/src/chainparams.cpp
 +class CTestNet4Params : public CChainParams {
 +public:
 +    CTestNet4Params() {
-+        strNetworkID = "testnet4";
++        strNetworkID = "testnet4alpha";
 +
 +        // Single consensus params - AuxPoW + Digishield from genesis
 +        consensus.nHeightEffective = 0;
@@ -89,11 +89,11 @@ diff --git a/src/chainparams.cpp b/src/chainparams.cpp
 +        // No consensus tree needed - single params
 +        pConsensusRoot = &consensus;
 +
-+        // New message start bytes (unique to testnet4)
++        // New message start bytes (unique to testnet4alpha)
 +        pchMessageStart[0] = 0xfa;
 +        pchMessageStart[1] = 0xce;
 +        pchMessageStart[2] = 0xb0;
-+        pchMessageStart[3] = 0x04;  // "04" for testnet4
++        pchMessageStart[3] = 0x04;  // "04" for testnet4alpha
 +        
 +        nDefaultPort = 44558;  // Different from testnet (44556) and mainnet (22556)
 +        nPruneAfterHeight = 1000;
@@ -109,7 +109,7 @@ diff --git a/src/chainparams.cpp b/src/chainparams.cpp
 +        genesis = CreateGenesisBlock(1737907200, 1, 0x1e0ffff0, 1, 88 * COIN);
 +        
 +        // GENESIS MINING - Uncomment to mine new genesis, then comment out
-+        // LogPrintf("Mining testnet4 genesis block...\n");
++        // LogPrintf("Mining testnet4alpha genesis block...\n");
 +        // while (genesis.GetHash() > consensus.powLimit) {
 +        //     genesis.nNonce++;
 +        //     if (genesis.nNonce % 1000000 == 0)
@@ -162,7 +162,7 @@ diff --git a/src/chainparams.cpp b/src/chainparams.cpp
          return mainParams;
      else if (chain == CBaseChainParams::TESTNET)
          return testNetParams;
-+    else if (chain == "testnet4")
++    else if (chain == "testnet4alpha")
 +        return testNet4Params;
      else if (chain == CBaseChainParams::REGTEST)
          return regTestParams;
@@ -201,7 +201,7 @@ diff --git a/src/chainparamsbase.cpp b/src/chainparamsbase.cpp
          return mainParams;
      else if (chain == CBaseChainParams::TESTNET)
          return testNetParams;
-+    else if (chain == "testnet4")
++    else if (chain == "testnet4alpha")
 +        return testNet4Params;
      else if (chain == CBaseChainParams::REGTEST)
          return regTestParams;
@@ -213,7 +213,7 @@ diff --git a/src/init.cpp b/src/init.cpp
      strUsage += HelpMessageOpt("-maxtipage=<n>", strprintf("Maximum tip age in seconds to consider node in initial block download (default: %u)", DEFAULT_MAX_TIP_AGE));
      }
      strUsage += HelpMessageOpt("-testnet", _("Use the test network"));
-+    strUsage += HelpMessageOpt("-testnet4", _("Use testnet4 (P2Pool merged mining testnet)"));
++    strUsage += HelpMessageOpt("-testnet4alpha", _("Use testnet4alpha (P2Pool merged mining testnet)"));
      strUsage += HelpMessageOpt("-regtest", _("Enter regression test mode, which uses a special chain in which blocks can be solved instantly. "
                                               "This is intended for regression testing tools and app development."));
  
@@ -224,8 +224,8 @@ diff --git a/src/util.cpp b/src/util.cpp
      bool fTestNet = GetBoolArg("-testnet", false);
      if (fTestNet && fRegTest)
          throw std::runtime_error("Invalid combination of -regtest and -testnet.");
-+    if (GetBoolArg("-testnet4", false))
-+        return "testnet4";
++    if (GetBoolArg("-testnet4alpha", false))
++        return "testnet4alpha";
      if (fRegTest)
          return CBaseChainParams::REGTEST;
      if (fTestNet)

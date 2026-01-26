@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes a critical bug in Dogecoin's testnet difficulty adjustment that prevents reliable merged mining testing. Until the Dogecoin Core team fixes this issue and launches testnet4, we use a private testnet with corrected parameters.
+This document describes a critical bug in Dogecoin's testnet difficulty adjustment that prevents reliable merged mining testing. Until the Dogecoin Core team fixes this issue and launches testnet4alpha, we use a private testnet with corrected parameters.
 
 ## The Bug
 
@@ -67,7 +67,7 @@ This allows unlimited chaining of minimum difficulty blocks via timestamp manipu
 **Status:** Under review (opened January 22, 2026)
 
 **Core Dev Response:** Patrick Lodder (Dogecoin maintainer) commented:
-> "I'm concept ACK on doing this in a testnet4."
+> "I'm concept ACK on doing this in a testnet4alpha."
 
 ### Proposed Fix (from PR #3967)
 
@@ -112,12 +112,12 @@ bool AllowDigishieldMinDifficultyForBlock(const CBlockIndex* pindexLast, const C
 
 ## Our Workaround: Private Testnet4
 
-Until Dogecoin Core releases official testnet4, we run a private testnet with fixed parameters.
+Until Dogecoin Core releases official testnet4alpha, we run a private testnet with fixed parameters.
 
 ### Key Changes
 
 ```cpp
-// In chainparams.cpp for our private testnet4:
+// In chainparams.cpp for our private testnet4alpha:
 consensus.fPowAllowMinDifficultyBlocks = false;  // Disable min-diff entirely
 consensus.fPowAllowDigishieldMinDifficultyBlocks = false;
 consensus.fDigishieldDifficultyCalculation = true;
@@ -127,8 +127,8 @@ consensus.nPowTargetTimespan = 60; // Retarget every block
 
 ### Setup Files
 
-- `dogecoin_testnet4.patch` - Patch to add testnet4 chain parameters
-- `setup_dogecoin_testnet4.sh` - Build script for patched Dogecoin
+- `dogecoin_testnet4alpha.patch` - Patch to add testnet4alpha chain parameters
+- `setup_dogecoin_testnet4alpha.sh` - Build script for patched Dogecoin
 - `mine_genesis.py` - Genesis block miner using original Satoshi phrase
 
 ### Network Configuration
@@ -143,15 +143,15 @@ consensus.nPowTargetTimespan = 60; // Retarget every block
 
 ## Migration Plan
 
-When Dogecoin Core releases official testnet4:
+When Dogecoin Core releases official testnet4alpha:
 
 1. **Stop** our private testnet nodes
-2. **Update** to official Dogecoin release with testnet4 support
+2. **Update** to official Dogecoin release with testnet4alpha support
 3. **Update** P2Pool network configuration:
    - Update `p2pool/networks/dogecoin_testnet.py` with new genesis hash
    - Update port numbers if different
    - Update address prefixes if different
-4. **Test** merged mining on official testnet4
+4. **Test** merged mining on official testnet4alpha
 5. **Archive** private testnet data
 
 ## References

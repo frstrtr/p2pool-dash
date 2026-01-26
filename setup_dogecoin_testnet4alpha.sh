@@ -11,7 +11,7 @@
 # See: DOGECOIN_TESTNET_BUG.md for full documentation
 # Official fix: https://github.com/dogecoin/dogecoin/pull/3967
 #
-# When Dogecoin Core releases official testnet4, migrate to that instead.
+# When Dogecoin Core releases official testnet4alpha, migrate to that instead.
 
 set -e
 
@@ -34,8 +34,8 @@ cp "$UTIL_CPP" "$UTIL_CPP.backup"
 # 1. Add CTestNet4Params class to chainparams.cpp (after line 372)
 echo "Adding CTestNet4Params to chainparams.cpp..."
 
-# Create the testnet4 class code
-cat > /tmp/testnet4_class.cpp << 'ENDOFCLASS'
+# Create the testnet4alpha class code
+cat > /tmp/testnet4alpha_class.cpp << 'ENDOFCLASS'
 
 /**
  * Testnet4 - Custom P2Pool merged mining testnet
@@ -50,7 +50,7 @@ cat > /tmp/testnet4_class.cpp << 'ENDOFCLASS'
 class CTestNet4Params : public CChainParams {
 public:
     CTestNet4Params() {
-        strNetworkID = "testnet4";
+        strNetworkID = "testnet4alpha";
 
         // Single consensus params - AuxPoW + Digishield from genesis
         consensus.nHeightEffective = 0;
@@ -102,11 +102,11 @@ public:
         // No consensus tree needed - single params
         pConsensusRoot = &consensus;
 
-        // New message start bytes (unique to testnet4)
+        // New message start bytes (unique to testnet4alpha)
         pchMessageStart[0] = 0xfa;
         pchMessageStart[1] = 0xce;
         pchMessageStart[2] = 0xb0;
-        pchMessageStart[3] = 0x04;  // "04" for testnet4
+        pchMessageStart[3] = 0x04;  // "04" for testnet4alpha
         
         nDefaultPort = 44558;  // Different from testnet (44556) and mainnet (22556)
         nPruneAfterHeight = 1000;
@@ -155,13 +155,13 @@ ENDOFCLASS
 
 # Insert after line 372
 head -372 "$CHAINPARAMS" > /tmp/chainparams_new.cpp
-cat /tmp/testnet4_class.cpp >> /tmp/chainparams_new.cpp
+cat /tmp/testnet4alpha_class.cpp >> /tmp/chainparams_new.cpp
 tail -n +373 "$CHAINPARAMS" >> /tmp/chainparams_new.cpp
 cp /tmp/chainparams_new.cpp "$CHAINPARAMS"
 
-# 2. Add testnet4 to Params() function in chainparams.cpp
+# 2. Add testnet4alpha to Params() function in chainparams.cpp
 echo "Updating Params() function..."
-sed -i 's/else if (chain == CBaseChainParams::TESTNET)/else if (chain == "testnet4")\n        return testNet4Params;\n    else if (chain == CBaseChainParams::TESTNET)/' "$CHAINPARAMS"
+sed -i 's/else if (chain == CBaseChainParams::TESTNET)/else if (chain == "testnet4alpha")\n        return testNet4Params;\n    else if (chain == CBaseChainParams::TESTNET)/' "$CHAINPARAMS"
 
 # 3. Add CBaseTestNet4Params to chainparamsbase.cpp
 echo "Adding CBaseTestNet4Params to chainparamsbase.cpp..."
@@ -180,20 +180,20 @@ public:\
 sed -i 's/static CBaseTestNetParams testNetParams;/static CBaseTestNet4Params testNet4Params;\nstatic CBaseTestNetParams testNetParams;/' "$CHAINPARAMSBASE"
 
 # Add to BaseParams() function
-sed -i 's/else if (chain == CBaseChainParams::TESTNET)/else if (chain == "testnet4")\n        return testNet4Params;\n    else if (chain == CBaseChainParams::TESTNET)/' "$CHAINPARAMSBASE"
+sed -i 's/else if (chain == CBaseChainParams::TESTNET)/else if (chain == "testnet4alpha")\n        return testNet4Params;\n    else if (chain == CBaseChainParams::TESTNET)/' "$CHAINPARAMSBASE"
 
-# 4. Add -testnet4 option to init.cpp
-echo "Adding -testnet4 to help message..."
-sed -i 's/strUsage += HelpMessageOpt("-testnet"/strUsage += HelpMessageOpt("-testnet4", _("Use testnet4 (P2Pool merged mining testnet)"));\n    strUsage += HelpMessageOpt("-testnet"/' "$INIT_CPP"
+# 4. Add -testnet4alpha option to init.cpp
+echo "Adding -testnet4alpha to help message..."
+sed -i 's/strUsage += HelpMessageOpt("-testnet"/strUsage += HelpMessageOpt("-testnet4alpha", _("Use testnet4alpha (P2Pool merged mining testnet)"));\n    strUsage += HelpMessageOpt("-testnet"/' "$INIT_CPP"
 
-# 5. Add testnet4 detection to util.cpp
-echo "Adding testnet4 detection to util.cpp..."
-sed -i 's/bool fTestNet = GetBoolArg("-testnet", false);/bool fTestNet = GetBoolArg("-testnet", false);\n    if (GetBoolArg("-testnet4", false))\n        return "testnet4";/' "$UTIL_CPP"
+# 5. Add testnet4alpha detection to util.cpp
+echo "Adding testnet4alpha detection to util.cpp..."
+sed -i 's/bool fTestNet = GetBoolArg("-testnet", false);/bool fTestNet = GetBoolArg("-testnet", false);\n    if (GetBoolArg("-testnet4alpha", false))\n        return "testnet4alpha";/' "$UTIL_CPP"
 
 echo ""
 echo "=== Source modifications complete ==="
 echo ""
-echo "Now building Dogecoin with testnet4 support..."
+echo "Now building Dogecoin with testnet4alpha support..."
 echo ""
 
 cd "$DOGE_DIR"
@@ -204,10 +204,10 @@ make -j$(nproc)
 echo ""
 echo "=== Build complete! ==="
 echo ""
-echo "To start testnet4 node:"
-echo "  mkdir -p ~/.dogecoin-testnet4"
-echo "  ./src/dogecoind -testnet4 -datadir=~/.dogecoin-testnet4 -server -rpcuser=dogeuser -rpcpassword=dogepass123"
+echo "To start testnet4alpha node:"
+echo "  mkdir -p ~/.dogecoin-testnet4alpha"
+echo "  ./src/dogecoind -testnet4alpha -datadir=~/.dogecoin-testnet4alpha -server -rpcuser=dogeuser -rpcpassword=dogepass123"
 echo ""
 echo "To connect from RPC:"
-echo "  ./src/dogecoin-cli -testnet4 -rpcport=44559 -rpcuser=dogeuser -rpcpassword=dogepass123 getblockchaininfo"
+echo "  ./src/dogecoin-cli -testnet4alpha -rpcport=44559 -rpcuser=dogeuser -rpcpassword=dogepass123 getblockchaininfo"
 echo ""

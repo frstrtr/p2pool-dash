@@ -385,7 +385,7 @@ class WorkerBridge(worker_interface.WorkerBridge):
                                 )
                                 doge_header_packed = bitcoin_data.block_header_type.pack(doge_header)
                                 doge_block_hash = bitcoin_data.hash256(doge_header_packed)
-                                pass  # Suppressed: print '[DEBUG] Calculated Dogecoin block hash for LTC coinbase commitment: %064x' % doge_block_hash
+                                print '[MERGED-DEBUG] New Dogecoin block hash calculated: %064x (prev=%s)' % (doge_block_hash, template.get('previousblockhash', 'None')[:16])
                             except Exception as e:
                                 print >>sys.stderr, '[ERROR] Failed to build Dogecoin block (v2-FIXED): %s' % e
                                 import traceback
@@ -419,6 +419,7 @@ class WorkerBridge(worker_interface.WorkerBridge):
                                 merged_net_name=merged_net_name,  # Store network name for block found message
                                 merged_net_symbol=merged_net_symbol,  # Store network symbol for block found message
                             )}))
+                            print '[MERGED-REFRESH] Template height=%d prev=%s hash=%064x' % (template.get('height', 0), template.get('previousblockhash', 'None')[:16], doge_block_hash)
                         else:
                             # getblocktemplate succeeded but no auxpow - shouldn't happen
                             if auxpow_capable is None:
@@ -485,6 +486,7 @@ class WorkerBridge(worker_interface.WorkerBridge):
                         multiaddress=False,
                         use_submitauxblock=use_submitauxblock,
                     )}))
+                    print '[MERGED-REFRESH-SINGLE] hash=%s target=%s' % (auxblock['hash'][:16], auxblock['target'][:16])
                 
                 yield deferral.sleep(1)
         
@@ -1520,21 +1522,23 @@ class WorkerBridge(worker_interface.WorkerBridge):
                                             self.recent_merged_blocks = self.recent_merged_blocks[-100:]
                                         
                                         # For testnet: async verification after a delay
+                                        # Use aux_work['hash'] (Dogecoin block hash) NOT pow_hash (scrypt hash)
                                         if is_testnet and 'merged_proxy' in aux_work:
-                                            def verify_block(block_rec, proxy, phash):
-                                                verify_df = proxy.rpc_getblock('%064x' % phash)
+                                            def verify_block(block_rec, proxy, block_hash):
+                                                verify_df = proxy.rpc_getblock('%064x' % block_hash)
                                                 @verify_df.addCallback
                                                 def on_verify(block_info):
                                                     # Block found in chain - mark as verified
                                                     block_rec['verified'] = True
-                                                    print 'Merged block VERIFIED in chain: %064x' % phash
+                                                    print 'Merged block VERIFIED in chain: %064x' % block_hash
                                                 @verify_df.addErrback
                                                 def on_verify_fail(err):
                                                     # Block not found - mark as orphaned
                                                     block_rec['verified'] = False
-                                                    print >>sys.stderr, 'Merged block orphaned (not in chain): %064x' % phash
+                                                    print >>sys.stderr, 'Merged block orphaned (not in chain): %064x' % block_hash
                                             # Use reactor.callLater to delay verification by 5 seconds
-                                            reactor.callLater(5.0, verify_block, block_record, aux_work['merged_proxy'], pow_hash)
+                                            # Pass aux_work['hash'] which is the Dogecoin block hash
+                                            reactor.callLater(5.0, verify_block, block_record, aux_work['merged_proxy'], aux_work['hash'])
                             @df.addErrback
                             def _(err):
                                 log.err(err, 'Error submitting merged block:')

@@ -29,8 +29,8 @@ difficulty blocks via timestamp manipulation ("block storm attack"). This causes
 
 **See [DOGECOIN_TESTNET_BUG.md](DOGECOIN_TESTNET_BUG.md) for full documentation.**
 
-**Workaround:** Use our private testnet4 with fixed difficulty rules until Dogecoin
-Core releases official testnet4. See `setup_dogecoin_testnet4.sh`.
+**Workaround:** Use our private testnet4alpha with fixed difficulty rules until Dogecoin
+Core releases official testnet4alpha. See `setup_dogecoin_testnet4alpha.sh`.
 
 See [MERGED_MINING_DONATION.md](MERGED_MINING_DONATION.md) for technical details.
 
