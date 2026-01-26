@@ -4,7 +4,7 @@ Decentralized pool mining software for Dash cryptocurrency.
 
 ## 🎉 Latest: Litecoin + Dogecoin Merged Mining (Testnet)
 
-**Status:** ✅ **WORKING** - Successfully mining real blocks on Dogecoin testnet!
+**Status:** ⚠️ **BLOCKED** - Dogecoin testnet has a critical difficulty bug
 
 Branch: `feature/scrypt-litecoin-dogecoin`
 
@@ -15,7 +15,22 @@ Branch: `feature/scrypt-litecoin-dogecoin`
 - ✅ Modern P2PKH donation script (saves 42 bytes vs old P2PK)
 - ✅ Node operator fees for merged mining infrastructure
 - ✅ Real-time monitoring dashboard
-- ✅ **15+ blocks accepted and confirmed on Dogecoin testnet blockchain!**
+
+### ⚠️ Dogecoin Testnet Bug
+
+The official Dogecoin testnet has a critical bug that allows unlimited minimum 
+difficulty blocks via timestamp manipulation ("block storm attack"). This causes:
+
+- **~3.3 blocks/second** instead of 1 block/minute (180x faster!)
+- **31+ million blocks** (should be ~5 million based on chain age)
+- **All merged mining submissions go stale** before they can be accepted
+
+**Official fix:** https://github.com/dogecoin/dogecoin/pull/3967
+
+**See [DOGECOIN_TESTNET_BUG.md](DOGECOIN_TESTNET_BUG.md) for full documentation.**
+
+**Workaround:** Use our private testnet4 with fixed difficulty rules until Dogecoin
+Core releases official testnet4. See `setup_dogecoin_testnet4.sh`.
 
 See [MERGED_MINING_DONATION.md](MERGED_MINING_DONATION.md) for technical details.
 
@@ -33,6 +48,16 @@ The installation guide covers:
 - ✅ Standalone vs Multi-node configuration
 - ✅ Common issues and solutions (OpenSSL, missing modules, etc.)
 - ✅ Performance tuning and security
+
+### Other Documentation
+
+| Document | Description |
+|----------|-------------|
+| [MERGED_MINING_DONATION.md](MERGED_MINING_DONATION.md) | LTC+DOGE merged mining technical details |
+| [DOGECOIN_TESTNET_BUG.md](DOGECOIN_TESTNET_BUG.md) | Dogecoin testnet difficulty bug documentation |
+| [CUSTOM_NETWORK_GUIDE.md](CUSTOM_NETWORK_GUIDE.md) | Adding support for new cryptocurrencies |
+| [ASIC_SUPPORT_COMPLETE.md](ASIC_SUPPORT_COMPLETE.md) | ASICBOOST implementation details |
+| [SHARE_ARCHIVE_README.md](SHARE_ARCHIVE_README.md) | Share archival and recovery |
 
 ## Quick Start
 
