@@ -525,10 +525,20 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                 if add_block_to_history(block_info):
                     new_blocks_added = True
                     print('Added new block to history: height=%s hash=%s diff=%.8f' % (block_info['number'], block_hash[:16], block_info['network_difficulty']))
+                    # Also record network difficulty sample with this block
+                    # (add_network_diff_sample is defined later but will exist when this runs)
+                    try:
+                        add_network_diff_sample(block_info['ts'], block_info['network_difficulty'], 'block')
+                    except:
+                        pass  # Ignore if not yet defined during startup
             
             # Save to disk if new blocks were added
             if new_blocks_added:
                 save_block_history()
+                try:
+                    save_network_diff_history()
+                except:
+                    pass  # Ignore if not yet defined during startup
             
             # Calculate pool average luck from all blocks with luck data
             total_luck = 0
@@ -551,6 +561,72 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             return block_history  # Return what we have on error
     
     web_root.putChild('recent_blocks', WebInterface(get_recent_blocks))
+    
+    # =========================================================================
+    # Immediate block recording when a block is found
+    # This ensures blocks are saved to disk right away, not just when API is queried
+    # =========================================================================
+    def on_block_found(block_info):
+        """Called immediately when a parent network block is found.
+        
+        Records the block to history and network difficulty immediately,
+        ensuring no data is lost if dashboard isn't being watched.
+        """
+        try:
+            # Get pool hashrate for luck calculations
+            height = node.tracker.get_height(node.best_share_var.value)
+            pool_hashrate = 0
+            if height >= 10:
+                lookbehind = min(height, 720)
+                pool_hashrate = p2pool_data.get_pool_attempts_per_second(node.tracker, node.best_share_var.value, lookbehind)
+            
+            # Build full block info with luck data
+            full_block_info = {
+                'ts': block_info['ts'],
+                'hash': block_info['hash'],
+                'number': block_info['number'],
+                'share': '',  # Will be filled in when tracker catches up
+                'network_difficulty': block_info['network_difficulty'],
+                'share_difficulty': 0,  # Will be filled in when tracker catches up  
+                'actual_hash_difficulty': bitcoin_data.target_to_difficulty(block_info['pow_hash']),
+                'verified': False,
+                'status': 'pending',
+                'pool_hashrate_at_find': pool_hashrate,
+            }
+            
+            # Calculate expected time and luck
+            if pool_hashrate > 0:
+                expected_hashes = bitcoin_data.target_to_average_attempts(block_info['target'])
+                expected_time = expected_hashes / pool_hashrate
+                full_block_info['expected_time'] = expected_time
+                
+                # Calculate time_to_find based on previous block in history
+                if block_history:
+                    prev_block = block_history[0]  # Most recent block (sorted descending)
+                    time_to_find = block_info['ts'] - prev_block['ts']
+                    full_block_info['time_to_find'] = time_to_find
+                    
+                    if expected_time > 0 and time_to_find > 0:
+                        luck = (expected_time / time_to_find) * 100
+                        full_block_info['luck'] = luck
+                        full_block_info['luck_method'] = 'immediate'
+            
+            # Add to history and save immediately
+            if add_block_to_history(full_block_info):
+                print('IMMEDIATE: Added block to history: height=%s hash=%s diff=%.8f' % (
+                    block_info['number'], block_info['hash'][:16], block_info['network_difficulty']))
+                save_block_history()
+                
+                # Also record network difficulty sample with this block
+                add_network_diff_sample(block_info['ts'], block_info['network_difficulty'], 'block')
+                save_network_diff_history()
+        except Exception as e:
+            import traceback
+            print('Error in on_block_found callback:')
+            traceback.print_exc()
+    
+    # Note: wb.block_found.watch(on_block_found) is registered later after
+    # add_network_diff_sample and save_network_diff_history are defined
     
     # Debug endpoint to check tracker status
     def get_tracker_debug():
@@ -780,6 +856,13 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     x_sample_diff = deferral.RobustLoopingCall(sample_current_network_diff)
     x_sample_diff.start(300)  # Sample every 5 minutes
     stop_event.watch(x_sample_diff.stop)
+    
+    # =========================================================================
+    # Register the block_found callback now that all helper functions are defined
+    # This ensures blocks AND network difficulty are saved immediately when found
+    # =========================================================================
+    wb.block_found.watch(on_block_found)
+    print('Registered block_found callback for immediate block history persistence')
     
     # Network difficulty endpoint for graph - returns historical network difficulty
     class NetworkDifficultyResource(resource.Resource):

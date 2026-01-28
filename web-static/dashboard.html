@@ -2659,17 +2659,58 @@
             }
             
             // Convert simple array points to objects for luck trend
+            // Apply logarithmic compression to values above 100%
+            // This transforms actual luck (0-infinity) to display luck (0-200)
+            // where 100% stays at 100%, and values above compress logarithmically
+            var transformLuck = function(actualLuck) {
+                if (actualLuck <= 100) {
+                    // Linear below 100%: 0% → 0, 100% → 100
+                    return actualLuck;
+                } else {
+                    // Logarithmic above 100%: 100% → 100, 200% → 130, 500% → 170, 1000% → 200
+                    var distanceAbove = actualLuck - 100;
+                    var compressed = 100 * Math.log10(1 + distanceAbove / 100);
+                    return 100 + compressed;
+                }
+            };
+            
             luckTrendData = luckTrendData.map(function(point) {
                 if (Array.isArray(point)) {
-                    return {x: point[0], y: point[1]};
+                    return {x: point[0], y: transformLuck(point[1])};
                 }
-                return point;
+                return {x: point.x, y: transformLuck(point.y)};
             });
             
             // Debug: log processed results
             console.log('Compact - blockMarkers:', blockMarkers.length, 'luckTrendData:', luckTrendData.length, 'minTime:', new Date(minTime), 'maxTime:', new Date(maxTime));
             if (blocks.length > 0) {
                 console.log('Block time:', new Date(blocks[0].ts * 1000));
+            }
+            
+            // Calculate dynamic luck Y-axis range to center 100%
+            var luckMin = 0, luckMax = 200;
+            if (luckTrendData.length > 0) {
+                var transformedValues = luckTrendData.map(function(p) { return p.y; });
+                var minTransformed = Math.min.apply(null, transformedValues);
+                var maxTransformed = Math.max.apply(null, transformedValues);
+                
+                console.log('Transformed luck range - min:', minTransformed.toFixed(1), 'max:', maxTransformed.toFixed(1));
+                
+                // Calculate the distance from 100% for the maximum transformed value
+                var distanceAbove = Math.max(0, maxTransformed - 100);
+                var distanceBelow = Math.max(0, 100 - minTransformed);
+                
+                // Use the larger distance to keep 100% centered
+                var maxDistance = Math.max(distanceAbove, distanceBelow);
+                
+                // Add 10% padding
+                maxDistance = maxDistance * 1.1;
+                
+                // Set symmetric range around 100%
+                luckMin = Math.max(0, 100 - maxDistance);
+                luckMax = 100 + maxDistance;
+                
+                console.log('Luck axis - min:', luckMin.toFixed(1), 'max:', luckMax.toFixed(1), '(100% centered)');
             }
             
             // Update stats
@@ -2764,14 +2805,37 @@
                     gridLineColor: '#2a2a4a',
                     opposite: false
                 }, {
-                    // Secondary Y-axis for luck percentage
+                    // Secondary Y-axis for luck percentage (with log compression above 100%)
                     title: { text: null },
-                    min: 0,
+                    min: luckMin,
+                    max: luckMax,
                     lineColor: '#ffc107',
                     tickColor: '#ffc107',
                     labels: {
                         style: { color: '#ffc107', fontSize: '10px' },
-                        formatter: function() { return this.value + '%'; }
+                        formatter: function() {
+                            // Inverse transform: convert display value back to actual luck
+                            var displayValue = this.value;
+                            if (displayValue <= 100) {
+                                // Linear range: display = actual
+                                return displayValue.toFixed(0) + '%';
+                            } else {
+                                // Logarithmic range: need to reverse the compression
+                                var compressed = displayValue - 100;
+                                var actualLuck = 100 + 100 * (Math.pow(10, compressed / 100) - 1);
+                                
+                                // Show ∞ for the very highest value
+                                if (this.isLast && displayValue > luckMax * 0.98) {
+                                    return '∞';
+                                }
+                                
+                                // Show rounded value for readability
+                                if (actualLuck > 1000) {
+                                    return (actualLuck / 1000).toFixed(1) + 'k%';
+                                }
+                                return actualLuck.toFixed(0) + '%';
+                            }
+                        }
                     },
                     gridLineWidth: 0,
                     opposite: true,
@@ -2779,7 +2843,7 @@
                         value: 100,
                         color: '#ffc107',
                         dashStyle: 'dot',
-                        width: 1,
+                        width: 2,
                         label: { text: '100%', style: { color: '#ffc107', fontSize: '9px' }, align: 'right' }
                     }]
                 }, {
@@ -2831,6 +2895,16 @@
                                 var actualPdiff = b.actual_hash_difficulty * 65536;
                                 s += 'Hash Diff: <b style="color:#00d4ff">' + format_hashrate(actualHashrate) + '</b><br/>';
                                 s += '<span style="font-size:10px;color:#aaa">(bdiff: ' + d3.format(',.2f')(b.actual_hash_difficulty) + ', pdiff: ' + d3.format('.2e')(actualPdiff) + ')</span><br/>';
+                            }
+                            // Show Hash/Net difficulty ratio (how many more leading zeroes than required)
+                            if (b.actual_hash_difficulty && b.network_difficulty && b.network_difficulty > 0) {
+                                var diffRatio = b.actual_hash_difficulty / b.network_difficulty;
+                                var ratioColor = diffRatio >= 10 ? '#ff00ff' : (diffRatio >= 5 ? '#00ffff' : (diffRatio >= 2 ? '#00ff88' : '#ffffff'));
+                                s += 'Diff Ratio: <b style="color:' + ratioColor + '">' + d3.format('.2f')(diffRatio) + 'x</b>';
+                                if (diffRatio >= 10) s += ' <span style="color:#ff00ff">★★★</span>';
+                                else if (diffRatio >= 5) s += ' <span style="color:#00ffff">★★</span>';
+                                else if (diffRatio >= 2) s += ' <span style="color:#00ff88">★</span>';
+                                s += '<br/>';
                             }
                             s += 'Status: <b style="color:' + (b.status === 'confirmed' ? '#00ff88' : '#ffc107') + '">' + (b.status || 'unknown') + '</b>';
                             return s;
@@ -2938,17 +3012,39 @@
                             s += 'Height: <b>' + (b.number || b.block_height || '?') + '</b><br/>';
                             if (b.luck !== undefined && b.luck !== null) {
                                 var luckColor = b.luck >= 100 ? '#00ff88' : (b.luck >= 75 ? '#ffc107' : '#ff6b6b');
-                                s += 'Luck: <b style="color:' + luckColor + '">' + b.luck < 1 ? d3.format('.2f')(b.luck) : d3.format('.0f')(b.luck) + '%</b><br/>';
+                                s += 'Luck: <b style="color:' + luckColor + '">' + (b.luck < 1 ? d3.format('.2f')(b.luck) : d3.format('.0f')(b.luck)) + '%</b><br/>';
                             } else if (b.luck_method === 'first_block') {
-                                s += 'Luck: <b>1st block</b><br/>';
+                                s += 'Luck: <b style="color:#888">1st block</b><br/>';
                             }
                             if (b.time_to_find) {
-                                s += 'Found in: ' + format_dt(b.time_to_find) + '<br/>';
+                                s += 'Found in: <b>' + format_dt(b.time_to_find) + '</b><br/>';
                             }
                             if (b.expected_time) {
-                                s += 'Expected: ' + format_dt(b.expected_time) + '<br/>';
+                                s += 'Expected: <b>' + format_dt(b.expected_time) + '</b><br/>';
                             }
-                            s += 'Status: <b>' + (b.status || 'unknown') + '</b>';
+                            if (b.network_difficulty) {
+                                var netHashrate = Math.floor(b.network_difficulty * Math.pow(2, 32) / 150);
+                                var netPdiff = b.network_difficulty * 65536;
+                                s += 'Net Diff: <b style="color:#8888ff">' + format_hashrate(netHashrate) + '</b><br/>';
+                                s += '<span style="font-size:10px;color:#aaa">(bdiff: ' + d3.format(',.2f')(b.network_difficulty) + ', pdiff: ' + d3.format('.2e')(netPdiff) + ')</span><br/>';
+                            }
+                            if (b.actual_hash_difficulty) {
+                                var actualHashrate = Math.floor(b.actual_hash_difficulty * Math.pow(2, 32) / 150);
+                                var actualPdiff = b.actual_hash_difficulty * 65536;
+                                s += 'Hash Diff: <b style="color:#00d4ff">' + format_hashrate(actualHashrate) + '</b><br/>';
+                                s += '<span style="font-size:10px;color:#aaa">(bdiff: ' + d3.format(',.2f')(b.actual_hash_difficulty) + ', pdiff: ' + d3.format('.2e')(actualPdiff) + ')</span><br/>';
+                            }
+                            // Show Hash/Net difficulty ratio (how many more leading zeroes than required)
+                            if (b.actual_hash_difficulty && b.network_difficulty && b.network_difficulty > 0) {
+                                var diffRatio = b.actual_hash_difficulty / b.network_difficulty;
+                                var ratioColor = diffRatio >= 10 ? '#ff00ff' : (diffRatio >= 5 ? '#00ffff' : (diffRatio >= 2 ? '#00ff88' : '#ffffff'));
+                                s += 'Diff Ratio: <b style="color:' + ratioColor + '">' + d3.format('.2f')(diffRatio) + 'x</b>';
+                                if (diffRatio >= 10) s += ' <span style="color:#ff00ff">★★★</span>';
+                                else if (diffRatio >= 5) s += ' <span style="color:#00ffff">★★</span>';
+                                else if (diffRatio >= 2) s += ' <span style="color:#00ff88">★</span>';
+                                s += '<br/>';
+                            }
+                            s += 'Status: <b style="color:' + (b.status === 'confirmed' ? '#00ff88' : '#ffc107') + '">' + (b.status || 'unknown') + '</b>';
                             return s;
                         }
                     }
@@ -3216,12 +3312,38 @@
             }
             
             // Convert simple array points to objects for luck trend
+            // Apply logarithmic compression to values above 100% (same as compact chart)
+            var fsTransformLuck = function(actualLuck) {
+                if (actualLuck <= 100) {
+                    return actualLuck;
+                } else {
+                    var distanceAbove = actualLuck - 100;
+                    var compressed = 100 * Math.log10(1 + distanceAbove / 100);
+                    return 100 + compressed;
+                }
+            };
+            
             luckTrendData = luckTrendData.map(function(point) {
                 if (Array.isArray(point)) {
-                    return {x: point[0], y: point[1]};
+                    return {x: point[0], y: fsTransformLuck(point[1])};
                 }
-                return point;
+                return {x: point.x, y: fsTransformLuck(point.y)};
             });
+            
+            // Calculate dynamic luck Y-axis range to center 100% (fullscreen)
+            var fsLuckMin = 0, fsLuckMax = 200;
+            if (luckTrendData.length > 0) {
+                var transformedValues = luckTrendData.map(function(p) { return p.y; });
+                var minTransformed = Math.min.apply(null, transformedValues);
+                var maxTransformed = Math.max.apply(null, transformedValues);
+                
+                var distanceAbove = Math.max(0, maxTransformed - 100);
+                var distanceBelow = Math.max(0, 100 - minTransformed);
+                var maxDistance = Math.max(distanceAbove, distanceBelow) * 1.1;
+                
+                fsLuckMin = Math.max(0, 100 - maxDistance);
+                fsLuckMax = 100 + maxDistance;
+            }
             
             // Update fullscreen stats
             var current = values[values.length - 1] || 0;
@@ -3294,14 +3416,32 @@
                     gridLineColor: '#2a2a4a',
                     opposite: false
                 }, {
-                    // Second Y-axis for luck percentage
+                    // Second Y-axis for luck percentage (with log compression above 100%)
                     title: { text: null },
-                    min: 0,
+                    min: fsLuckMin,
+                    max: fsLuckMax,
                     lineColor: '#ffc107',
                     tickColor: '#ffc107',
                     labels: {
                         style: { color: '#ffc107', fontSize: '11px' },
-                        formatter: function() { return this.value + '%'; }
+                        formatter: function() {
+                            // Inverse transform: convert display value back to actual luck
+                            var displayValue = this.value;
+                            if (displayValue <= 100) {
+                                return displayValue.toFixed(0) + '%';
+                            } else {
+                                var compressed = displayValue - 100;
+                                var actualLuck = 100 + 100 * (Math.pow(10, compressed / 100) - 1);
+                                
+                                if (this.isLast && displayValue > fsLuckMax * 0.98) {
+                                    return '∞';
+                                }
+                                if (actualLuck > 1000) {
+                                    return (actualLuck / 1000).toFixed(1) + 'k%';
+                                }
+                                return actualLuck.toFixed(0) + '%';
+                            }
+                        }
                     },
                     gridLineWidth: 0,
                     opposite: true,
@@ -3309,8 +3449,9 @@
                         value: 100,
                         color: '#ffc107',
                         dashStyle: 'dot',
-                        width: 1,
-                        zIndex: 3
+                        width: 2,
+                        zIndex: 3,
+                        label: { text: '100%', style: { color: '#ffc107', fontSize: '10px' }, align: 'right' }
                     }]
                 }, {
                     // Third Y-axis for miner count
@@ -3362,6 +3503,16 @@
                                 s += 'Hash Diff: <b style="color:#00d4ff">' + format_hashrate(actualHashrate) + '</b><br/>';
                                 s += '<span style="font-size:11px;color:#888">(Hashrate equivalent of found hash)</span><br/>';
                                 s += '<span style="font-size:11px;color:#aaa">bdiff: ' + d3.format(',.2f')(b.actual_hash_difficulty) + ', pdiff: ' + d3.format('.2e')(actualPdiff) + '</span><br/>';
+                            }
+                            // Show Hash/Net difficulty ratio
+                            if (b.actual_hash_difficulty && b.network_difficulty && b.network_difficulty > 0) {
+                                var diffRatio = b.actual_hash_difficulty / b.network_difficulty;
+                                var ratioColor = diffRatio >= 10 ? '#ff00ff' : (diffRatio >= 5 ? '#00ffff' : (diffRatio >= 2 ? '#00ff88' : '#ffffff'));
+                                s += 'Diff Ratio: <b style="color:' + ratioColor + '">' + d3.format('.2f')(diffRatio) + 'x</b>';
+                                if (diffRatio >= 10) s += ' <span style="color:#ff00ff">★★★</span>';
+                                else if (diffRatio >= 5) s += ' <span style="color:#00ffff">★★</span>';
+                                else if (diffRatio >= 2) s += ' <span style="color:#00ff88">★</span>';
+                                s += '<br/>';
                             }
                             s += 'Status: <b style="color:' + (b.status === 'confirmed' ? '#00ff88' : '#ffc107') + '">' + (b.status || 'unknown') + '</b>';
                             return s;
@@ -3481,17 +3632,39 @@
                             s += 'Height: <b>' + (b.number || b.block_height || '?') + '</b><br/>';
                             if (b.luck !== undefined && b.luck !== null) {
                                 var luckColor = b.luck >= 100 ? '#00ff88' : (b.luck >= 75 ? '#ffc107' : '#ff6b6b');
-                                s += 'Luck: <b style="color:' + luckColor + '">' + b.luck < 1 ? d3.format('.2f')(b.luck) : d3.format('.0f')(b.luck) + '%</b><br/>';
+                                s += 'Luck: <b style="color:' + luckColor + '">' + (b.luck < 1 ? d3.format('.2f')(b.luck) : d3.format('.0f')(b.luck)) + '%</b><br/>';
                             } else if (b.luck_method === 'first_block') {
-                                s += 'Luck: <b>1st block</b><br/>';
+                                s += 'Luck: <b style="color:#888">1st block</b><br/>';
                             }
                             if (b.time_to_find) {
-                                s += 'Found in: ' + format_dt(b.time_to_find) + '<br/>';
+                                s += 'Found in: <b>' + format_dt(b.time_to_find) + '</b><br/>';
                             }
                             if (b.expected_time) {
-                                s += 'Expected: ' + format_dt(b.expected_time) + '<br/>';
+                                s += 'Expected: <b>' + format_dt(b.expected_time) + '</b><br/>';
                             }
-                            s += 'Status: <b>' + (b.status || 'unknown') + '</b>';
+                            if (b.network_difficulty) {
+                                var netHashrate = Math.floor(b.network_difficulty * Math.pow(2, 32) / 150);
+                                var netPdiff = b.network_difficulty * 65536;
+                                s += 'Net Diff: <b style="color:#8888ff">' + format_hashrate(netHashrate) + '</b><br/>';
+                                s += '<span style="font-size:10px;color:#aaa">(bdiff: ' + d3.format(',.2f')(b.network_difficulty) + ', pdiff: ' + d3.format('.2e')(netPdiff) + ')</span><br/>';
+                            }
+                            if (b.actual_hash_difficulty) {
+                                var actualHashrate = Math.floor(b.actual_hash_difficulty * Math.pow(2, 32) / 150);
+                                var actualPdiff = b.actual_hash_difficulty * 65536;
+                                s += 'Hash Diff: <b style="color:#00d4ff">' + format_hashrate(actualHashrate) + '</b><br/>';
+                                s += '<span style="font-size:10px;color:#aaa">(bdiff: ' + d3.format(',.2f')(b.actual_hash_difficulty) + ', pdiff: ' + d3.format('.2e')(actualPdiff) + ')</span><br/>';
+                            }
+                            // Show Hash/Net difficulty ratio
+                            if (b.actual_hash_difficulty && b.network_difficulty && b.network_difficulty > 0) {
+                                var diffRatio = b.actual_hash_difficulty / b.network_difficulty;
+                                var ratioColor = diffRatio >= 10 ? '#ff00ff' : (diffRatio >= 5 ? '#00ffff' : (diffRatio >= 2 ? '#00ff88' : '#ffffff'));
+                                s += 'Diff Ratio: <b style="color:' + ratioColor + '">' + d3.format('.2f')(diffRatio) + 'x</b>';
+                                if (diffRatio >= 10) s += ' <span style="color:#ff00ff">★★★</span>';
+                                else if (diffRatio >= 5) s += ' <span style="color:#00ffff">★★</span>';
+                                else if (diffRatio >= 2) s += ' <span style="color:#00ff88">★</span>';
+                                s += '<br/>';
+                            }
+                            s += 'Status: <b style="color:' + (b.status === 'confirmed' ? '#00ff88' : '#ffc107') + '">' + (b.status || 'unknown') + '</b>';
                             return s;
                         }
                     }

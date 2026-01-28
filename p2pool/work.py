@@ -100,6 +100,7 @@ class WorkerBridge(worker_interface.WorkerBridge):
         self.running = True
         self.pseudoshare_received = variable.Event()
         self.share_received = variable.Event()
+        self.block_found = variable.Event()  # Fired when a parent network block is found
         # Activity window must account for extreme variance in low-difficulty mining
         # At minimum difficulty (0.001), miners can have very long gaps between shares
         # due to Poisson distribution variance (95% CI = ~30x expected time)
@@ -1067,8 +1068,19 @@ class WorkerBridge(worker_interface.WorkerBridge):
                         print >>sys.stderr, '*** CRITICAL: Block submission failed! ***'
                         log.err(err, 'Block submission error:')
                     if pow_hash <= header['bits'].target:
-                        # New block found
+                        # New block found - notify subscribers
                         self.node.factory.new_block.happened(header_hash)
+                        # Fire block_found event with block info for immediate persistence
+                        block_info = {
+                            'ts': time.time(),
+                            'hash': '%064x' % header_hash,
+                            'number': share_info.get('height', 0),
+                            'miner': user,
+                            'network_difficulty': bitcoin_data.target_to_difficulty(header['bits'].target),
+                            'pow_hash': pow_hash,
+                            'target': header['bits'].target,
+                        }
+                        self.block_found.happened(block_info)
             except:
                 log.err(None, 'Error while processing potential block:')
 
