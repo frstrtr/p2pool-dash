@@ -1055,16 +1055,36 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     def get_node_info():
         """Get node connection info for miners"""
         try:
-            # Try to get external IP
-            external_ip = None
-            try:
-                import socket
-                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                s.connect(("8.8.8.8", 80))
-                external_ip = s.getsockname()[0]
-                s.close()
-            except:
-                external_ip = "127.0.0.1"
+            # Use configured external IP if available, otherwise try to detect
+            external_ip = getattr(node, 'external_ip', None)
+            
+            if not external_ip:
+                # Try to get external IP from external service
+                try:
+                    import urllib2
+                    for url in ['https://api.ipify.org', 'https://icanhazip.com', 'https://ifconfig.me/ip']:
+                        try:
+                            req = urllib2.Request(url)
+                            req.add_header('User-Agent', 'p2pool')
+                            response = urllib2.urlopen(req, timeout=3)
+                            external_ip = response.read().strip()
+                            if external_ip and len(external_ip) < 50:
+                                break
+                        except:
+                            continue
+                except:
+                    pass
+            
+            # Fallback to local network IP
+            if not external_ip:
+                try:
+                    import socket
+                    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    s.connect(("8.8.8.8", 80))
+                    external_ip = s.getsockname()[0]
+                    s.close()
+                except:
+                    external_ip = "127.0.0.1"
             
             return {
                 'external_ip': external_ip,

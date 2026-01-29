@@ -16,7 +16,7 @@ may not provide (or provide differently). This adapter:
 ## Architecture
 
 ```
-┌─────────────┐   JSON-RPC    ┌──────────────┐   JSON-RPC    ┌─────────────┐
+┌─────────────┐   JSON-RPC   ┌──────────────┐   JSON-RPC   ┌─────────────┐
 │   P2Pool    │◀────────────▶│  MM Adapter  │◀────────────▶│  Dogecoin   │
 │  (PyPy 2.7) │  Port 44555  │ (Python 3)   │  Port 22555  │  (Standard) │
 └─────────────┘              └──────────────┘              └─────────────┘

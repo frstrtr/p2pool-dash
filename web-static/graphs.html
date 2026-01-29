@@ -206,16 +206,20 @@
                     .on('click', function() { table_div.style.display = table_div.style.display == "block" ? "none" : "block" })
                     .attr("style", "color:blue;text-decoration:underline;cursor:pointer");
 				
-                var currwidth = document.documentElement.clientWidth;
+                // Calculate width respecting container constraints
+                var containerMaxWidth = 1400;
+                var containerPadding = 40; // 20px left + 20px right
+                var currwidth = Math.min(document.documentElement.clientWidth, containerMaxWidth) - containerPadding;
                 var timeOut = null;
                 window.onresize = function(){
                     if (timeOut != null) 
                         clearTimeout(timeOut);
                     timeOut = setTimeout(function(){
-                        if (currwidth != document.documentElement.clientWidth){
+                        var newWidth = Math.min(document.documentElement.clientWidth, containerMaxWidth) - containerPadding;
+                        if (currwidth != newWidth){
                              window.location.href=window.location.href;
                         };
-                    currwidth = document.documentElement.clientWidth;
+                    currwidth = newWidth;
                     }, 250);
                 }; 
 				

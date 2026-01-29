@@ -20,14 +20,14 @@ Branch: `feature/scrypt-litecoin-dogecoin`
 ### Architecture
 
 ```
-┌─────────────┐    Stratum    ┌─────────────┐   JSON-RPC    ┌─────────────┐
+┌─────────────┐    Stratum   ┌─────────────┐   JSON-RPC   ┌─────────────┐
 │   Miners    │◀────────────▶│   P2Pool    │◀────────────▶│  Litecoin   │
 │  (scrypt)   │   Port 9327  │  (PyPy 2.7) │  Port 9332   │   Core      │
 └─────────────┘              └──────┬──────┘              └─────────────┘
                                     │
                                     │ JSON-RPC (Port 44556)
                                     ▼
-                             ┌──────────────┐   JSON-RPC    ┌─────────────┐
+                             ┌──────────────┐   JSON-RPC   ┌─────────────┐
                              │  MM-Adapter  │◀────────────▶│  Dogecoin   │
                              │ (Python 3)   │  Port 22555  │   Core      │
                              └──────────────┘              └─────────────┘
