@@ -1630,6 +1630,11 @@ class WorkerBridge(worker_interface.WorkerBridge):
 
                 self.share_received.happened(bitcoin_data.target_to_average_attempts(share.target), not on_time, share.hash)
                 
+                # Also trigger pseudoshare_received for graph recording
+                # This ensures per-miner hashrate is tracked for shares too
+                work_value = bitcoin_data.target_to_average_attempts(effective_target)
+                self.pseudoshare_received.happened(work_value, not on_time, user)
+                
                 # Update local rate monitor for shares (they are also pseudoshares)
                 # Use effective_target (vardiff target) for work calculation
                 self.local_rate_monitor.add_datum(dict(work=bitcoin_data.target_to_average_attempts(effective_target), dead=not on_time, user=user, share_target=share_info['bits'].target))

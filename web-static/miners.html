@@ -615,50 +615,53 @@
                 // Fetch 24h hashrate data
                 d3.json('../web/graph_data/miner_hash_rates/last_day', function(graph_data) {
                     d3.json('../current_payouts', function(payouts_data) {
-                        var payouts = payouts_data || {};
-                        
-                        // Calculate 24h average hashrates per worker
-                        var avg_24h = {};
-                        if (graph_data && graph_data.length > 0) {
-                            var worker_totals = {};
-                            var worker_counts = {};
+                        d3.json('../current_merged_payouts', function(merged_payouts_data) {
+                            var payouts = payouts_data || {};
+                            var merged_payouts = merged_payouts_data || {};
                             
-                            graph_data.forEach(function(point) {
-                                if (point[1]) {
-                                    for (var workerName in point[1]) {
-                                        if (!worker_totals[workerName]) {
-                                            worker_totals[workerName] = 0;
-                                            worker_counts[workerName] = 0;
+                            // Calculate 24h average hashrates per worker
+                            var avg_24h = {};
+                            if (graph_data && graph_data.length > 0) {
+                                var worker_totals = {};
+                                var worker_counts = {};
+                                
+                                graph_data.forEach(function(point) {
+                                    if (point[1]) {
+                                        for (var workerName in point[1]) {
+                                            if (!worker_totals[workerName]) {
+                                                worker_totals[workerName] = 0;
+                                                worker_counts[workerName] = 0;
+                                            }
+                                            worker_totals[workerName] += point[1][workerName];
+                                            worker_counts[workerName]++;
                                         }
-                                        worker_totals[workerName] += point[1][workerName];
-                                        worker_counts[workerName]++;
                                     }
+                                });
+                                
+                                for (var workerName in worker_totals) {
+                                    avg_24h[workerName] = worker_totals[workerName] / worker_counts[workerName];
                                 }
-                            });
-                            
-                            for (var workerName in worker_totals) {
-                                avg_24h[workerName] = worker_totals[workerName] / worker_counts[workerName];
                             }
-                        }
-                        
-                        // Calculate average share time (using current hashrate)
-                        var avg_share_time = 0;
-                        if (miners.length > 0) {
-                            var total_time = d3.sum(miners, function(m) {
-                                return m.totalHashrate > 0 ? 1 / m.totalHashrate : 0;
-                            });
-                            avg_share_time = total_time / miners.length * Math.pow(2, 32);
-                        }
-                        d3.select('#avg_share_time').text(format_dt(avg_share_time));
-                        
-                        // Render miner cards with workers
-                        renderMiners(miners, avg_24h, payouts);
+                            
+                            // Calculate average share time (using current hashrate)
+                            var avg_share_time = 0;
+                            if (miners.length > 0) {
+                                var total_time = d3.sum(miners, function(m) {
+                                    return m.totalHashrate > 0 ? 1 / m.totalHashrate : 0;
+                                });
+                                avg_share_time = total_time / miners.length * Math.pow(2, 32);
+                            }
+                            d3.select('#avg_share_time').text(format_dt(avg_share_time));
+                            
+                            // Render miner cards with workers
+                            renderMiners(miners, avg_24h, payouts, merged_payouts);
+                        });
                     });
                 });
             });
         }
         
-        function renderMiners(miners, avg_24h, payouts) {
+        function renderMiners(miners, avg_24h, payouts, merged_payouts) {
             var container = d3.select('#miners_grid');
             container.selectAll('*').remove();
             
@@ -727,13 +730,24 @@
                 payout_stat.append('div').attr('class', 'miner-stat-label').text('Predicted Payout');
                 var payout = payouts[miner.address] || 0;
                 payout_stat.append('div').attr('class', 'miner-stat-value')
-                    .html(d3.format('.4f')(payout) + ' <span class="symbol-small">DASH</span>');
+                    .html(d3.format('.4f')(payout) + ' <span class="symbol-small">' + (currency_info.symbol || 'LTC') + '</span>');
                 
                 // DOA Hashrate
                 var doa_hr_stat = stats.append('div').attr('class', 'miner-stat');
                 doa_hr_stat.append('div').attr('class', 'miner-stat-label').text('DOA Hashrate');
                 doa_hr_stat.append('div').attr('class', 'miner-stat-value')
                     .text(format_hashrate(miner.totalDoa));
+                
+                // Merged Mining Payouts
+                if (merged_payouts[miner.address] && merged_payouts[miner.address].merged) {
+                    merged_payouts[miner.address].merged.forEach(function(mp) {
+                        var merged_stat = stats.append('div').attr('class', 'miner-stat');
+                        merged_stat.append('div').attr('class', 'miner-stat-label')
+                            .html('🔗 ' + mp.symbol + ' Payout');
+                        merged_stat.append('div').attr('class', 'miner-stat-value success')
+                            .html(d3.format(',.2f')(mp.amount) + ' <span style="font-size: 0.7rem;">' + mp.symbol + '</span>');
+                    });
+                }
                 
                 // Workers section (if multiple workers)
                 if (miner.workers.length > 1) {

@@ -406,7 +406,7 @@
             <div class="header-content">
                 <div class="logo">
                     <h1>⛏️ Miner Statistics</h1>
-                    <span class="symbol">DASH</span>
+                    <span class="symbol" id="currency_symbol">---</span>
                 </div>
                 <nav>
                     <a href="dashboard.html">Dashboard</a>
@@ -463,13 +463,21 @@
                 <div class="stat-card">
                     <h3>Current Payout</h3>
                     <div class="stat-value success" id="current_payout">0</div>
-                    <div class="stat-label">DASH on next block</div>
+                    <div class="stat-label" id="payout_label">On next block</div>
                 </div>
                 <div class="stat-card">
                     <h3>DOA Hashrate</h3>
                     <div class="stat-value" id="doa_hashrate">0 H/s</div>
                     <div class="stat-label">Dead share hashrate</div>
                 </div>
+            </div>
+            
+            <!-- Merged Mining Payouts -->
+            <div class="section-header" id="merged_section" style="display: none;">
+                <h2>🔗 Merged Mining Rewards</h2>
+            </div>
+            <div class="stats-grid" id="merged_payouts_grid" style="display: none;">
+                <!-- Dynamically populated with merged mining payouts -->
             </div>
             
             <!-- Combined Hashrate & DOA Chart -->
@@ -488,7 +496,7 @@
             
             <!-- Payout Chart -->
             <div class="section-header">
-                <h2>Payout History</h2>
+                <h2>Predicted Payout History</h2>
             </div>
             <div class="chart-container">
                 <div id="payout_chart"></div>
@@ -508,17 +516,17 @@
                 </div>
                 <div class="stat-card">
                     <h3>Total Rewards</h3>
-                    <div class="stat-value" id="total_rewards">0 DASH</div>
+                    <div class="stat-value" id="total_rewards">0</div>
                     <div class="stat-label">Estimated total earned</div>
                 </div>
                 <div class="stat-card">
                     <h3>Confirmed Rewards</h3>
-                    <div class="stat-value success" id="confirmed_rewards">0 DASH</div>
+                    <div class="stat-value success" id="confirmed_rewards">0</div>
                     <div class="stat-label">Confirmed payouts</div>
                 </div>
                 <div class="stat-card">
                     <h3>Maturing Rewards</h3>
-                    <div class="stat-value warning" id="pending_rewards">0 DASH</div>
+                    <div class="stat-value warning" id="pending_rewards">0</div>
                     <div class="stat-label">Coinbase maturity (100 blocks)</div>
                 </div>
             </div>
@@ -639,6 +647,26 @@
                 document.getElementById('current_payout').textContent = d3.format('.4f')(stats.current_payout);
                 document.getElementById('doa_hashrate').textContent = format_hashrate(stats.dead_hashrate);
                 
+                // Display merged mining payouts
+                if (stats.merged_payouts && stats.merged_payouts.length > 0) {
+                    document.getElementById('merged_section').style.display = 'block';
+                    var mergedGrid = document.getElementById('merged_payouts_grid');
+                    mergedGrid.style.display = 'grid';
+                    mergedGrid.innerHTML = '';
+                    
+                    stats.merged_payouts.forEach(function(mp) {
+                        var card = document.createElement('div');
+                        card.className = 'stat-card';
+                        card.innerHTML = '<h3>' + mp.symbol + ' Payout</h3>' +
+                            '<div class="stat-value success">' + d3.format(',.4f')(mp.amount) + '</div>' +
+                            '<div class="stat-label">' + mp.network + ' on next block</div>' +
+                            '<div class="stat-label" style="font-size: 0.7rem; margin-top: 5px;">' +
+                            '<a href="https://dogechain.info/address/' + mp.address + '" target="_blank" style="color: var(--primary);">' + 
+                            mp.address.substring(0, 12) + '...' + mp.address.substring(mp.address.length - 4) + '</a></div>';
+                        mergedGrid.appendChild(card);
+                    });
+                }
+                
                 // Calculate 24h average hashrate
                 d3.json('../web/graph_data/miner_hash_rates/last_day', function(graph_data) {
                     var avg_24h = 0;
@@ -691,10 +719,11 @@
                 }
                 
                 // Update summary stats
+                var sym = currency_info.symbol || 'COIN';
                 document.getElementById('blocks_found').textContent = payouts.blocks_found || 0;
-                document.getElementById('total_rewards').textContent = d3.format('.4f')(payouts.total_estimated_rewards || 0) + ' DASH';
-                document.getElementById('confirmed_rewards').textContent = d3.format('.4f')(payouts.confirmed_rewards || 0) + ' DASH';
-                document.getElementById('pending_rewards').textContent = d3.format('.4f')(payouts.maturing_rewards || 0) + ' DASH';
+                document.getElementById('total_rewards').textContent = d3.format('.4f')(payouts.total_estimated_rewards || 0) + ' ' + sym;
+                document.getElementById('confirmed_rewards').textContent = d3.format('.4f')(payouts.confirmed_rewards || 0) + ' ' + sym;
+                document.getElementById('pending_rewards').textContent = d3.format('.4f')(payouts.maturing_rewards || 0) + ' ' + sym;
                 
                 // Render blocks table
                 if (!payouts.blocks || payouts.blocks.length === 0) {
@@ -733,12 +762,12 @@
                     
                     // Block Reward
                     const tdReward = document.createElement('td');
-                    tdReward.textContent = block.block_reward > 0 ? d3.format('.4f')(block.block_reward) + ' DASH' : 'Pending...';
+                    tdReward.textContent = block.block_reward > 0 ? d3.format('.4f')(block.block_reward) + ' ' + sym : 'Pending...';
                     tr.appendChild(tdReward);
                     
                     // Estimated Payout
                     const tdPayout = document.createElement('td');
-                    tdPayout.textContent = block.estimated_payout > 0 ? d3.format('.4f')(block.estimated_payout) + ' DASH' : 'Calculating...';
+                    tdPayout.textContent = block.estimated_payout > 0 ? d3.format('.4f')(block.estimated_payout) + ' ' + sym : 'Calculating...';
                     tr.appendChild(tdPayout);
                     
                     // Status
@@ -774,9 +803,11 @@
                 });
             });
             
-            // Load payout data
-            d3.json('../web/graph_data/current_payouts/last_' + period, function(data) {
-                if (data) renderPayoutChart(data);
+            // Load payout data (LTC + DOGE merged)
+            d3.json('../web/graph_data/current_payouts/last_' + period, function(ltcData) {
+                d3.json('../web/graph_data/merged_current_payouts/last_' + period, function(dogeData) {
+                    renderPayoutChart(ltcData, dogeData);
+                });
             });
         }
         
@@ -986,23 +1017,41 @@
             }
         }
         
-        function renderPayoutChart(data) {
-            if (!data || !minerAddress) return;
+        function renderPayoutChart(ltcData, dogeData) {
+            if (!minerAddress) return;
             
-            const payoutData = [];
+            const ltcPayoutData = [];
+            const dogePayoutData = [];
             
-            for (let i = 0; i < data.length; i++) {
-                const point = data[i];
-                if (point && point[1] && point[1][minerAddress] !== undefined) {
-                    const timestamp = point[0] * 1000;
-                    const payout = point[1][minerAddress];
-                    payoutData.push([timestamp, payout]);
+            // Process LTC payout data
+            if (ltcData) {
+                for (let i = 0; i < ltcData.length; i++) {
+                    const point = ltcData[i];
+                    if (point && point[1] && point[1][minerAddress] !== undefined) {
+                        const timestamp = point[0] * 1000;
+                        const payout = point[1][minerAddress];
+                        ltcPayoutData.push([timestamp, payout]);
+                    }
                 }
             }
             
+            // Process DOGE merged payout data
+            if (dogeData) {
+                for (let i = 0; i < dogeData.length; i++) {
+                    const point = dogeData[i];
+                    if (point && point[1] && point[1][minerAddress] !== undefined) {
+                        const timestamp = point[0] * 1000;
+                        const payout = point[1][minerAddress];
+                        dogePayoutData.push([timestamp, payout]);
+                    }
+                }
+            }
+            
+            const hasDoge = dogePayoutData.length > 0;
+            const ltcSymbol = currency_info.symbol || 'LTC';
+            
             Highcharts.chart('payout_chart', {
                 chart: {
-                    type: 'area',
                     backgroundColor: 'transparent',
                     style: { fontFamily: 'inherit' }
                 },
@@ -1014,39 +1063,95 @@
                     tickColor: '#3a3a5a',
                     labels: { style: { color: '#8888a0' } }
                 },
-                yAxis: {
-                    title: { text: 'DASH', style: { color: '#8888a0' } },
+                yAxis: hasDoge ? [
+                    {
+                        // Left Y-axis for LTC
+                        title: { text: ltcSymbol, style: { color: '#28a745' } },
+                        gridLineColor: '#3a3a5a',
+                        labels: { style: { color: '#28a745' }, format: '{value:.2f}' },
+                        min: 0
+                    },
+                    {
+                        // Right Y-axis for DOGE
+                        title: { text: 'DOGE', style: { color: '#c3a634' } },
+                        labels: { style: { color: '#c3a634' }, format: '{value:.0f}' },
+                        opposite: true,
+                        min: 0
+                    }
+                ] : {
+                    title: { text: ltcSymbol, style: { color: '#8888a0' } },
                     gridLineColor: '#3a3a5a',
                     labels: { style: { color: '#8888a0' } },
                     min: 0
                 },
-                legend: { enabled: false },
+                legend: {
+                    enabled: hasDoge,
+                    itemStyle: { color: '#e0e0e0' },
+                    itemHoverStyle: { color: '#fff' }
+                },
                 tooltip: {
+                    shared: true,
                     backgroundColor: '#16162a',
                     borderColor: '#3a3a5a',
                     style: { color: '#e0e0e0' },
                     formatter: function() {
-                        return '<b>' + Highcharts.dateFormat('%Y-%m-%d %H:%M', this.x) + '</b><br/>' +
-                               'Payout: ' + d3.format('.4f')(this.y) + ' DASH';
+                        let html = '<b>' + Highcharts.dateFormat('%Y-%m-%d %H:%M', this.x) + '</b>';
+                        this.points.forEach(function(point) {
+                            const symbol = point.series.name === 'DOGE Payout' ? 'DOGE' : ltcSymbol;
+                            const format = point.series.name === 'DOGE Payout' ? ',.2f' : '.4f';
+                            html += '<br/><span style="color:' + point.color + '">●</span> ' +
+                                   point.series.name + ': ' + d3.format(format)(point.y) + ' ' + symbol;
+                        });
+                        return html;
                     }
                 },
                 plotOptions: {
                     area: {
+                        lineWidth: 2,
+                        marker: { enabled: false }
+                    }
+                },
+                series: hasDoge ? [
+                    {
+                        name: ltcSymbol + ' Payout',
+                        type: 'area',
+                        yAxis: 0,
+                        data: ltcPayoutData,
+                        color: '#28a745',
                         fillColor: {
                             linearGradient: { x1: 0, y1: 0, x2: 0, y2: 1 },
                             stops: [
                                 [0, 'rgba(40, 167, 69, 0.3)'],
                                 [1, 'rgba(40, 167, 69, 0.0)']
                             ]
-                        },
-                        lineColor: '#28a745',
-                        lineWidth: 2,
-                        marker: { enabled: false }
+                        }
+                    },
+                    {
+                        name: 'DOGE Payout',
+                        type: 'area',
+                        yAxis: 1,
+                        data: dogePayoutData,
+                        color: '#c3a634',
+                        fillColor: {
+                            linearGradient: { x1: 0, y1: 0, x2: 0, y2: 1 },
+                            stops: [
+                                [0, 'rgba(195, 166, 52, 0.3)'],
+                                [1, 'rgba(195, 166, 52, 0.0)']
+                            ]
+                        }
                     }
-                },
-                series: [{
-                    name: 'Payout',
-                    data: payoutData
+                ] : [{
+                    name: ltcSymbol + ' Payout',
+                    type: 'area',
+                    data: ltcPayoutData,
+                    color: '#28a745',
+                    fillColor: {
+                        linearGradient: { x1: 0, y1: 0, x2: 0, y2: 1 },
+                        stops: [
+                            [0, 'rgba(40, 167, 69, 0.3)'],
+                            [1, 'rgba(40, 167, 69, 0.0)']
+                        ]
+                    }
                 }],
                 credits: { enabled: false }
             });
@@ -1068,6 +1173,10 @@
         // Load currency info
         d3.json('../web/currency_info', function(info) {
             currency_info = info || {};
+            // Update currency symbol throughout the page
+            var symbol = currency_info.symbol || 'COIN';
+            document.getElementById('currency_symbol').textContent = symbol;
+            document.getElementById('payout_label').textContent = symbol + ' on next block';
             loadMinerStats();
         });
         

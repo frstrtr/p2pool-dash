@@ -411,6 +411,108 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     
     web_root.putChild('connected_miners', WebInterface(get_connected_miners))
     
+    # ==== Individual miner stats endpoint ====
+    def get_miner_stats(address):
+        """Get detailed statistics for a specific miner address"""
+        if not address:
+            return {'error': 'No address provided', 'active': False}
+        
+        miner_hash_rates, miner_dead_hash_rates = wb.get_local_rates()
+        
+        # Extract base address and find all matching workers
+        # Supported formats: address.worker, address_worker, address+diff, address/diff, address,dogeaddr
+        def extract_base_address(worker_name):
+            # Handle multiaddress format: LTC_ADDR,DOGE_ADDR.worker
+            base = worker_name.split(',')[0]  # Take LTC address part
+            return base.split('+')[0].split('/')[0].split('.')[0].split('_')[0]
+        
+        # Aggregate stats for all workers belonging to this address
+        hashrate = 0
+        dead_hashrate = 0
+        found_workers = False
+        
+        for worker_name in miner_hash_rates:
+            if extract_base_address(worker_name) == address:
+                found_workers = True
+                hashrate += miner_hash_rates.get(worker_name, 0)
+                dead_hashrate += miner_dead_hash_rates.get(worker_name, 0)
+        
+        if not found_workers:
+            return {'error': 'Miner not found', 'active': False}
+        
+        # Current rates
+        doa_rate = dead_hashrate / hashrate if hashrate > 0 else 0
+        
+        # Current payout - txouts keys are already addresses
+        current_payout = 0
+        try:
+            current_txouts = node.get_current_txouts()
+            # txouts is {address: satoshis}, address is the key we need
+            current_payout = current_txouts.get(address, 0) / 1e8
+        except (ValueError, KeyError, IndexError):
+            pass
+        
+        # Share difficulty - check all workers for this address
+        miner_last_diff = 0
+        for worker_name in wb.last_work_shares.value:
+            if extract_base_address(worker_name) == address:
+                worker_diff = bitcoin_data.target_to_difficulty(wb.last_work_shares.value[worker_name].target)
+                miner_last_diff = max(miner_last_diff, worker_diff)
+        
+        # Time to share
+        attempts_to_share = node.net.PARENT.DUMB_SCRYPT_DIFF if hasattr(node.net.PARENT, 'DUMB_SCRYPT_DIFF') else 1
+        time_to_share = attempts_to_share / hashrate if hashrate > 0 else float('inf')
+        
+        # Get global stats for context
+        global_stale_prop = p2pool_data.get_average_stale_prop(node.tracker, node.best_share_var.value, min(node.tracker.get_height(node.best_share_var.value), 720))
+        
+        # Get merged mining payouts for this address
+        merged_payouts = []
+        try:
+            merged_data = get_current_merged_payouts()
+            if address in merged_data and 'merged' in merged_data[address]:
+                merged_payouts = merged_data[address]['merged']
+        except:
+            pass
+        
+        return dict(
+            address=address,
+            active=True,
+            hashrate=hashrate,
+            dead_hashrate=dead_hashrate,
+            doa_rate=doa_rate,
+            share_difficulty=miner_last_diff,
+            time_to_share=time_to_share,
+            current_payout=current_payout,
+            merged_payouts=merged_payouts,
+            global_stale_prop=global_stale_prop,
+        )
+    
+    web_root.putChild('miner_stats', WebInterface(get_miner_stats))
+    
+    # ==== Individual miner payouts endpoint ====
+    def get_miner_payouts(address):
+        """Get payout history for a specific miner address"""
+        if not address:
+            return {'error': 'No address provided'}
+        
+        # Current payout from txouts - keys are already addresses
+        current_payout = 0
+        try:
+            current_txouts = node.get_current_txouts()
+            current_payout = current_txouts.get(address, 0) / 1e8
+        except (ValueError, KeyError, IndexError):
+            pass
+        
+        return {
+            'address': address,
+            'current_payout': current_payout,
+            'blocks_found': 0,  # TODO: Track per-miner block history
+            'blocks': [],
+        }
+    
+    web_root.putChild('miner_payouts', WebInterface(get_miner_payouts))
+    
     # Block history storage - persisted to disk
     block_history = []
     block_history_path = os.path.join(datadir_path, 'block_history')
@@ -1171,6 +1273,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         'peers': graph.DataStreamDescription(dataview_descriptions, multivalues=True, default_func=graph.make_multivalue_migrator(dict(incoming='incoming_peers', outgoing='outgoing_peers'))),
         'miner_hash_rates': graph.DataStreamDescription(dataview_descriptions, is_gauge=False, multivalues=True, multivalues_keep=10000),
         'miner_dead_hash_rates': graph.DataStreamDescription(dataview_descriptions, is_gauge=False, multivalues=True, multivalues_keep=10000),
+        'merged_current_payouts': graph.DataStreamDescription(dataview_descriptions, multivalues=True),
         'desired_version_rates': graph.DataStreamDescription(dataview_descriptions, multivalues=True,
             multivalue_undefined_means_0=True),
         'traffic_rate': graph.DataStreamDescription(dataview_descriptions, is_gauge=False, multivalues=True),
@@ -1232,6 +1335,20 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         miner_hash_rates, miner_dead_hash_rates = wb.get_local_rates()
         current_txouts_by_address = current_txouts
         hd.datastreams['current_payouts'].add_datum(t, dict((user, current_txouts_by_address[user]*1e-8) for user in miner_hash_rates if user in current_txouts_by_address))
+        
+        # Track merged mining payouts per miner (DOGE)
+        try:
+            merged_data = get_current_merged_payouts()
+            merged_payouts_dict = {}
+            for ltc_addr, data in merged_data.iteritems():
+                if data.get('merged'):
+                    for mp in data['merged']:
+                        # Use LTC address as key for graph correlation
+                        merged_payouts_dict[ltc_addr] = mp.get('amount', 0)
+            if merged_payouts_dict:
+                hd.datastreams['merged_current_payouts'].add_datum(t, merged_payouts_dict)
+        except:
+            pass
         
         hd.datastreams['peers'].add_datum(t, dict(
             incoming=sum(1 for peer in node.p2p_node.peers.itervalues() if peer.incoming),
