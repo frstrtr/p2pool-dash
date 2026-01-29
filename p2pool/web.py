@@ -110,6 +110,29 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             network_hashrate=(diff * 2**32 // node.net.PARENT.BLOCK_PERIOD),
         )
     
+    def get_attempts_to_merged_block(wb):
+        """Get the average attempts needed to find a merged mining block"""
+        try:
+            if hasattr(wb, 'merged_work') and wb.merged_work and hasattr(wb.merged_work, 'value') and wb.merged_work.value:
+                for chain_id, chain in wb.merged_work.value.iteritems():
+                    if 'template' in chain and chain['template']:
+                        template = chain['template']
+                        if 'bits' in template:
+                            # bits is a hex string like "1b10d0e2"
+                            bits_hex = template['bits']
+                            if isinstance(bits_hex, basestring):
+                                bits_int = int(bits_hex, 16)
+                            else:
+                                bits_int = bits_hex
+                            # Convert bits to target
+                            exponent = bits_int >> 24
+                            mantissa = bits_int & 0xffffff
+                            target = mantissa * (1 << (8 * (exponent - 3)))
+                            return bitcoin_data.target_to_average_attempts(target)
+        except Exception as e:
+            pass
+        return None
+    
     def get_local_stats():
         if node.tracker.get_height(node.best_share_var.value) < 10:
             return None
@@ -175,6 +198,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             uptime=time.time() - start_time,
             attempts_to_share=bitcoin_data.target_to_average_attempts(node.tracker.items[node.best_share_var.value].max_target),
             attempts_to_block=bitcoin_data.target_to_average_attempts(node.bitcoind_work.value['bits'].target),
+            attempts_to_merged_block=get_attempts_to_merged_block(wb),
             block_value=node.bitcoind_work.value['subsidy']*1e-8,
             warnings=p2pool_data.get_warnings(node.tracker, node.best_share_var.value, node.net, bitcoind_getinfo_var.value, node.bitcoind_work.value),
             donation_proportion=wb.donation_percentage/100,
@@ -385,6 +409,28 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             return {'error': str(e)}
     
     web_root.putChild('stratum_stats', WebInterface(get_stratum_stats))
+    
+    # ==== Stratum security monitoring endpoint ====
+    def get_stratum_security():
+        """Get stratum security and DDoS detection metrics"""
+        try:
+            from p2pool.bitcoin.stratum import pool_stats
+            return pool_stats.get_security_stats()
+        except Exception as e:
+            return {'error': str(e)}
+    
+    web_root.putChild('stratum_security', WebInterface(get_stratum_security))
+    
+    # ==== Ban stats endpoint ====
+    def get_ban_stats():
+        """Get current ban statistics"""
+        try:
+            from p2pool.bitcoin.stratum import pool_stats
+            return pool_stats.get_ban_stats()
+        except Exception as e:
+            return {'error': str(e)}
+    
+    web_root.putChild('ban_stats', WebInterface(get_ban_stats))
     
     # ==== Connected miners endpoint (all miners currently connected via stratum) ====
     def get_connected_miners():

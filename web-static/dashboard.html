@@ -1031,17 +1031,16 @@
                 <!-- Second Row: Miners Block Value -->
                 <div class="stat-card">
                     <h3><span class="icon">💰</span> Miners Block Value</h3>
-                    <div class="stat-value warning"><span id="block_value_miner">-</span> <small class="symbol-small">LTC</small></div>
-                    <div class="stat-sub">Total Block Reward: <span id="block_value">-</span></div>
-                    <div class="stat-detail">Expected Block: <span id="time_to_block">-</span></div>
+                    <div class="stat-value warning" style="white-space: nowrap;"><span id="block_value_miner">-</span> <small class="symbol-small">LTC</small> <span style="color: #c3a634; font-size: 0.55em; margin-left: 4px;">+<span id="merged_block_value">-</span> DOGE</span></div>
+                    <div class="stat-sub" style="white-space: nowrap;">Expected: <span id="time_to_block">-</span> <span style="color: #c3a634;">|</span> <span style="color: #c3a634;"><span id="time_to_merged_block">-</span></span></div>
                 </div>
                 
                 <!-- Third Row: Node Owner Payout -->
                 <div class="stat-card">
-                    <h3><span class="icon">💎</span> Node Owner Payout</h3>
-                    <div class="stat-value success"><span id="payout_totamount">-</span> <small class="symbol-small">DASH</small></div>
-                    <div class="stat-sub">If block found now</div>
-                    <div class="stat-detail">Expected 24h: <span id="expected_payout_amount">-</span> <span class="symbol-small">DASH</span></div>
+                    <h3><span class="icon">💎</span> Node Fee: <span id="node_fee_percent">-</span>%</h3>
+                    <div class="stat-value success" style="white-space: nowrap;"><span id="payout_totamount">-</span> <small class="symbol-small" id="node_payout_symbol">-</small> <span id="node_merged_payout" style="color: #c3a634; display: none;"> +<span id="node_merged_amount">0</span> <small class="symbol-small" id="node_merged_symbol">DOGE</small></span></div>
+                    <div class="stat-sub">Per block found now</div>
+                    <div class="stat-detail">Expected 24h: <span id="expected_payout_amount">-</span> <span class="symbol-small" id="expected_payout_symbol">-</span></div>
                 </div>
                 
                 <div class="graph-section compact">
@@ -1564,6 +1563,10 @@
                 d3.select('#block_value_payments').text(d3.format('.4f')(local_stats.block_value_payments || 0));
                 d3.select('#block_value_miner').text(d3.format('.4f')(local_stats.block_value_miner || local_stats.block_value));
                 
+                // Node fee percentage
+                var nodeFee = local_stats.fee != null ? local_stats.fee : 0;
+                d3.select('#node_fee_percent').text(d3.format('.1f')(nodeFee));
+                
                 // Warnings
                 var warnings = d3.select('#warnings').selectAll('.warning-item')
                     .data(local_stats.warnings || []);
@@ -1593,6 +1596,21 @@
                     var payout_per_block = (local / global_stats.pool_hash_rate) * local_stats.block_value_miner * (1 - local_stats.donation_proportion);
                     var expected_24h_payout = payout_per_block * blocks_in_24h;
                     d3.select('#expected_payout_amount').text(isFinite(expected_24h_payout) ? d3.format('.4f')(expected_24h_payout) : '0');
+                    
+                    // Fetch merged mining stats
+                    d3.json('../merged_stats', function(merged_stats) {
+                        if (merged_stats && merged_stats.block_value) {
+                            d3.select('#merged_block_value').text(d3.format(',.0f')(merged_stats.block_value));
+                            // Using attempts_to_merged_block if available, otherwise estimate from LTC time
+                            var time_to_merged = local_stats.attempts_to_merged_block ? 
+                                local_stats.attempts_to_merged_block / global_stats.pool_hash_rate :
+                                time_to_block / 1000;  // Rough estimate: DOGE blocks ~1000x more frequent
+                            d3.select('#time_to_merged_block').text(isFinite(time_to_merged) ? format_dt(time_to_merged) : '∞');
+                        } else {
+                            d3.select('#merged_block_value').text('N/A');
+                            d3.select('#time_to_merged_block').text('N/A');
+                        }
+                    });
                 });
             });
         }
@@ -1984,13 +2002,29 @@
                 
                 d3.json('../payout_addrs', function(addrs) {
                     var totamount = 0;
+                    var totMergedAmount = 0;
                     if (addrs) {
                         for (var i in addrs) {
                             var addr = addrs[i];
-                            totamount += (addr in mergedPays ? mergedPays[addr].amount : 0);
+                            if (addr in mergedPays) {
+                                totamount += mergedPays[addr].amount;
+                                // Sum merged payouts for node owner
+                                if (mergedPays[addr].merged) {
+                                    mergedPays[addr].merged.forEach(function(m) {
+                                        totMergedAmount += m.amount || 0;
+                                    });
+                                }
+                            }
                         }
                     }
                     d3.select('#payout_totamount').text(d3.format('.4f')(totamount));
+                    
+                    // Show merged payout if any
+                    if (totMergedAmount > 0 && mergedSymbol) {
+                        d3.select('#node_merged_payout').style('display', 'inline');
+                        d3.select('#node_merged_amount').text(d3.format(',.0f')(totMergedAmount));
+                        d3.select('#node_merged_symbol').text(mergedSymbol);
+                    }
                 });
                 
                 var tbody = d3.select('#payouts tbody');
