@@ -115,22 +115,27 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         try:
             if hasattr(wb, 'merged_work') and wb.merged_work and hasattr(wb.merged_work, 'value') and wb.merged_work.value:
                 for chain_id, chain in wb.merged_work.value.iteritems():
+                    # First try template path (getblocktemplate)
                     if 'template' in chain and chain['template']:
                         template = chain['template']
                         if 'bits' in template:
-                            # bits is a hex string like "1b10d0e2"
                             bits_hex = template['bits']
                             if isinstance(bits_hex, basestring):
                                 bits_int = int(bits_hex, 16)
                             else:
                                 bits_int = bits_hex
-                            # Convert bits to target
                             exponent = bits_int >> 24
                             mantissa = bits_int & 0xffffff
                             target = mantissa * (1 << (8 * (exponent - 3)))
                             return bitcoin_data.target_to_average_attempts(target)
+                    
+                    # Fallback: use target directly from createauxblock/getauxblock
+                    if 'target' in chain and chain['target'] != 'p2pool':
+                        target = chain['target']
+                        if isinstance(target, (int, long)):
+                            return bitcoin_data.target_to_average_attempts(target)
         except Exception as e:
-            pass
+            print "[MERGED] Error getting attempts_to_merged_block: %s" % e
         return None
     
     def get_local_stats():
