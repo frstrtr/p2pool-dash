@@ -1052,6 +1052,8 @@ class NetworkBroadcaster(object):
             score += 10
         
         return max(0, score)
+    
+    def get_health_status(self):
         """Get health status for monitoring/alerting
         
         Returns dict with:
