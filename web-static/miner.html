@@ -438,18 +438,71 @@
                 </div>
             </div>
             
-            <!-- Current Stats -->
+            <!-- Current Stats - BitAxe Style -->
             <div class="stats-grid">
+                <!-- Hashrate Card - Enhanced -->
                 <div class="stat-card">
-                    <h3>Current Hashrate</h3>
+                    <h3>Hashrate</h3>
                     <div class="stat-value success" id="current_hashrate">0 H/s</div>
-                    <div class="stat-label">Real-time mining power</div>
+                    <div style="display: flex; gap: 15px; margin-top: 8px; font-size: 0.75rem;">
+                        <span style="color: var(--danger);">Error <span id="doa_rate_inline">0.00%</span></span>
+                        <span style="color: var(--text-muted);">Expected <span id="expected_hashrate" style="color: var(--success);">-</span></span>
+                    </div>
+                    <div style="display: flex; gap: 10px; margin-top: 10px; padding: 8px; background: rgba(0,0,0,0.2); border-radius: 6px; font-size: 0.8rem;">
+                        <div style="text-align: center; flex: 1;">
+                            <div style="color: var(--text-muted); font-size: 0.7rem;">1m</div>
+                            <div id="hashrate_1m" style="color: var(--success);">-</div>
+                        </div>
+                        <div style="text-align: center; flex: 1;">
+                            <div style="color: var(--text-muted); font-size: 0.7rem;">10m</div>
+                            <div id="hashrate_10m" style="color: var(--success);">-</div>
+                        </div>
+                        <div style="text-align: center; flex: 1;">
+                            <div style="color: var(--text-muted); font-size: 0.7rem;">1h</div>
+                            <div id="hashrate_1h" style="color: var(--success);">-</div>
+                        </div>
+                    </div>
                 </div>
+                
+                <!-- Efficiency Card (DOA-based) -->
                 <div class="stat-card">
-                    <h3>DOA Rate</h3>
-                    <div class="stat-value" id="doa_rate">0%</div>
-                    <div class="stat-label">Dead on arrival shares</div>
+                    <h3>Efficiency</h3>
+                    <div class="stat-value" id="efficiency_value">100%</div>
+                    <div style="margin-top: 8px; font-size: 0.75rem;">
+                        <span style="color: var(--success);"><span id="good_shares_pct">100%</span> good shares</span>
+                    </div>
+                    <div class="stat-label" style="margin-top: 5px;">
+                        DOA Rate: <span id="doa_rate_detail">0%</span>
+                    </div>
                 </div>
+                
+                <!-- Shares Card -->
+                <div class="stat-card">
+                    <h3>Shares</h3>
+                    <div class="stat-value" id="total_shares">0</div>
+                    <div style="margin-top: 8px; font-size: 0.75rem;">
+                        <span style="color: var(--danger);"><span id="dead_shares">0</span> dead (<span id="dead_shares_pct">0%</span>)</span>
+                    </div>
+                    <div class="stat-label">Current window</div>
+                </div>
+                
+                <!-- Best Difficulty Card -->
+                <div class="stat-card">
+                    <h3>Best Difficulty</h3>
+                    <div class="stat-value" id="best_diff_all_time">0</div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">all-time best</div>
+                    <div style="margin-top: 8px; font-size: 0.8rem;">
+                        <span style="color: var(--primary);">(<span id="chance_to_find">0%</span>)</span>
+                        <span class="tooltip" title="Chance to find a Block" style="cursor: help; margin-left: 4px;">ⓘ</span>
+                    </div>
+                    <div style="margin-top: 5px; font-size: 0.75rem; color: var(--text-muted);">
+                        <span id="best_diff_session">0</span> since session start
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Secondary Stats Row -->
+            <div class="stats-grid" style="margin-top: 10px;">
                 <div class="stat-card">
                     <h3>Share Difficulty</h3>
                     <div class="stat-value" id="share_difficulty">0</div>
@@ -593,6 +646,21 @@
             return d3.format('.3r')(h) + ' PH/s';
         }
         
+        function format_difficulty(d) {
+            if (d == null || !isFinite(d) || d <= 0) return '0';
+            if (d < 1000) return d3.format('.2f')(d);
+            d = d / 1000;
+            if (d < 1000) return d3.format('.2f')(d) + ' K';
+            d = d / 1000;
+            if (d < 1000) return d3.format('.2f')(d) + ' M';
+            d = d / 1000;
+            if (d < 1000) return d3.format('.2f')(d) + ' G';
+            d = d / 1000;
+            if (d < 1000) return d3.format('.2f')(d) + ' T';
+            d = d / 1000;
+            return d3.format('.2f')(d) + ' P';
+        }
+        
         function format_dt(dt) {
             if (!isFinite(dt)) return '∞';
             if (dt < 0) return '?';
@@ -638,10 +706,34 @@
                 // Update current stats
                 document.getElementById('current_hashrate').textContent = format_hashrate(stats.hashrate);
                 
+                // DOA Rate - update multiple elements
                 const doaRate = stats.doa_rate * 100;
-                const doaElement = document.getElementById('doa_rate');
-                doaElement.textContent = d3.format('.2f')(doaRate) + '%';
-                doaElement.className = 'stat-value ' + (doaRate > 5 ? 'danger' : (doaRate > 2 ? 'warning' : 'success'));
+                document.getElementById('doa_rate_inline').textContent = d3.format('.2f')(doaRate) + '%';
+                document.getElementById('doa_rate_detail').textContent = d3.format('.2f')(doaRate) + '%';
+                
+                // Efficiency (inverse of DOA rate)
+                var efficiency = 100 - doaRate;
+                var effElement = document.getElementById('efficiency_value');
+                effElement.textContent = d3.format('.2f')(efficiency) + '%';
+                effElement.className = 'stat-value ' + (efficiency > 98 ? 'success' : (efficiency > 95 ? 'warning' : 'danger'));
+                document.getElementById('good_shares_pct').textContent = d3.format('.2f')(efficiency) + '%';
+                
+                // Hashrate periods
+                if (stats.hashrate_periods) {
+                    document.getElementById('hashrate_1m').textContent = format_hashrate(stats.hashrate_periods['1m'] ? stats.hashrate_periods['1m'].hashrate : 0);
+                    document.getElementById('hashrate_10m').textContent = format_hashrate(stats.hashrate_periods['10m'] ? stats.hashrate_periods['10m'].hashrate : 0);
+                    document.getElementById('hashrate_1h').textContent = format_hashrate(stats.hashrate_periods['1h'] ? stats.hashrate_periods['1h'].hashrate : 0);
+                }
+                
+                // Best difficulty
+                if (stats.best_difficulty_all_time !== undefined) {
+                    document.getElementById('best_diff_all_time').textContent = format_difficulty(stats.best_difficulty_all_time);
+                    document.getElementById('best_diff_session').textContent = format_difficulty(stats.best_difficulty_session || 0);
+                    
+                    // Chance to find block
+                    var chance = stats.chance_to_find_block || 0;
+                    document.getElementById('chance_to_find').textContent = d3.format('.6f')(chance) + '%';
+                }
                 
                 document.getElementById('share_difficulty').textContent = d3.format('.3r')(stats.share_difficulty);
                 document.getElementById('current_payout').textContent = d3.format('.4f')(stats.current_payout);

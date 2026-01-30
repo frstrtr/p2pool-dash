@@ -111,6 +111,11 @@ class WorkerBridge(worker_interface.WorkerBridge):
         activity_window = 100 * stratum_share_rate
         self.local_rate_monitor = math.RateMonitor(activity_window)
         self.local_addr_rate_monitor = math.RateMonitor(activity_window)
+        
+        # Track best difficulty per miner (all-time and session)
+        # Format: {user: {'all_time': diff, 'session': diff, 'session_start': timestamp}}
+        self.miner_best_difficulty = {}
+        self.session_start_time = time.time()
 
         self.removed_unstales_var = variable.Variable((0, 0, 0))
         self.removed_doa_unstales_var = variable.Variable(0)
@@ -719,6 +724,59 @@ class WorkerBridge(worker_interface.WorkerBridge):
         for datum in datums:
             addr_hash_rates[datum['pubkey_hash']] = addr_hash_rates.get(datum['pubkey_hash'], 0) + datum['work']/dt
         return addr_hash_rates
+
+    def update_best_difficulty(self, user, difficulty):
+        """Track best difficulty for a miner"""
+        if user not in self.miner_best_difficulty:
+            self.miner_best_difficulty[user] = {
+                'all_time': 0,
+                'session': 0,
+                'session_start': self.session_start_time
+            }
+        
+        if difficulty > self.miner_best_difficulty[user]['all_time']:
+            self.miner_best_difficulty[user]['all_time'] = difficulty
+        if difficulty > self.miner_best_difficulty[user]['session']:
+            self.miner_best_difficulty[user]['session'] = difficulty
+
+    def get_miner_best_difficulty(self, user):
+        """Get best difficulty stats for a miner"""
+        if user not in self.miner_best_difficulty:
+            return {'all_time': 0, 'session': 0, 'session_start': self.session_start_time}
+        return self.miner_best_difficulty[user]
+
+    def get_miner_hashrate_periods(self, user):
+        """Get hashrate for different time periods (1m, 10m, 1h)"""
+        # Access raw datums with timestamps from the rate monitor
+        self.local_rate_monitor._prune()
+        now = time.time()
+        
+        periods = {
+            '1m': {'work': 0, 'dead_work': 0, 'duration': 60},
+            '10m': {'work': 0, 'dead_work': 0, 'duration': 600},
+            '1h': {'work': 0, 'dead_work': 0, 'duration': 3600}
+        }
+        
+        for ts, datum in self.local_rate_monitor.datums:
+            if datum.get('user') != user:
+                continue
+            age = now - ts
+            
+            for period_name, period_data in periods.items():
+                if age <= period_data['duration']:
+                    period_data['work'] += datum['work']
+                    if datum.get('dead', False):
+                        period_data['dead_work'] += datum['work']
+        
+        result = {}
+        for period_name, period_data in periods.items():
+            duration = period_data['duration']
+            result[period_name] = {
+                'hashrate': period_data['work'] / duration if duration > 0 else 0,
+                'dead_hashrate': period_data['dead_work'] / duration if duration > 0 else 0
+            }
+        
+        return result
 
     def get_work(self, user, pubkey_hash, desired_share_target, desired_pseudoshare_target, merged_addresses=None):
         # Debug: Uncomment to trace get_work calls
@@ -1635,6 +1693,10 @@ class WorkerBridge(worker_interface.WorkerBridge):
                 work_value = bitcoin_data.target_to_average_attempts(effective_target)
                 self.pseudoshare_received.happened(work_value, not on_time, user)
                 
+                # Track best difficulty - calculate actual difficulty achieved by this share
+                share_difficulty = bitcoin_data.target_to_difficulty(pow_hash)
+                self.update_best_difficulty(user, share_difficulty)
+                
                 # Update local rate monitor for shares (they are also pseudoshares)
                 # Use effective_target (vardiff target) for work calculation
                 self.local_rate_monitor.add_datum(dict(work=bitcoin_data.target_to_average_attempts(effective_target), dead=not on_time, user=user, share_target=share_info['bits'].target))
@@ -1664,6 +1726,10 @@ class WorkerBridge(worker_interface.WorkerBridge):
                     self.recent_shares_ts_work.pop(0)
                 self.local_rate_monitor.add_datum(dict(work=work_value, dead=not on_time, user=user, share_target=share_info['bits'].target))
                 self.local_addr_rate_monitor.add_datum(dict(work=work_value, pubkey_hash=pubkey_hash))
+                
+                # Track best difficulty for pseudoshares too
+                share_difficulty = bitcoin_data.target_to_difficulty(pow_hash)
+                self.update_best_difficulty(user, share_difficulty)
 
             return on_time
 

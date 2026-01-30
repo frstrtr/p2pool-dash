@@ -521,6 +521,39 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         except:
             pass
         
+        # Get best difficulty for all workers of this address
+        best_diff_all_time = 0
+        best_diff_session = 0
+        session_start = wb.session_start_time
+        for worker_name in miner_hash_rates:
+            if extract_base_address(worker_name) == address:
+                worker_best = wb.get_miner_best_difficulty(worker_name)
+                best_diff_all_time = max(best_diff_all_time, worker_best['all_time'])
+                best_diff_session = max(best_diff_session, worker_best['session'])
+        
+        # Get hashrate periods for all workers of this address
+        hashrate_periods = {'1m': {'hashrate': 0, 'dead_hashrate': 0},
+                          '10m': {'hashrate': 0, 'dead_hashrate': 0},
+                          '1h': {'hashrate': 0, 'dead_hashrate': 0}}
+        for worker_name in miner_hash_rates:
+            if extract_base_address(worker_name) == address:
+                worker_periods = wb.get_miner_hashrate_periods(worker_name)
+                for period in hashrate_periods:
+                    if period in worker_periods:
+                        hashrate_periods[period]['hashrate'] += worker_periods[period]['hashrate']
+                        hashrate_periods[period]['dead_hashrate'] += worker_periods[period]['dead_hashrate']
+        
+        # Calculate network difficulty for "chance to find block"
+        network_difficulty = bitcoin_data.target_to_difficulty(node.bitcoind_work.value['bits'].target)
+        chance_to_find_block = (best_diff_all_time / network_difficulty * 100) if network_difficulty > 0 and best_diff_all_time > 0 else 0
+        
+        # Calculate equivalent hashrate for best difficulty
+        # For Scrypt: hashrate = difficulty * DUMB_SCRYPT_DIFF (2^16 = 65536)
+        # For SHA256: hashrate = difficulty * 2^32
+        dumb_scrypt_diff = node.net.PARENT.DUMB_SCRYPT_DIFF if hasattr(node.net.PARENT, 'DUMB_SCRYPT_DIFF') else 2**32
+        best_diff_hashrate_all_time = best_diff_all_time * dumb_scrypt_diff
+        best_diff_hashrate_session = best_diff_session * dumb_scrypt_diff
+        
         return dict(
             address=address,
             active=True,
@@ -532,6 +565,15 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             current_payout=current_payout,
             merged_payouts=merged_payouts,
             global_stale_prop=global_stale_prop,
+            # New fields for enhanced stats
+            best_difficulty_all_time=best_diff_all_time,
+            best_difficulty_session=best_diff_session,
+            best_diff_hashrate_all_time=best_diff_hashrate_all_time,
+            best_diff_hashrate_session=best_diff_hashrate_session,
+            session_start=session_start,
+            hashrate_periods=hashrate_periods,
+            network_difficulty=network_difficulty,
+            chance_to_find_block=chance_to_find_block,
         )
     
     web_root.putChild('miner_stats', WebInterface(get_miner_stats))
