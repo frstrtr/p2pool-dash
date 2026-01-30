@@ -266,24 +266,29 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         merged_chains = []
         if hasattr(wb, 'merged_work') and wb.merged_work.value:
             for chainid, aux_work in wb.merged_work.value.iteritems():
-                merged_net_name = aux_work.get('merged_net_name', 'Unknown')
-                merged_net_symbol = aux_work.get('merged_net_symbol', 'AUX')
+                # Get merged chain block reward - try coinbasevalue first, then template
+                merged_reward = aux_work.get('coinbasevalue', 0)
+                if merged_reward == 0:
+                    template = aux_work.get('template')
+                    if template and 'coinbasevalue' in template:
+                        merged_reward = template['coinbasevalue']
                 
-                # Get merged chain block reward from template
-                merged_reward = 0
-                template = aux_work.get('template')
-                if template and 'coinbasevalue' in template:
-                    merged_reward = template['coinbasevalue']
-                
-                # Determine the merged chain network for address conversion
-                merged_addr_net = None
+                # Determine network name and symbol based on chainid
                 if chainid == 98:  # Dogecoin
+                    merged_net_name = 'Dogecoin'
+                    merged_net_symbol = 'DOGE'
                     parent_symbol = getattr(node.net.PARENT, 'SYMBOL', '') if hasattr(node.net, 'PARENT') else ''
                     is_testnet = parent_symbol.lower().startswith('t') or 'test' in parent_symbol.lower()
-                    if is_testnet and dogecoin_testnet_net:
+                    if is_testnet:
+                        merged_net_name = 'Dogecoin Testnet'
+                        merged_net_symbol = 'tDOGE'
                         merged_addr_net = dogecoin_testnet_net
-                    elif dogecoin_net:
+                    else:
                         merged_addr_net = dogecoin_net
+                else:
+                    merged_net_name = aux_work.get('merged_net_name', 'Unknown')
+                    merged_net_symbol = aux_work.get('merged_net_symbol', 'AUX')
+                    merged_addr_net = None
                 
                 if merged_addr_net:
                     merged_chains.append({
