@@ -613,6 +613,8 @@ class WorkerBridge(worker_interface.WorkerBridge):
                         merged_proxy=merged_proxy,
                         multiaddress=False,
                         use_submitauxblock=use_submitauxblock,
+                        coinbasevalue=auxblock.get('coinbasevalue', 0),  # Block reward + fees
+                        height=auxblock.get('height', 0),
                     )}))
                     
                     # Log when hash changes (new block template)

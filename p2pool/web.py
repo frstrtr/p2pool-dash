@@ -913,27 +913,26 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         """Get merged mining statistics"""
         blocks = wb.recent_merged_blocks
         
-        # Get current merged block value from network SUBSIDY_FUNC
-        # (createauxblock/getauxblock doesn't include coinbasevalue like getblocktemplate)
+        # Get current merged block value from createauxblock coinbasevalue (includes fees)
         merged_block_value = 0
         merged_symbol = ''
         try:
             if hasattr(wb, 'merged_work') and wb.merged_work and hasattr(wb.merged_work, 'value') and wb.merged_work.value:
                 for chain_id, chain in wb.merged_work.value.iteritems():
-                    # Try template first (getblocktemplate path)
-                    if 'template' in chain and chain['template']:
+                    # Use coinbasevalue from createauxblock (includes subsidy + fees)
+                    if 'coinbasevalue' in chain and chain['coinbasevalue'] > 0:
+                        merged_block_value = chain['coinbasevalue'] / 1e8
+                        if chain_id == 98:  # Dogecoin
+                            merged_symbol = 'DOGE'
+                        else:
+                            merged_symbol = chain.get('symbol', 'AUX')
+                        break
+                    # Fallback: try template (getblocktemplate path)
+                    elif 'template' in chain and chain['template']:
                         template = chain['template']
                         merged_block_value = template.get('coinbasevalue', 0) / 1e8
                         merged_symbol = chain.get('symbol', 'AUX')
                         break
-                    # Fallback: use network's SUBSIDY_FUNC (createauxblock/getauxblock path)
-                    if chain_id == 98:  # Dogecoin
-                        if dogecoin_net and hasattr(dogecoin_net, 'SUBSIDY_FUNC'):
-                            # Get current Dogecoin height from merged work or estimate
-                            height = chain.get('height', 600000)  # Default to post-600k (10k DOGE fixed)
-                            merged_block_value = dogecoin_net.SUBSIDY_FUNC(height) / 1e8
-                            merged_symbol = 'DOGE'
-                            break
         except Exception as e:
             print "[MERGED STATS] Error getting merged work: %s" % e
         
