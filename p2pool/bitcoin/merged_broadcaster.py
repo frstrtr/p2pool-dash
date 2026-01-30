@@ -429,16 +429,21 @@ class MergedMiningBroadcaster(object):
         """Get broadcaster statistics"""
         return {
             'chain': self.chain_name,
+            'chain_name': self.chain_name.capitalize(),  # For dashboard display
             'bootstrapped': self.bootstrapped,
             'total_peers': len(self.peer_db) if self.p2p_net else 0,
+            'active_connections': 0,  # Merged uses RPC, not P2P connections
+            'rpc_endpoints': 1 + len(self.additional_rpc_endpoints),
             'blocks_submitted': self.stats['blocks_submitted'],
+            'blocks_broadcast': self.stats['blocks_submitted'],  # Alias for dashboard
             'rpc_successes': self.stats['rpc_successes'],
             'rpc_failures': self.stats['rpc_failures'],
+            'successful_broadcasts': self.stats['rpc_successes'],  # Alias for dashboard
+            'failed_broadcasts': self.stats['rpc_failures'],  # Alias for dashboard
             'p2p_announcements': self.stats['p2p_announcements'],
             'success_rate': (self.stats['rpc_successes'] / 
                            (self.stats['rpc_successes'] + self.stats['rpc_failures']) * 100
                            if (self.stats['rpc_successes'] + self.stats['rpc_failures']) > 0 else 0),
             'last_block_time': self.stats['last_block_time'],
             'last_block_hash': self.stats['last_block_hash'],
-            'rpc_endpoints': 1 + len(self.additional_rpc_endpoints),
         }

@@ -592,7 +592,7 @@ class NetworkBroadcaster(object):
         
         try:
             # Wait for handshake with timeout
-            yield _with_timeout(factory.getProtocol(), 15)
+            protocol = yield _with_timeout(factory.getProtocol(), 15)
             
             self.connections[addr] = {
                 'factory': factory,
@@ -607,8 +607,25 @@ class NetworkBroadcaster(object):
             if addr in self.connection_failures:
                 del self.connection_failures[addr]
             
+            # Update peer database score
+            if addr in self.peer_db:
+                self.peer_db[addr]['last_seen'] = time.time()
+                self.peer_db[addr]['score'] += 10  # Bonus for successful connection
+            
             self.stats['connection_stats']['successful_connections'] += 1
             print('Broadcaster[%s]: Connected to %s' % (self.chain_name, _safe_addr_str(addr)))
+            
+            # Hook P2P messages for discovery and monitoring
+            self._hook_protocol_messages(addr, protocol)
+            
+            # Request peer addresses for P2P discovery
+            try:
+                if hasattr(protocol, 'send_getaddr') and callable(protocol.send_getaddr):
+                    protocol.send_getaddr()
+                    print('Broadcaster[%s]:   -> Sent getaddr request to %s' % (self.chain_name, _safe_addr_str(addr)))
+            except Exception as e:
+                print('Broadcaster[%s]: Error sending getaddr to %s: %s' % (
+                    self.chain_name, _safe_addr_str(addr), e), file=sys.stderr)
             
             defer.returnValue(True)
             
@@ -623,6 +640,43 @@ class NetworkBroadcaster(object):
                 pass
             
             raise
+    
+    def _hook_protocol_messages(self, addr, protocol):
+        """Hook P2P message handlers for peer discovery and monitoring"""
+        # Hook addr message handler for P2P discovery
+        original_handle_addr = getattr(protocol, 'handle_addr', None)
+        if original_handle_addr:
+            broadcaster = self  # Capture reference for closure
+            
+            def handle_addr_wrapper(addrs):
+                # Convert to our format and pass to handler
+                addr_list = []
+                for addr_data in addrs:
+                    addr_list.append({
+                        'host': addr_data['address'].get('address', ''),
+                        'port': addr_data['address'].get('port', broadcaster.net.P2P_PORT),
+                        'timestamp': addr_data.get('timestamp', time.time())
+                    })
+                broadcaster.handle_addr_message(addr_list)
+                return original_handle_addr(addrs)
+            
+            protocol.handle_addr = handle_addr_wrapper
+        
+        # Hook inv message handler to track block/tx announcements
+        original_handle_inv = getattr(protocol, 'handle_inv', None)
+        if original_handle_inv:
+            broadcaster = self
+            
+            def handle_inv_wrapper(invs):
+                for inv in invs:
+                    inv_type = inv.get('type')
+                    if inv_type == 'block':
+                        broadcaster.handle_block_message(addr, inv.get('hash', 0))
+                    elif inv_type == 'tx':
+                        broadcaster.handle_tx_message(addr)
+                return original_handle_inv(invs)
+            
+            protocol.handle_inv = handle_inv_wrapper
     
     def _disconnect_peer(self, addr):
         """Disconnect from a peer (NEVER disconnect protected peers!)"""

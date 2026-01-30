@@ -1344,7 +1344,7 @@
             <div class="section-header">
                 <h2>🐕 Merged Chain Broadcasters</h2>
                 <div style="display: flex; gap: 10px; align-items: center;">
-                    <span class="badge" id="merged_broadcaster_status_badge" style="background: var(--success);">✓ Active</span>
+                    <span class="badge" id="merged_broadcaster_status_badge" style="background: #6366f1; color: #fff;">⏳ Loading</span>
                 </div>
             </div>
             <div id="merged_broadcaster_container">
@@ -2478,14 +2478,21 @@
                         .style('align-items', 'center')
                         .style('margin-bottom', '10px');
                     
+                    // Determine display name - use chain_name if available, otherwise prettify chain id
+                    var displayName = chainData.chain_name || chainData.chain || chainId;
+                    if (displayName === 'dogecoin' || chainId === '98') {
+                        displayName = 'Dogecoin';
+                    }
+                    
                     headerDiv.append('h3')
                         .style('margin', '0')
                         .style('color', 'var(--text-primary)')
-                        .text('🔗 ' + (chainData.chain_name || chainId.toUpperCase()) + ' (Chain ID: ' + chainId + ')');
+                        .text('🐕 ' + displayName);
                     
                     var statusBadge = headerDiv.append('span')
                         .attr('class', 'badge')
-                        .style('background', chainData.bootstrapped ? 'var(--success)' : 'var(--warning)')
+                        .style('background', chainData.bootstrapped ? 'var(--success)' : '#6366f1')
+                        .style('color', '#fff')
                         .text(chainData.bootstrapped ? '✓ Active' : '⏳ Starting');
                     
                     // Stats grid
@@ -2495,29 +2502,18 @@
                         .style('gap', '10px')
                         .style('margin-bottom', '10px');
                     
-                    // Connections
+                    // RPC Endpoints (merged mining uses RPC, not P2P)
                     var statCard = statsGrid.append('div')
                         .attr('class', 'stat-card')
                         .style('padding', '10px');
-                    statCard.append('div').attr('class', 'stat-label').text('Nodes');
+                    statCard.append('div').attr('class', 'stat-label').text('RPC Endpoints');
                     statCard.append('div')
                         .attr('class', 'stat-value')
                         .style('font-size', '1.2rem')
-                        .text(chainData.active_connections || 0);
-                    statCard.append('div').attr('class', 'stat-sublabel').text('Connected');
+                        .text(chainData.rpc_endpoints || 1);
+                    statCard.append('div').attr('class', 'stat-sublabel').text('via mm-adapter');
                     
-                    // Database size
-                    statCard = statsGrid.append('div')
-                        .attr('class', 'stat-card')
-                        .style('padding', '10px');
-                    statCard.append('div').attr('class', 'stat-label').text('Database');
-                    statCard.append('div')
-                        .attr('class', 'stat-value')
-                        .style('font-size', '1.2rem')
-                        .text(chainData.total_peers || 0);
-                    statCard.append('div').attr('class', 'stat-sublabel').text('Known Nodes');
-                    
-                    // Blocks sent
+                    // Blocks submitted
                     statCard = statsGrid.append('div')
                         .attr('class', 'stat-card')
                         .style('padding', '10px');
@@ -2525,30 +2521,41 @@
                     statCard.append('div')
                         .attr('class', 'stat-value')
                         .style('font-size', '1.2rem')
-                        .text(chainData.blocks_broadcast || 0);
-                    statCard.append('div').attr('class', 'stat-sublabel').text('Broadcast');
+                        .text(chainData.blocks_submitted || chainData.blocks_broadcast || 0);
+                    statCard.append('div').attr('class', 'stat-sublabel').text('Submitted');
                     
-                    // Success rate
-                    var totalBroadcasts = (chainData.successful_broadcasts || 0) + (chainData.failed_broadcasts || 0);
-                    var successRate = totalBroadcasts > 0 ? 
-                        ((chainData.successful_broadcasts / totalBroadcasts) * 100).toFixed(1) : 0;
+                    // RPC Success count
                     statCard = statsGrid.append('div')
                         .attr('class', 'stat-card')
                         .style('padding', '10px');
-                    statCard.append('div').attr('class', 'stat-label').text('Success');
+                    statCard.append('div').attr('class', 'stat-label').text('RPC Calls');
                     statCard.append('div')
                         .attr('class', 'stat-value')
                         .style('font-size', '1.2rem')
-                        .text(successRate + '%');
+                        .text((chainData.rpc_successes || 0) + (chainData.rpc_failures || 0));
+                    statCard.append('div').attr('class', 'stat-sublabel').text('Total');
+                    
+                    // Success rate
+                    var successRate = chainData.success_rate || 0;
+                    statCard = statsGrid.append('div')
+                        .attr('class', 'stat-card')
+                        .style('padding', '10px');
+                    statCard.append('div').attr('class', 'stat-label').text('Success Rate');
+                    statCard.append('div')
+                        .attr('class', 'stat-value')
+                        .style('font-size', '1.2rem')
+                        .style('color', successRate >= 90 ? 'var(--success)' : (successRate >= 50 ? 'var(--warning)' : 'var(--danger)'))
+                        .text(successRate.toFixed(1) + '%');
                     statCard.append('div').attr('class', 'stat-sublabel').text(
-                        (chainData.successful_broadcasts || 0) + ' / ' + (chainData.failed_broadcasts || 0)
+                        (chainData.rpc_successes || 0) + ' ok / ' + (chainData.rpc_failures || 0) + ' fail'
                     );
                 });
                 
                 // Update overall status badge
                 var hasActive = chainsArray.some(function(entry) { return entry[1].bootstrapped; });
                 d3.select('#merged_broadcaster_status_badge')
-                    .style('background', hasActive ? 'var(--success)' : 'var(--warning)')
+                    .style('background', hasActive ? 'var(--success)' : '#6366f1')
+                    .style('color', '#fff')
                     .text(hasActive ? '✓ Active' : '⏳ Starting');
             });
         }
