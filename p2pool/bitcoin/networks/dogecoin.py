@@ -12,6 +12,7 @@ from p2pool.util import pack
 
 P2P_PREFIX = 'c0c0c0c0'.decode('hex')  # Dogecoin mainnet magic bytes
 P2P_PORT = 22556
+P2P_VERSION = 70015  # Dogecoin requires 70003+, use 70015 for best compatibility
 ADDRESS_VERSION = 30  # 0x1e - mainnet addresses start with 'D'
 ADDRESS_P2SH_VERSION = 22  # 0x16 - mainnet P2SH addresses start with '9' or 'A'
 HUMAN_READABLE_PART = 'doge'  # For potential future bech32 support

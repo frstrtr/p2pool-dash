@@ -12,6 +12,7 @@ from p2pool.util import pack
 
 P2P_PREFIX = 'fcc1b7dc'.decode('hex')  # Dogecoin testnet magic bytes
 P2P_PORT = 44556
+P2P_VERSION = 70015  # Dogecoin requires 70003+, use 70015 for best compatibility
 ADDRESS_VERSION = 113  # 0x71 - testnet addresses start with 'n'
 ADDRESS_P2SH_VERSION = 196  # 0xc4 - testnet P2SH addresses start with '2'
 HUMAN_READABLE_PART = 'tdge'  # For potential future bech32 support
