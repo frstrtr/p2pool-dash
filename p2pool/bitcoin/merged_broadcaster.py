@@ -617,14 +617,15 @@ class MergedMiningBroadcaster(object):
     
     def _get_peer_db_path(self):
         """Get path to peer database file"""
+        if not self.datadir_path:
+            return None
         return os.path.join(self.datadir_path, 'merged_broadcast_peers_%s.json' % self.chain_name)
     
     def _load_peer_database(self):
         """Load peer database from disk"""
-        if not self.p2p_net:
-            return
-        
         db_path = self._get_peer_db_path()
+        if not db_path:
+            return
         
         if not os.path.exists(db_path):
             return
@@ -648,10 +649,9 @@ class MergedMiningBroadcaster(object):
     
     def _save_peer_database(self):
         """Save peer database to disk"""
-        if self.stopping or not self.p2p_net:
-            return
-        
         db_path = self._get_peer_db_path()
+        if self.stopping or not db_path:
+            return
         
         try:
             peers_json = {}

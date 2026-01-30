@@ -2,6 +2,7 @@ from __future__ import division
 from collections import deque
 
 import base64
+import os
 import random
 import re
 import sys
@@ -204,10 +205,18 @@ class WorkerBridge(worker_interface.WorkerBridge):
                                             p2p_net = dogecoin_net
                                             p2p_port = 22556 if dogecoin_net else None
                                     
+                                    # Compute datadir_path for peer database storage
+                                    # Use same logic as main.py: default to data/<net_name> or args.datadir/<net_name>
+                                    net_name = self.node.net.NAME
+                                    if hasattr(self.args, 'datadir') and self.args.datadir:
+                                        datadir_path = os.path.join(self.args.datadir, net_name)
+                                    else:
+                                        datadir_path = os.path.join(os.path.dirname(sys.argv[0]), 'data', net_name)
+                                    
                                     merged_broadcaster = MergedMiningBroadcaster(
                                         merged_proxy=merged_proxy,
                                         merged_url=merged_url,
-                                        datadir_path=self.args.datadir if hasattr(self.args, 'datadir') else '.',
+                                        datadir_path=datadir_path,
                                         chain_name=chain_name,
                                         p2p_net=p2p_net,
                                         p2p_port=p2p_port,
@@ -552,10 +561,17 @@ class WorkerBridge(worker_interface.WorkerBridge):
                                     p2p_net = dogecoin_net
                                     p2p_port = 22556 if dogecoin_net else None
                             
+                            # Compute datadir_path for peer database storage
+                            net_name = self.node.net.NAME
+                            if hasattr(self.args, 'datadir') and self.args.datadir:
+                                datadir_path = os.path.join(self.args.datadir, net_name)
+                            else:
+                                datadir_path = os.path.join(os.path.dirname(sys.argv[0]), 'data', net_name)
+                            
                             merged_broadcaster = MergedMiningBroadcaster(
                                 merged_proxy=merged_proxy,
                                 merged_url=merged_url,
-                                datadir_path=self.args.datadir if hasattr(self.args, 'datadir') else '.',
+                                datadir_path=datadir_path,
                                 chain_name=chain_name,
                                 p2p_net=p2p_net,
                                 p2p_port=p2p_port,
