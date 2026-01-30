@@ -753,6 +753,129 @@ class MergedMiningBroadcaster(object):
         except Exception as e:
             print('MergedBroadcaster[%s]: Save error: %s' % (self.chain_name, e), file=sys.stderr)
     
+    def get_health_status(self):
+        """Get health status for dashboard"""
+        issues = []
+        
+        if not self.bootstrapped:
+            issues.append('Not yet bootstrapped')
+        if len(self.connections) == 0:
+            issues.append('No active P2P connections')
+        
+        healthy = len(issues) == 0 and len(self.connections) >= 1
+        
+        return {
+            'healthy': healthy,
+            'active_connections': len(self.connections),
+            'protected_connections': len([c for c in self.connections.values() if c.get('protected')]),
+            'bootstrapped': self.bootstrapped,
+            'issues': issues,
+        }
+    
+    def get_network_status(self):
+        """Get comprehensive network status for web dashboard
+        
+        Returns detailed information suitable for display in web UI,
+        including peer list, connection quality, and broadcast stats.
+        Same format as Litecoin broadcaster for dashboard compatibility.
+        """
+        current_time = time.time()
+        
+        # Build detailed peer list - prioritize connected peers
+        peers_list = []
+        
+        # First add all connected peers
+        for addr, conn in self.connections.items():
+            peer_info = self.peer_db.get(addr, {})
+            peer_detail = {
+                'address': _safe_addr_str(addr),
+                'connected': True,
+                'protected': conn.get('protected', False),
+                'score': peer_info.get('score', 0),
+                'source': peer_info.get('source', 'unknown'),
+                'first_seen': peer_info.get('first_seen', 0),
+                'last_seen': peer_info.get('last_seen', 0),
+                'age_seconds': int(current_time - peer_info.get('first_seen', current_time)),
+                'successful_broadcasts': peer_info.get('successful_broadcasts', 0),
+                'failed_broadcasts': peer_info.get('failed_broadcasts', 0),
+                'blocks_relayed': 0,  # Not tracked for merged mining
+                'txs_relayed': 0,  # Not tracked for merged mining
+                'pings_received': 0,
+                'connected_since': conn.get('connected_at', 0),
+                'connection_age': int(current_time - conn.get('connected_at', current_time)),
+            }
+            peers_list.append(peer_detail)
+        
+        # Then add top non-connected peers from database (limited to 20 total)
+        if len(peers_list) < 20:
+            non_connected = [(addr, info) for addr, info in self.peer_db.items() 
+                            if addr not in self.connections]
+            non_connected.sort(key=lambda x: x[1].get('score', 0), reverse=True)
+            
+            for addr, info in non_connected[:20 - len(peers_list)]:
+                peer_detail = {
+                    'address': _safe_addr_str(addr),
+                    'connected': False,
+                    'protected': info.get('protected', False),
+                    'score': info.get('score', 0),
+                    'source': info.get('source', 'unknown'),
+                    'first_seen': info.get('first_seen', 0),
+                    'last_seen': info.get('last_seen', 0),
+                    'age_seconds': int(current_time - info.get('first_seen', current_time)),
+                    'successful_broadcasts': info.get('successful_broadcasts', 0),
+                    'failed_broadcasts': info.get('failed_broadcasts', 0),
+                    'blocks_relayed': 0,
+                    'txs_relayed': 0,
+                    'pings_received': 0,
+                }
+                peers_list.append(peer_detail)
+        
+        # Sort by: protected first, then connected, then by score
+        peers_list.sort(key=lambda x: (x['protected'], x['connected'], x['score']), reverse=True)
+        
+        # Calculate success rate
+        total_broadcasts = self.stats['rpc_successes'] + self.stats['rpc_failures']
+        if total_broadcasts > 0:
+            success_rate = self.stats['rpc_successes'] / total_broadcasts * 100
+        else:
+            success_rate = 0
+        
+        health = self.get_health_status()
+        
+        return {
+            'enabled': True,
+            'chain': self.chain_name,
+            'chain_name': self.chain_name.capitalize(),  # For dashboard display
+            'health': health,
+            'configuration': {
+                'max_peers': self.max_peers,
+                'min_peers': 1,
+            },
+            'connections': {
+                'total': len(self.connections),
+                'protected': len([c for c in self.connections.values() if c.get('protected')]),
+                'regular': len([c for c in self.connections.values() if not c.get('protected')]),
+            },
+            'peer_database': {
+                'total_peers': len(self.peer_db),
+                'bootstrapped': self.bootstrapped,
+            },
+            'broadcast_stats': {
+                'blocks_sent': self.stats['blocks_submitted'],
+                'total_broadcasts': total_broadcasts,
+                'successful_broadcasts': self.stats['rpc_successes'],
+                'failed_broadcasts': self.stats['rpc_failures'],
+                'success_rate_percent': success_rate,
+                'p2p_broadcasts': self.stats['p2p_broadcasts'],
+                'p2p_successes': self.stats['p2p_successes'],
+                'p2p_failures': self.stats['p2p_failures'],
+            },
+            'connection_stats': {
+                'peers_discovered': self.stats['peers_discovered'],
+            },
+            'peers': peers_list,
+        }
+    
     def get_stats(self):
         """Get broadcaster statistics"""
         return {

@@ -1222,7 +1222,8 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         if hasattr(node, 'merged_broadcasters') and node.merged_broadcasters:
             for chain_id, broadcaster in node.merged_broadcasters.items():
                 try:
-                    result['chains'][chain_id] = broadcaster.get_stats()
+                    # Use get_network_status for full peer list (same format as Litecoin broadcaster)
+                    result['chains'][chain_id] = broadcaster.get_network_status()
                 except Exception as e:
                     result['chains'][chain_id] = {'error': str(e)}
         if not result['chains']:

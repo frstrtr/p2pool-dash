@@ -2482,7 +2482,7 @@
                         .style('align-items', 'center')
                         .style('margin-bottom', '10px');
                     
-                    // Determine display name - use chain_name if available, otherwise prettify chain id
+                    // Determine display name
                     var displayName = chainData.chain_name || chainData.chain || chainId;
                     if (displayName === 'dogecoin' || chainId === '98') {
                         displayName = 'Dogecoin';
@@ -2495,68 +2495,188 @@
                     
                     var statusBadge = headerDiv.append('span')
                         .attr('class', 'badge')
-                        .style('background', chainData.bootstrapped ? 'var(--success)' : '#6366f1')
+                        .style('background', chainData.health && chainData.health.healthy ? 'var(--success)' : '#6366f1')
                         .style('color', '#fff')
-                        .text(chainData.bootstrapped ? '✓ Active' : '⏳ Starting');
+                        .text(chainData.health && chainData.health.healthy ? '✓ Active' : '⏳ Starting');
                     
-                    // Stats grid
+                    // Stats grid - updated to show P2P connections
                     var statsGrid = chainDiv.append('div')
                         .attr('class', 'stats-grid')
                         .style('grid-template-columns', 'repeat(4, 1fr)')
                         .style('gap', '10px')
-                        .style('margin-bottom', '10px');
+                        .style('margin-bottom', '15px');
                     
-                    // RPC Endpoints (merged mining uses RPC, not P2P)
+                    // P2P Connections
                     var statCard = statsGrid.append('div')
                         .attr('class', 'stat-card')
                         .style('padding', '10px');
-                    statCard.append('div').attr('class', 'stat-label').text('RPC Endpoints');
+                    statCard.append('div').attr('class', 'stat-label').text('CONNECTIONS');
+                    var connTotal = chainData.connections ? chainData.connections.total : (chainData.active_connections || 0);
+                    var connMax = chainData.configuration ? chainData.configuration.max_peers : 10;
                     statCard.append('div')
                         .attr('class', 'stat-value')
                         .style('font-size', '1.2rem')
-                        .text(chainData.rpc_endpoints || 1);
-                    statCard.append('div').attr('class', 'stat-sublabel').text('via mm-adapter');
+                        .text(connTotal + ' / ' + connMax);
+                    statCard.append('div').attr('class', 'stat-sublabel').text('Active / Target');
                     
-                    // Blocks submitted
+                    // Peer database
                     statCard = statsGrid.append('div')
                         .attr('class', 'stat-card')
                         .style('padding', '10px');
-                    statCard.append('div').attr('class', 'stat-label').text('Blocks');
+                    statCard.append('div').attr('class', 'stat-label').text('DATABASE');
+                    var dbSize = chainData.peer_database ? chainData.peer_database.total_peers : (chainData.total_peers || 0);
                     statCard.append('div')
                         .attr('class', 'stat-value')
                         .style('font-size', '1.2rem')
-                        .text(chainData.blocks_submitted || chainData.blocks_broadcast || 0);
-                    statCard.append('div').attr('class', 'stat-sublabel').text('Submitted');
+                        .text(dbSize.toLocaleString());
+                    statCard.append('div').attr('class', 'stat-sublabel').text('Total Peers');
                     
-                    // RPC Success count
+                    // Connect Rate (P2P success)
                     statCard = statsGrid.append('div')
                         .attr('class', 'stat-card')
                         .style('padding', '10px');
-                    statCard.append('div').attr('class', 'stat-label').text('RPC Calls');
+                    statCard.append('div').attr('class', 'stat-label').text('P2P');
+                    var p2pSuccess = chainData.broadcast_stats ? chainData.broadcast_stats.p2p_successes : 0;
+                    var p2pFail = chainData.broadcast_stats ? chainData.broadcast_stats.p2p_failures : 0;
+                    var p2pRate = (p2pSuccess + p2pFail) > 0 ? (p2pSuccess / (p2pSuccess + p2pFail) * 100) : 100;
                     statCard.append('div')
                         .attr('class', 'stat-value')
                         .style('font-size', '1.2rem')
-                        .text((chainData.rpc_successes || 0) + (chainData.rpc_failures || 0));
-                    statCard.append('div').attr('class', 'stat-sublabel').text('Total');
+                        .style('color', p2pRate >= 80 ? 'var(--success)' : (p2pRate >= 50 ? 'var(--warning)' : 'var(--danger)'))
+                        .text(p2pRate.toFixed(1) + '%');
+                    statCard.append('div').attr('class', 'stat-sublabel').text('Connect Rate');
                     
-                    // Success rate
-                    var successRate = chainData.success_rate || 0;
+                    // Broadcasts
                     statCard = statsGrid.append('div')
                         .attr('class', 'stat-card')
                         .style('padding', '10px');
-                    statCard.append('div').attr('class', 'stat-label').text('Success Rate');
+                    statCard.append('div').attr('class', 'stat-label').text('BROADCASTS');
+                    var bcastSuccess = chainData.broadcast_stats ? chainData.broadcast_stats.successful_broadcasts : 0;
+                    var bcastFail = chainData.broadcast_stats ? chainData.broadcast_stats.failed_broadcasts : 0;
                     statCard.append('div')
                         .attr('class', 'stat-value')
                         .style('font-size', '1.2rem')
-                        .style('color', successRate >= 90 ? 'var(--success)' : (successRate >= 50 ? 'var(--warning)' : 'var(--danger)'))
-                        .text(successRate.toFixed(1) + '%');
-                    statCard.append('div').attr('class', 'stat-sublabel').text(
-                        (chainData.rpc_successes || 0) + ' ok / ' + (chainData.rpc_failures || 0) + ' fail'
-                    );
+                        .text(bcastSuccess + ' / ' + bcastFail);
+                    statCard.append('div').attr('class', 'stat-sublabel').text('Success / Failed');
+                    
+                    // Peers table
+                    var peers = chainData.peers || [];
+                    if (peers.length > 0) {
+                        var tableDiv = chainDiv.append('div')
+                            .style('overflow-x', 'auto');
+                        
+                        var table = tableDiv.append('table')
+                            .style('width', '100%')
+                            .style('border-collapse', 'collapse')
+                            .style('margin-top', '10px')
+                            .style('font-size', '0.85rem');
+                        
+                        var thead = table.append('thead');
+                        var headerRow = thead.append('tr');
+                        ['ADDRESS', 'SCORE', 'SOURCE', 'SUCCESS', 'SENT', 'LAST SEEN'].forEach(function(h) {
+                            headerRow.append('th')
+                                .style('text-align', 'left')
+                                .style('padding', '8px')
+                                .style('border-bottom', '1px solid var(--border)')
+                                .style('color', 'var(--text-muted)')
+                                .style('font-weight', '500')
+                                .style('font-size', '0.75rem')
+                                .text(h);
+                        });
+                        
+                        var tbody = table.append('tbody');
+                        
+                        // Store peers for this chain for pagination
+                        var peersKey = 'mergedPeers_' + chainId;
+                        window[peersKey] = peers;
+                        window[peersKey + '_display'] = 5;
+                        
+                        function renderMergedPeers() {
+                            tbody.selectAll('tr').remove();
+                            var displayPeers = window[peersKey].slice(0, window[peersKey + '_display']);
+                            
+                            displayPeers.forEach(function(p) {
+                                var tr = tbody.append('tr')
+                                    .style('border-bottom', '1px solid var(--border)');
+                                
+                                // Address with connection status
+                                var addr = p.address;
+                                if (addr.length > 24) addr = addr.substring(0, 20) + '...';
+                                var addrHtml = p.connected ? 
+                                    '<span style="color: var(--success);">●</span> ' + addr :
+                                    '<span style="color: var(--text-muted);">○</span> ' + addr;
+                                if (p.protected) {
+                                    addrHtml += ' <span style="color: var(--success); font-size: 0.7rem;">[PROTECTED]</span>';
+                                }
+                                tr.append('td').style('padding', '8px').html(addrHtml);
+                                
+                                // Score
+                                tr.append('td').style('padding', '8px').text(p.score.toFixed(1));
+                                
+                                // Source
+                                tr.append('td').style('padding', '8px').style('color', 'var(--text-muted)').text(p.source || 'unknown');
+                                
+                                // Success rate
+                                var total = (p.successful_broadcasts || 0) + (p.failed_broadcasts || 0);
+                                var rate = total > 0 ? ((p.successful_broadcasts / total) * 100).toFixed(0) + '%' : '-';
+                                tr.append('td').style('padding', '8px').text(rate);
+                                
+                                // Sent count
+                                tr.append('td').style('padding', '8px').text(
+                                    (p.successful_broadcasts || 0) + ' / ' + (p.failed_broadcasts || 0)
+                                );
+                                
+                                // Last seen
+                                var lastSeen = '-';
+                                if (p.last_seen && p.last_seen > 0) {
+                                    var age = (Date.now() / 1000) - p.last_seen;
+                                    if (age < 60) lastSeen = 'Now';
+                                    else if (age < 3600) lastSeen = Math.floor(age / 60) + 'm ago';
+                                    else if (age < 86400) lastSeen = Math.floor(age / 3600) + 'h ago';
+                                    else lastSeen = Math.floor(age / 86400) + 'd ago';
+                                }
+                                tr.append('td').style('padding', '8px').style('color', 'var(--text-muted)').text(lastSeen);
+                            });
+                            
+                            // Update show more button
+                            var showMoreBtn = d3.select('#merged_peers_show_more_' + chainId);
+                            if (window[peersKey + '_display'] < window[peersKey].length) {
+                                showMoreBtn.style('display', 'block');
+                            } else {
+                                showMoreBtn.style('display', 'none');
+                            }
+                        }
+                        
+                        renderMergedPeers();
+                        
+                        // Show more button
+                        chainDiv.append('button')
+                            .attr('id', 'merged_peers_show_more_' + chainId)
+                            .style('display', peers.length > 5 ? 'block' : 'none')
+                            .style('width', '100%')
+                            .style('padding', '10px')
+                            .style('margin-top', '10px')
+                            .style('background', 'var(--card-bg)')
+                            .style('color', 'var(--text-secondary)')
+                            .style('border', '1px solid var(--border)')
+                            .style('border-radius', '8px')
+                            .style('cursor', 'pointer')
+                            .style('font-size', '14px')
+                            .text('Show 5 more...')
+                            .on('click', function() {
+                                window[peersKey + '_display'] = Math.min(
+                                    window[peersKey + '_display'] + 5,
+                                    window[peersKey].length
+                                );
+                                renderMergedPeers();
+                            });
+                    }
                 });
                 
                 // Update overall status badge
-                var hasActive = chainsArray.some(function(entry) { return entry[1].bootstrapped; });
+                var hasActive = chainsArray.some(function(entry) { 
+                    return entry[1].health && entry[1].health.healthy; 
+                });
                 d3.select('#merged_broadcaster_status_badge')
                     .style('background', hasActive ? 'var(--success)' : '#6366f1')
                     .style('color', '#fff')
