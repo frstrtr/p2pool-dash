@@ -188,21 +188,34 @@ class WorkerBridge(worker_interface.WorkerBridge):
                             # Initialize merged broadcaster for this chain (once)
                             if not broadcaster_initialized and chainid not in self.node.merged_broadcasters:
                                 try:
-                                    # Determine chain name for logging
+                                    # Determine chain name and network for logging/P2P
                                     chain_name = 'dogecoin' if chainid == 98 else 'merged_%d' % chainid
                                     parent_symbol = getattr(self.node.net.PARENT, 'SYMBOL', '') if hasattr(self.node.net, 'PARENT') else ''
-                                    if parent_symbol.lower().startswith('t') or 'test' in parent_symbol.lower():
-                                        chain_name += '_testnet'
+                                    
+                                    # Select correct P2P network for the merged chain
+                                    p2p_net = None
+                                    p2p_port = None
+                                    if chainid == 98:  # Dogecoin
+                                        if parent_symbol.lower().startswith('t') or 'test' in parent_symbol.lower():
+                                            chain_name = 'dogecoin_testnet'
+                                            p2p_net = dogecoin_testnet_net
+                                            p2p_port = 44556 if dogecoin_testnet_net else None
+                                        else:
+                                            p2p_net = dogecoin_net
+                                            p2p_port = 22556 if dogecoin_net else None
                                     
                                     merged_broadcaster = MergedMiningBroadcaster(
                                         merged_proxy=merged_proxy,
                                         merged_url=merged_url,
                                         datadir_path=self.args.datadir if hasattr(self.args, 'datadir') else '.',
                                         chain_name=chain_name,
+                                        p2p_net=p2p_net,
+                                        p2p_port=p2p_port,
                                     )
                                     yield merged_broadcaster.start()
                                     self.node.merged_broadcasters[chainid] = merged_broadcaster
-                                    print 'Merged broadcaster started for chainid %d (%s)' % (chainid, chain_name)
+                                    print 'Merged broadcaster started for chainid %d (%s) P2P=%s' % (
+                                        chainid, chain_name, 'enabled' if p2p_net else 'disabled')
                                 except Exception as e:
                                     print >>sys.stderr, 'Failed to start merged broadcaster: %s' % e
                                 broadcaster_initialized = True
@@ -526,18 +539,31 @@ class WorkerBridge(worker_interface.WorkerBridge):
                         try:
                             chain_name = 'dogecoin' if chainid == 98 else 'merged_%d' % chainid
                             parent_symbol = getattr(self.node.net.PARENT, 'SYMBOL', '') if hasattr(self.node.net, 'PARENT') else ''
-                            if parent_symbol.lower().startswith('t') or 'test' in parent_symbol.lower():
-                                chain_name += '_testnet'
+                            
+                            # Select correct P2P network for the merged chain
+                            p2p_net = None
+                            p2p_port = None
+                            if chainid == 98:  # Dogecoin
+                                if parent_symbol.lower().startswith('t') or 'test' in parent_symbol.lower():
+                                    chain_name = 'dogecoin_testnet'
+                                    p2p_net = dogecoin_testnet_net
+                                    p2p_port = 44556 if dogecoin_testnet_net else None
+                                else:
+                                    p2p_net = dogecoin_net
+                                    p2p_port = 22556 if dogecoin_net else None
                             
                             merged_broadcaster = MergedMiningBroadcaster(
                                 merged_proxy=merged_proxy,
                                 merged_url=merged_url,
                                 datadir_path=self.args.datadir if hasattr(self.args, 'datadir') else '.',
                                 chain_name=chain_name,
+                                p2p_net=p2p_net,
+                                p2p_port=p2p_port,
                             )
                             yield merged_broadcaster.start()
                             self.node.merged_broadcasters[chainid] = merged_broadcaster
-                            print 'Merged broadcaster started for chainid %d (%s)' % (chainid, chain_name)
+                            print 'Merged broadcaster started for chainid %d (%s) P2P=%s' % (
+                                chainid, chain_name, 'enabled' if p2p_net else 'disabled')
                         except Exception as e:
                             print >>sys.stderr, 'Failed to start merged broadcaster: %s' % e
                         broadcaster_initialized = True

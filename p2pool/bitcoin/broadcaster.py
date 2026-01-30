@@ -481,7 +481,7 @@ class NetworkBroadcaster(object):
                     'score': 50,  # Lower initial score than node peers
                     'first_seen': time.time(),
                     'last_seen': timestamp,
-                    'source': 'p2p_discovery',
+                    'source': 'p2p',
                     'protected': False,
                     'successful_broadcasts': 0,
                     'failed_broadcasts': 0,

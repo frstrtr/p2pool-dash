@@ -2393,6 +2393,10 @@
                     
                     tr.append('td').html(function(p) { 
                         var addr = p.address;
+                        // Truncate long addresses (IPv6)
+                        if (addr.length > 24) {
+                            addr = addr.substring(0, 20) + '...';
+                        }
                         if (p.protected) {
                             return addr + ' <span style="color: var(--success); font-size: 0.7rem;">[PROTECTED]</span>';
                         }
