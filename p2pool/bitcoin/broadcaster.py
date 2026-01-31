@@ -133,6 +133,9 @@ class NetworkBroadcaster(object):
         self.base_backoff = 30  # Initial backoff time in seconds
         self.max_backoff = 3600  # Maximum backoff time (1 hour)
         
+        # Discovery control - stop when at capacity
+        self.discovery_enabled = True  # Enable/disable peer discovery
+        
         # Configuration
         self.max_peers = 20  # Total connections including local node
         self.min_peers = 5   # Minimum required for health
@@ -574,6 +577,7 @@ class NetworkBroadcaster(object):
         - Limits concurrent pending connections
         - Uses exponential backoff for failed peers
         - Only attempts a few connections per cycle
+        - Stops discovery when at max_peers capacity
         """
         if self.stopping:
             return
@@ -593,6 +597,22 @@ class NetworkBroadcaster(object):
         # Update last_seen for protected local node (it's always "active")
         if self.local_addr in self.peer_db:
             self.peer_db[self.local_addr]['last_seen'] = current_time
+        
+        current_connections = len(self.connections)
+        
+        # Check if we're at capacity - disable discovery if so
+        if current_connections >= self.max_peers:
+            if self.discovery_enabled:
+                print('Broadcaster[%s]: At capacity (%d peers) - disabling discovery' % (
+                    self.chain_name, current_connections))
+                self.discovery_enabled = False
+            return  # Nothing to do - we're at capacity
+        
+        # Re-enable discovery if we dropped below capacity
+        if not self.discovery_enabled and current_connections < self.max_peers:
+            print('Broadcaster[%s]: Below capacity (%d/%d) - enabling discovery' % (
+                self.chain_name, current_connections, self.max_peers))
+            self.discovery_enabled = True
         
         # Check how many connections we're already attempting
         pending_count = len(self.pending_connections)
@@ -692,14 +712,15 @@ class NetworkBroadcaster(object):
             # Hook P2P messages for discovery and monitoring
             self._hook_protocol_messages(addr, protocol)
             
-            # Request peer addresses for P2P discovery
-            try:
-                if hasattr(protocol, 'send_getaddr') and callable(protocol.send_getaddr):
-                    protocol.send_getaddr()
-                    print('Broadcaster[%s]:   -> Sent getaddr request to %s' % (self.chain_name, _safe_addr_str(addr)))
-            except Exception as e:
-                print('Broadcaster[%s]: Error sending getaddr to %s: %s' % (
-                    self.chain_name, _safe_addr_str(addr), e), file=sys.stderr)
+            # Request peer addresses for P2P discovery (only if discovery is enabled)
+            if self.discovery_enabled:
+                try:
+                    if hasattr(protocol, 'send_getaddr') and callable(protocol.send_getaddr):
+                        protocol.send_getaddr()
+                        print('Broadcaster[%s]:   -> Sent getaddr request to %s' % (self.chain_name, _safe_addr_str(addr)))
+                except Exception as e:
+                    print('Broadcaster[%s]: Error sending getaddr to %s: %s' % (
+                        self.chain_name, _safe_addr_str(addr), e), file=sys.stderr)
             
             defer.returnValue(True)
             

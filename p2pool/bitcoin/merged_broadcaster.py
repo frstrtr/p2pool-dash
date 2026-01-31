@@ -136,6 +136,9 @@ class MergedMiningBroadcaster(object):
         self.max_concurrent_connections = 3  # Max pending connection attempts at once
         self.max_connections_per_cycle = 5  # Max new connections to attempt per maintenance cycle
         
+        # Discovery control - stop when at capacity with good peers
+        self.discovery_enabled = True  # Enable/disable peer discovery (getaddr requests)
+        
         # Valid P2P ports for Dogecoin
         # Dogecoin: 22556 (mainnet), 44556 (testnet), 44557 (testnet4alpha)
         self.valid_ports = [22556, 44556, 44557, 18444]
@@ -370,11 +373,27 @@ class MergedMiningBroadcaster(object):
         - Limits concurrent pending connections
         - Uses exponential backoff for failed peers
         - Only attempts a few connections per cycle
+        - Stops discovery when at max_peers capacity
         """
         if not self.p2p_net or self.stopping:
             return
         
         current_time = time.time()
+        current_connections = len(self.connections)
+        
+        # Check if we're at capacity - disable discovery if so
+        if current_connections >= self.max_peers:
+            if self.discovery_enabled:
+                print('MergedBroadcaster[%s]: At capacity (%d peers) - disabling discovery' % (
+                    self.chain_name, current_connections))
+                self.discovery_enabled = False
+            return  # Nothing to do - we're at capacity
+        
+        # Re-enable discovery if we dropped below capacity
+        if not self.discovery_enabled and current_connections < self.max_peers:
+            print('MergedBroadcaster[%s]: Below capacity (%d/%d) - enabling discovery' % (
+                self.chain_name, current_connections, self.max_peers))
+            self.discovery_enabled = True
         
         # Check how many connections we're already attempting
         pending_count = len(self.pending_connections)
@@ -495,15 +514,16 @@ class MergedMiningBroadcaster(object):
             # Hook P2P messages for discovery
             self._hook_protocol_messages(addr, protocol)
             
-            # Request peer addresses from this peer
-            try:
-                if hasattr(protocol, 'send_getaddr') and callable(protocol.send_getaddr):
-                    protocol.send_getaddr()
-                    print('MergedBroadcaster[%s]:   -> Sent getaddr request to %s' % (
-                        self.chain_name, _safe_addr_str(addr)))
-            except Exception as e:
-                print('MergedBroadcaster[%s]: Error sending getaddr: %s' % (
-                    self.chain_name, e), file=sys.stderr)
+            # Request peer addresses from this peer (only if discovery is enabled)
+            if self.discovery_enabled:
+                try:
+                    if hasattr(protocol, 'send_getaddr') and callable(protocol.send_getaddr):
+                        protocol.send_getaddr()
+                        print('MergedBroadcaster[%s]:   -> Sent getaddr request to %s' % (
+                            self.chain_name, _safe_addr_str(addr)))
+                except Exception as e:
+                    print('MergedBroadcaster[%s]: Error sending getaddr: %s' % (
+                        self.chain_name, e), file=sys.stderr)
             
             defer.returnValue(True)
             
