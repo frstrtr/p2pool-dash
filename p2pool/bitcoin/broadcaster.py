@@ -569,7 +569,6 @@ class NetworkBroadcaster(object):
         """Handle connection failure - record backoff"""
         self._record_connection_failure(addr)
     
-    @defer.inlineCallbacks
     def refresh_connections(self):
         """Maintain connections to the best peers from our database
         

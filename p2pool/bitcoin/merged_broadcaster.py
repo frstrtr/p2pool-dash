@@ -365,7 +365,6 @@ class MergedMiningBroadcaster(object):
             del self.connection_attempts[addr]
         self.pending_connections.discard(addr)
     
-    @defer.inlineCallbacks
     def _connect_to_peers(self):
         """Connect to peers from the database with rate limiting and exponential backoff
         
