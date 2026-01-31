@@ -337,8 +337,14 @@ class MergedMiningBroadcaster(object):
         # Exclude: protected, already connected, and peers coind is connected to
         scored_peers = []
         coind_overlap_count = 0
+        ipv6_skip_count = 0
         
         for addr, peer_info in self.peer_db.items():
+            host, port = addr
+            # Skip IPv6 addresses (they often timeout and waste resources)
+            if ':' in host:
+                ipv6_skip_count += 1
+                continue
             # Skip protected peers (local coind)
             if peer_info.get('protected'):
                 continue

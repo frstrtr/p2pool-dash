@@ -550,8 +550,14 @@ class NetworkBroadcaster(object):
         # Use dynamic scoring that considers success rate, recency, and source
         scored_peers = []
         coind_overlap_count = 0
+        ipv6_skip_count = 0
         
         for addr, info in self.peer_db.items():
+            host, port = addr
+            # Skip IPv6 addresses (they often timeout and waste resources)
+            if ':' in host:
+                ipv6_skip_count += 1
+                continue
             # Skip protected peers (local coind)
             if info.get('protected'):
                 continue
