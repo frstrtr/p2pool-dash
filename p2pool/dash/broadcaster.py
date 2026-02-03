@@ -18,10 +18,41 @@ import sys
 import time
 
 from twisted.internet import defer, reactor
-from twisted.python import log
+from twisted.python import log, failure
 
 from . import data as dash_data, p2p as dash_p2p
 from p2pool.util import deferral
+
+
+def _with_timeout(df, timeout):
+    """Wrap a deferred with a timeout.
+    
+    Returns a new deferred that either:
+    - Succeeds with the original deferred's result if it fires within timeout
+    - Fails with TimeoutError if the timeout expires first
+    """
+    result_df = defer.Deferred()
+    timed_out = [False]  # mutable to allow modification in nested function
+    
+    def on_timeout():
+        timed_out[0] = True
+        if not result_df.called:
+            result_df.errback(failure.Failure(defer.TimeoutError('Connection timeout')))
+    
+    timeout_call = reactor.callLater(timeout, on_timeout)
+    
+    def on_success(result):
+        if not timed_out[0] and not result_df.called:
+            timeout_call.cancel()
+            result_df.callback(result)
+    
+    def on_failure(fail):
+        if not timed_out[0] and not result_df.called:
+            timeout_call.cancel()
+            result_df.errback(fail)
+    
+    df.addCallbacks(on_success, on_failure)
+    return result_df
 
 
 def _safe_addr_str(addr):
@@ -68,10 +99,17 @@ class DashNetworkBroadcaster(object):
         # Track dashd's peer connections (to avoid duplication)
         self.dashd_peers = set()  # Set of (host, port) tuples dashd is connected to
         
-        # Connection tracking for retry logic
+        # Connection tracking for retry logic with exponential backoff
         self.connection_attempts = {}  # (host, port) -> attempt count
-        self.connection_failures = {}  # (host, port) -> last failure time
+        self.connection_failures = {}  # (host, port) -> (last_failure_time, backoff_seconds)
         self.last_dashd_refresh = 0    # Timestamp of last dashd peer refresh
+        
+        # Rate-limited connection management (to prevent CPU saturation)
+        self.pending_connections = set()  # Peers we're currently trying to connect to
+        self.max_concurrent_connections = 3  # Max simultaneous connection attempts
+        self.max_connections_per_cycle = 5  # Max new connections to start per refresh cycle
+        self.base_backoff = 30  # Initial backoff time in seconds
+        self.max_backoff = 3600  # Maximum backoff time (1 hour)
         
         # Discovery control - stop when at capacity
         self.discovery_enabled = True  # Enable/disable peer discovery (getaddr requests)
@@ -79,8 +117,8 @@ class DashNetworkBroadcaster(object):
         # Configuration
         self.max_peers = 20  # Total connections including local dashd
         self.min_peers = 5   # Minimum required for health
-        self.max_connection_attempts = 3  # Max retries per peer before backoff
-        self.connection_timeout = 300  # 5 minutes backoff after max failures
+        self.max_connection_attempts = 10  # Max retries per peer before giving up
+        self.connection_timeout = 300  # Legacy - now using exponential backoff
         self.dashd_refresh_interval = 1800  # 30 minutes between dashd refreshes
         self.bootstrapped = False
         
@@ -202,11 +240,14 @@ class DashNetworkBroadcaster(object):
                     continue
                 
                 # Calculate initial score based on dashd metrics
-                score = 100  # Base score
+                # NOTE: dashd peers get LOWER priority because the coin daemon
+                # will broadcast to these peers itself. P2P discovered peers
+                # provide additional coverage that the daemon won't reach.
+                score = 30  # Low base score - daemon handles these
                 
                 # Prefer outbound connections
                 if not peer.get('inbound', True):
-                    score += 100
+                    score += 50  # Smaller bonus
                 
                 # Prefer low latency
                 ping_ms = peer.get('pingtime', 1.0) * 1000
@@ -249,7 +290,7 @@ class DashNetworkBroadcaster(object):
         print ''
         
         # Start connecting to top peers
-        yield self.refresh_connections()
+        self.refresh_connections()
         defer.returnValue(len(self.peer_db))
     
     @defer.inlineCallbacks
@@ -387,10 +428,12 @@ class DashNetworkBroadcaster(object):
             if addr not in self.peer_db:
                 self.peer_db[addr] = {
                     'addr': addr,
-                    'score': 50,  # Lower initial score than dashd peers
+                    # P2P peers get HIGH priority - they provide unique coverage
+                    # that the coin daemon won't reach (daemon uses its own peers)
+                    'score': 150,  # Higher score - unique propagation paths
                     'first_seen': time.time(),
                     'last_seen': timestamp,
-                    'source': 'p2p_discovery',
+                    'source': 'p2p',
                     'protected': False,
                     'successful_broadcasts': 0,
                     'failed_broadcasts': 0,
@@ -462,51 +505,82 @@ class DashNetworkBroadcaster(object):
                 print 'Broadcaster: TX activity from %s (%d transactions relayed)' % (
                     _safe_addr_str(peer_addr), self.peer_db[peer_addr]['txs_relayed'])
     
-    @defer.inlineCallbacks
+    def _get_backoff_time(self, addr):
+        """Get the time when a peer's backoff expires"""
+        if addr not in self.connection_failures:
+            return 0
+        last_failure, backoff = self.connection_failures[addr]
+        return last_failure + backoff
+    
+    def _record_connection_failure(self, addr):
+        """Record a connection failure with exponential backoff"""
+        if addr in self.connection_failures:
+            last_failure, old_backoff = self.connection_failures[addr]
+            # Exponential backoff: double the delay each time, up to max
+            new_backoff = min(old_backoff * 2, self.max_backoff)
+        else:
+            new_backoff = self.base_backoff
+        
+        self.connection_failures[addr] = (time.time(), new_backoff)
+        attempts = self.connection_attempts.get(addr, 0) + 1
+        self.connection_attempts[addr] = attempts
+        
+        # Remove from pending
+        self.pending_connections.discard(addr)
+    
+    def _record_connection_success(self, addr):
+        """Record a successful connection - reset backoff"""
+        if addr in self.connection_failures:
+            del self.connection_failures[addr]
+        if addr in self.connection_attempts:
+            del self.connection_attempts[addr]
+        self.pending_connections.discard(addr)
+    
+    def _handle_connection_error(self, addr, failure):
+        """Handle connection failure - record backoff"""
+        self._record_connection_failure(addr)
+    
     def refresh_connections(self):
         """Maintain connections to the best peers from our database
         
-        Runs periodically (every 60s) to:
-        1. Check if we need to refresh peer list from dashd (if too many failures)
-        2. Score all known peers
-        3. Disconnect from low-quality peers (EXCEPT local dashd!)
-        4. Connect to high-quality peers we're not connected to with retry logic
+        This is a SYNCHRONOUS function - it only does peer selection and
+        starts non-blocking connections. All async RPC work is done in
+        _adaptive_refresh() which calls this function.
+        
+        Rate-limited and non-blocking connection management:
+        - Limits concurrent pending connections
+        - Uses exponential backoff for failed peers
+        - Only attempts a few connections per cycle
+        - Stops discovery when at max_peers capacity
         """
-        print ''
-        print 'Broadcaster: === PEER REFRESH CYCLE ==='
+        if self.stopping:
+            return
+        
         current_time = time.time()
         
-        # Check if we need to refresh from dashd (emergency fallback)
-        active_connections = len([c for c in self.connections.values() if not c.get('protected')])
-        failed_peers = len([f for f in self.connection_failures.values() if current_time - f < self.connection_timeout])
+        # Verify local dashd connection and update its last_seen
+        if self.local_dashd_addr not in self.connections:
+            print >>sys.stderr, 'Broadcaster: WARNING - Local dashd not in connections!'
+            self.connections[self.local_dashd_addr] = {
+                'factory': self.local_dashd_factory,
+                'connector': None,
+                'connected_at': time.time(),
+                'protected': True
+            }
         
-        should_refresh_dashd = False
-        if active_connections < self.min_peers:
-            print 'Broadcaster: WARNING - Only %d active peers (min: %d)' % (active_connections, self.min_peers)
-            should_refresh_dashd = True
-        
-        if failed_peers > self.max_peers:
-            print 'Broadcaster: WARNING - Too many failed peers (%d in backoff)' % failed_peers
-            should_refresh_dashd = True
-        
-        time_since_last_refresh = current_time - self.last_dashd_refresh
-        if should_refresh_dashd and time_since_last_refresh > 300:  # At least 5 min between emergency refreshes
-            print ''
-            print 'Broadcaster: EMERGENCY DASHD REFRESH TRIGGERED'
-            print '  Reason: Insufficient healthy peers'
-            print '  Active peers: %d / %d' % (active_connections, self.min_peers)
-            print '  Failed peers in backoff: %d' % failed_peers
-            yield self._refresh_peers_from_dashd()
-        elif time_since_last_refresh > self.dashd_refresh_interval:
-            print ''
-            print 'Broadcaster: SCHEDULED DASHD REFRESH (every %ds)' % self.dashd_refresh_interval
-            yield self._refresh_peers_from_dashd()
+        # Update last_seen for protected local node (it's always "active")
+        if self.local_dashd_addr in self.peer_db:
+            self.peer_db[self.local_dashd_addr]['last_seen'] = current_time
         
         # Score all peers
         scored_peers = []
         dashd_overlap_count = 0
         
         for addr, info in self.peer_db.items():
+            host, port = addr
+            # Skip IPv6 addresses (they often timeout and waste resources)
+            if ':' in host:
+                continue
             # CRITICAL: Local dashd always gets maximum score
             if info.get('protected', False):
                 score = 999999
@@ -514,6 +588,18 @@ class DashNetworkBroadcaster(object):
             # Skip peers that dashd is already connected to (avoid duplication)
             elif addr in self.dashd_peers:
                 dashd_overlap_count += 1
+                continue
+            # Skip already connected
+            elif addr in self.connections:
+                continue
+            # Skip already pending connection attempts
+            elif addr in self.pending_connections:
+                continue
+            # Check exponential backoff
+            elif self._get_backoff_time(addr) > current_time:
+                continue
+            # Check max attempt count (give up after too many failures)
+            elif self.connection_attempts.get(addr, 0) >= self.max_connection_attempts:
                 continue
             else:
                 score = self._calculate_peer_score(info, current_time)
@@ -573,100 +659,49 @@ class DashNetworkBroadcaster(object):
             elif conn and conn.get('protected', False):
                 print '  - PRESERVING protected connection to %s (local dashd)' % _safe_addr_str(addr)
         
-        # Connect to new peers with retry/backoff logic
-        to_connect = target_addrs - current_addrs
-        
-        # Filter out peers in backoff period
-        to_connect_filtered = []
-        in_backoff = []
-        for addr in to_connect:
-            # Check if peer is in backoff period
-            if addr in self.connection_failures:
-                time_since_failure = current_time - self.connection_failures[addr]
-                if time_since_failure < self.connection_timeout:
-                    in_backoff.append((addr, int(self.connection_timeout - time_since_failure)))
-                    continue
-                else:
-                    # Backoff expired - clear failure time but keep attempt counter
-                    # This allows retrying (attempt 2/3, then 3/3)
-                    del self.connection_failures[addr]
+        # Rate-limited connection to new peers
+        # Check how many connections we're already attempting
+        pending_count = len(self.pending_connections)
+        if pending_count >= self.max_concurrent_connections:
+            print 'Broadcaster: Already %d pending connections, skipping new attempts' % pending_count
+        else:
+            # How many more connections can we attempt this cycle?
+            available_slots = min(
+                self.max_concurrent_connections - pending_count,
+                self.max_connections_per_cycle,
+                self.max_peers - len(self.connections)
+            )
             
-            # Check if we've exceeded max attempts
-            attempts = self.connection_attempts.get(addr, 0)
-            if attempts >= self.max_connection_attempts:
-                # After max attempts, require longer backoff before reset
-                if addr in self.connection_failures:
-                    time_since_failure = current_time - self.connection_failures[addr]
-                    # After 30 minutes (6x normal backoff), reset and try again
-                    if time_since_failure > self.connection_timeout * 6:
-                        print 'Broadcaster: Peer %s backoff expired after max attempts, resetting counter' % _safe_addr_str(addr)
-                        del self.connection_failures[addr]
-                        self.connection_attempts[addr] = 0
-                    else:
-                        continue
-                else:
-                    # Just hit max attempts - put in backoff
-                    self.connection_failures[addr] = current_time
-                    print 'Broadcaster: Peer %s exceeded max attempts (%d), entering extended backoff (30m)' % (
-                        _safe_addr_str(addr), attempts)
-                continue
+            # Get peers to connect to (already filtered in scored_peers)
+            to_connect = [addr for score, addr, info in scored_peers if addr not in self.connections and not info.get('protected')][:available_slots]
             
-            to_connect_filtered.append(addr)
-        
-        if in_backoff:
-            print 'Broadcaster: %d peers in backoff period:' % len(in_backoff)
-            for addr, remaining in in_backoff[:5]:  # Show first 5
-                print '  - %s (backoff: %ds remaining)' % (_safe_addr_str(addr), remaining)
-            if len(in_backoff) > 5:
-                print '  ... and %d more' % (len(in_backoff) - 5)
-        
-        if to_connect_filtered:
-            print 'Broadcaster: Connecting to %d new high-quality peers:' % len(to_connect_filtered)
-        
-        for addr in to_connect_filtered:
-            attempts = self.connection_attempts.get(addr, 0)
-            print '  + Connecting to %s (attempt %d/%d)' % (
-                _safe_addr_str(addr), attempts + 1, self.max_connection_attempts)
-            self._connect_peer(addr)
-        
-        # Verify local dashd is still connected
-        if self.local_dashd_addr and self.local_dashd_addr not in self.connections:
-            print >>sys.stderr, 'Broadcaster: CRITICAL WARNING - Local dashd connection lost!'
-            print >>sys.stderr, 'Broadcaster: Attempting to re-register local dashd connection...'
-            # Re-register the local dashd connection
-            self.connections[self.local_dashd_addr] = {
-                'factory': self.local_dashd_factory,
-                'connector': None,
-                'connected_at': time.time(),
-                'protected': True
-            }
-        
-        # Log top 5 peers
-        print 'Broadcaster: Top 5 peers by score:'
-        for i, (score, addr, info) in enumerate(target_peers[:5]):
-            protected = ' [PROTECTED]' if info.get('protected') else ''
-            source = info.get('source', 'unknown')
-            success_rate = 0
-            total = info['successful_broadcasts'] + info['failed_broadcasts']
-            if total > 0:
-                success_rate = (info['successful_broadcasts'] * 100.0) / total
+            if to_connect:
+                print 'Broadcaster: Starting %d new connection attempts (max %d concurrent):' % (len(to_connect), self.max_concurrent_connections)
             
-            print '  %d. %s - score=%.1f, source=%s, success=%.1f%%%s' % (
-                i+1, _safe_addr_str(addr), score, source, success_rate, protected)
+            for addr in to_connect:
+                # Mark as pending before starting
+                self.pending_connections.add(addr)
+                # Start connection (non-blocking)
+                self._connect_peer(addr)
         
         print 'Broadcaster: Connection status: %d connected (local dashd: %s)' % (
             len(self.connections),
             'PROTECTED [OK]' if self.local_dashd_addr in self.connections else 'MISSING [!]')
         print 'Broadcaster: === REFRESH COMPLETE ==='
         print ''
-        
-        defer.returnValue(len(self.connections))
     
     def _calculate_peer_score(self, peer_info, current_time):
-        """Calculate quality score for a peer
+        """Calculate dynamic quality score for a peer
+        
+        Scoring factors:
+        - Base score from initial discovery
+        - Success rate bonus (most important for broadcast reliability)
+        - Recency bonus/penalty (prefer active peers)
+        - Source bonus: P2P peers get priority (daemon handles its own peers)
+        - Block relay bonus (peers that relay blocks are well-connected)
         
         Args:
-            peer_info: Peer info dict
+            peer_info: Peer info dict from peer_db
             current_time: Current timestamp
             
         Returns:
@@ -674,24 +709,38 @@ class DashNetworkBroadcaster(object):
         """
         score = peer_info.get('score', 50)
         
-        # Success rate bonus (most important)
-        total = peer_info['successful_broadcasts'] + peer_info['failed_broadcasts']
+        # Success rate bonus (most important for broadcast reliability)
+        total = peer_info.get('successful_broadcasts', 0) + peer_info.get('failed_broadcasts', 0)
         if total > 0:
             success_rate = peer_info['successful_broadcasts'] / float(total)
-            score += success_rate * 100
+            score += success_rate * 100  # Up to +100 for 100% success
         
-        # Recency penalty (haven't seen in a while)
-        age_hours = (current_time - peer_info['last_seen']) / 3600.0
+        # Recency bonus/penalty
+        age_hours = (current_time - peer_info.get('last_seen', current_time)) / 3600.0
         if age_hours > 24:
-            score -= 50  # Very stale
+            score -= 50  # Very stale - haven't heard from in a day
         elif age_hours > 6:
             score -= 20  # Somewhat stale
         elif age_hours < 1:
-            score += 50  # Very fresh
+            score += 50  # Very fresh - recently active
         
-        # Source bonus
-        if peer_info['source'] == 'dashd':
-            score += 30  # Trust dashd's peers more
+        # Source bonus: PRIORITIZE P2P discovered peers
+        # The coin daemon will broadcast to its own peers, so we want
+        # to broadcast to DIFFERENT peers for maximum network coverage
+        source = peer_info.get('source', 'unknown')
+        if source == 'p2p':
+            score += 50  # P2P peers provide unique coverage
+        elif source in ('dashd', 'dashd_refresh'):
+            score -= 20  # Daemon already handles these
+        
+        # Block relay bonus (well-connected peers relay blocks quickly)
+        blocks_relayed = peer_info.get('blocks_relayed', 0)
+        if blocks_relayed > 10:
+            score += 30
+        elif blocks_relayed > 5:
+            score += 20
+        elif blocks_relayed > 0:
+            score += 10
         
         return max(0, score)
     
@@ -699,29 +748,26 @@ class DashNetworkBroadcaster(object):
         """Establish P2P connection to a Dash network peer with retry tracking
         
         Note: Local dashd is already connected via main.py's connect_p2p()
+        Uses non-blocking callbacks with exponential backoff on failure.
         """
         # Don't connect during shutdown
         if self.stopping:
+            self.pending_connections.discard(addr)
             return
             
         # Skip if this is local dashd (already connected)
         if addr == self.local_dashd_addr:
             print 'Broadcaster: Skipping connection to local dashd (already connected)'
+            self.pending_connections.discard(addr)
             return
         
         host, port = addr
         
-        # Skip IPv6 addresses if we keep getting "Network unreachable" errors
-        # This indicates the system doesn't have IPv6 connectivity
-        if ':' in host and addr in self.connection_attempts and self.connection_attempts[addr] >= 2:
-            if addr in self.connection_failures:
-                # If we've tried IPv6 twice and failed, stop trying
-                return
+        # Skip IPv6 addresses (often timeout and waste resources)
+        if ':' in host:
+            self.pending_connections.discard(addr)
+            return
         
-        # Track connection attempt
-        if addr not in self.connection_attempts:
-            self.connection_attempts[addr] = 0
-        self.connection_attempts[addr] += 1
         self.stats['connection_stats']['total_attempts'] += 1
         
         try:
@@ -749,10 +795,8 @@ class DashNetworkBroadcaster(object):
                     _safe_addr_str(addr), connection_time, 
                     current_attempts, self.max_connection_attempts)
                 
-                # Clear failure history on successful connection
-                if addr in self.connection_failures:
-                    del self.connection_failures[addr]
-                self.connection_attempts[addr] = 0  # Reset attempt counter
+                # Record successful connection (resets backoff)
+                self._record_connection_success(addr)
                 self.stats['connection_stats']['successful_connections'] += 1
                 
                 # Update peer database
@@ -848,12 +892,15 @@ class DashNetworkBroadcaster(object):
                     should_log = True  # Always log other errors
                 
                 self.stats['connection_stats']['failed_connections'] += 1
-                self.connection_failures[addr] = time.time()
                 
+                # Record failure with exponential backoff
+                self._record_connection_failure(addr)
+                
+                attempts = self.connection_attempts.get(addr, 1)
                 if should_log:
                     print >>sys.stderr, 'Broadcaster: CONNECTION %s to %s (%.3fs, attempt %d/%d): %s' % (
                         failure_type, _safe_addr_str(addr), connection_time,
-                        self.connection_attempts[addr], self.max_connection_attempts,
+                        attempts, self.max_connection_attempts,
                         error_msg[:100])
                 
                 # Update peer database
@@ -884,7 +931,7 @@ class DashNetworkBroadcaster(object):
         except Exception as e:
             print >>sys.stderr, 'Broadcaster: EXCEPTION connecting to %s: %s' % (_safe_addr_str(addr), e)
             self.stats['connection_stats']['failed_connections'] += 1
-            self.connection_failures[addr] = time.time()
+            self._record_connection_failure(addr)
             if addr in self.connections:
                 del self.connections[addr]
     
@@ -936,7 +983,7 @@ class DashNetworkBroadcaster(object):
         if len(self.connections) < self.min_peers:
             print 'Broadcaster: Insufficient peers (%d < %d), refreshing...' % (
                 len(self.connections), self.min_peers)
-            yield self.refresh_connections()
+            self.refresh_connections()
         
         block_hash = dash_data.hash256(dash_data.block_header_type.pack(block['header']))
         
@@ -970,13 +1017,15 @@ class DashNetworkBroadcaster(object):
         # Update statistics
         for (success, result), addr in zip(results, peer_addrs):
             if addr in self.peer_db:
-                if success:
+                if success and result:
                     self.peer_db[addr]['successful_broadcasts'] += 1
                     self.peer_db[addr]['last_seen'] = time.time()
+                    self.peer_db[addr]['score'] += 10  # Bonus for successful broadcast
                 else:
                     self.peer_db[addr]['failed_broadcasts'] += 1
+                    self.peer_db[addr]['score'] = max(0, self.peer_db[addr]['score'] - 5)
         
-        successes = sum(1 for success, _ in results if success)
+        successes = sum(1 for success, result in results if success and result)
         failures = len(results) - successes
         
         # Update global stats
@@ -989,7 +1038,7 @@ class DashNetworkBroadcaster(object):
         local_dashd_success = None
         if self.local_dashd_addr in peer_addrs:
             idx = peer_addrs.index(self.local_dashd_addr)
-            local_dashd_success = results[idx][0]
+            local_dashd_success = results[idx][0] and results[idx][1]
         
         # Log results
         print ''
@@ -1161,6 +1210,31 @@ class DashNetworkBroadcaster(object):
             'local_dashd_connected': self.local_dashd_addr in self.connections
         }
     
+    def get_stats(self):
+        """Get broadcaster statistics for API/monitoring"""
+        return {
+            'chain': 'dash',
+            'bootstrapped': self.bootstrapped,
+            'total_peers': len(self.peer_db),
+            'active_connections': len(self.connections),
+            'protected_connections': len([c for c in self.connections.values() if c.get('protected')]),
+            'pending_connections': len(self.pending_connections),
+            'discovery_enabled': self.discovery_enabled,
+            'blocks_sent': self.stats['blocks_sent'],
+            'total_broadcasts': self.stats['total_broadcasts'],
+            'successful_broadcasts': self.stats['successful_broadcasts'],
+            'failed_broadcasts': self.stats['failed_broadcasts'],
+            'success_rate': (self.stats['successful_broadcasts'] / self.stats['total_broadcasts'] * 100
+                           if self.stats['total_broadcasts'] > 0 else 0),
+            'connection_stats': self.stats['connection_stats'],
+            'top_peers': sorted(
+                [{'addr': _safe_addr_str(addr), 'score': info['score'], 
+                  'broadcasts': info['successful_broadcasts']}
+                 for addr, info in self.peer_db.items() if not info.get('protected')],
+                key=lambda x: x['score'], reverse=True
+            )[:10]
+        }
+    
     def stop(self):
         """Stop the broadcaster (cleanup)"""
         print 'Broadcaster: Stopping broadcaster...'
@@ -1200,46 +1274,42 @@ class DashNetworkBroadcaster(object):
     
     @defer.inlineCallbacks
     def _adaptive_refresh(self):
-        """Smart refresh - only do expensive operations when needed
+        """Adaptive refresh - only act when needed
         
-        This runs every 5 seconds but only triggers full refresh when:
-        - Connection count drops below minimum
-        - Too many failed connections
-        - Scheduled refresh interval reached
-        - Last refresh was >60s ago and we have capacity
+        This runs every 5 seconds but only triggers action when:
+        - Connection count drops below minimum (emergency)
+        - Scheduled dashd refresh interval reached
+        - We have room for more peers and it's been a while
         
-        This avoids disrupting mining during normal operation.
+        All async RPC work (dashd refresh) happens here.
+        refresh_connections() is synchronous and non-blocking.
         """
-        current_time = time.time()
+        if self.stopping:
+            return
         
-        # Fast health check (no expensive operations)
+        current_time = time.time()
         active_connections = len([c for c in self.connections.values() if not c.get('protected')])
         
-        # Determine if we need full refresh
-        need_refresh = False
-        reason = None
-        
-        # Critical: Below minimum peers
+        # Emergency refresh if too few active peers
         if active_connections < self.min_peers:
-            need_refresh = True
-            reason = 'below_minimum (have=%d, need=%d)' % (active_connections, self.min_peers)
+            time_since_refresh = current_time - self.last_dashd_refresh
+            if time_since_refresh > 60:  # At least 1 min between emergency refreshes
+                print 'Broadcaster: Emergency refresh - only %d active peers' % active_connections
+                yield self._refresh_peers_from_dashd()
+            self.refresh_connections()
         
-        # Check if we have room for more peers and it's been a while
+        # Scheduled dashd refresh (every 30 min)
+        elif (current_time - self.last_dashd_refresh) > self.dashd_refresh_interval:
+            print 'Broadcaster: Scheduled dashd refresh'
+            yield self._refresh_peers_from_dashd()
+            self.refresh_connections()
+        
+        # Periodic maintenance if we have room for more peers
         elif active_connections < self.max_peers:
             time_since_refresh = current_time - getattr(self, '_last_full_refresh', 0)
             if time_since_refresh > 60:  # Only refresh if >60s since last
-                need_refresh = True
-                reason = 'periodic_maintenance (last=%.0fs ago)' % time_since_refresh
-        
-        # Scheduled refresh (every 30 min)
-        elif (current_time - self.last_dashd_refresh) > self.dashd_refresh_interval:
-            need_refresh = True
-            reason = 'scheduled_dashd_refresh'
-        
-        if need_refresh:
-            print 'Broadcaster: Adaptive refresh triggered - %s' % reason
-            self._last_full_refresh = current_time
-            yield self.refresh_connections()
+                self._last_full_refresh = current_time
+                self.refresh_connections()
         # Otherwise, do nothing (no disruption to mining)
     
     def get_network_status(self):
@@ -1278,13 +1348,16 @@ class DashNetworkBroadcaster(object):
         
         # Backoff statistics
         backoff_peers = []
-        for addr, failure_time in self.connection_failures.items():
-            time_since_failure = current_time - failure_time
-            if time_since_failure < self.connection_timeout:
+        for addr, failure_data in self.connection_failures.items():
+            # failure_data is (last_failure_time, backoff_seconds) tuple
+            last_failure_time, backoff_seconds = failure_data
+            backoff_remaining = (last_failure_time + backoff_seconds) - current_time
+            if backoff_remaining > 0:
                 backoff_peers.append({
                     'host': addr[0],
                     'port': addr[1],
-                    'backoff_remaining_seconds': int(self.connection_timeout - time_since_failure),
+                    'backoff_remaining_seconds': int(backoff_remaining),
+                    'backoff_total_seconds': backoff_seconds,
                     'attempts': self.connection_attempts.get(addr, 0)
                 })
         
