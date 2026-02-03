@@ -574,16 +574,20 @@ class DashNetworkBroadcaster(object):
         
         current_connections = len(self.connections)
         
-        # Check if we're at capacity - skip expensive peer scoring if so
-        if current_connections >= self.max_peers:
+        # Check if we're at or near capacity - skip expensive peer scoring if so
+        # Use max_peers - 1 because: 1) local dashd is protected and always counts as 1
+        # 2) connection churn means we're often at N-1 while trying to connect 1 more
+        # 3) scoring 11k+ peers just to connect 1 more is wasteful CPU
+        capacity_threshold = self.max_peers - 1
+        if current_connections >= capacity_threshold:
             if self.discovery_enabled:
-                print 'Broadcaster: At capacity (%d peers) - disabling discovery' % current_connections
+                print 'Broadcaster: At capacity (%d/%d peers) - disabling discovery' % (current_connections, self.max_peers)
                 self.discovery_enabled = False
-            return  # Nothing to do - we're at capacity
+            return  # Nothing to do - we're at/near capacity
         
-        # Re-enable discovery if we dropped below capacity
+        # Re-enable discovery if we dropped below capacity threshold
         if not self.discovery_enabled:
-            print 'Broadcaster: Below capacity (%d/%d) - enabling discovery' % (current_connections, self.max_peers)
+            print 'Broadcaster: Below capacity (%d/%d, threshold %d) - enabling discovery' % (current_connections, self.max_peers, capacity_threshold)
             self.discovery_enabled = True
         
         # Check how many connections we're already attempting
