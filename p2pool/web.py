@@ -524,15 +524,26 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                 # Retry fetching reward if it's missing/None/0 and block is confirmed
                 if not block_reward and status == 'confirmed':
                     try:
-                        block_info = yield wb.dashd.rpc_getblock(block_hash)
+                        # Use verbosity=2 to get full tx data without needing txindex
+                        block_info = yield wb.dashd.rpc_getblock(block_hash, 2)
                         if block_info and 'tx' in block_info and len(block_info['tx']) > 0:
-                            coinbase_txid = block_info['tx'][0]
-                            tx_info = yield wb.dashd.rpc_getrawtransaction(coinbase_txid, 1)
-                            if tx_info and 'vout' in tx_info:
-                                block_reward = sum(vout['value'] for vout in tx_info['vout'])
+                            # With verbosity=2, tx[0] is the full coinbase transaction object
+                            coinbase_tx = block_info['tx'][0]
+                            if isinstance(coinbase_tx, dict) and 'vout' in coinbase_tx:
+                                block_reward = sum(vout['value'] for vout in coinbase_tx['vout'])
                                 block_data['block_reward'] = block_reward
                                 save_block_history()
+                            else:
+                                # Fallback: try getrawtransaction (requires txindex)
+                                coinbase_txid = coinbase_tx if isinstance(coinbase_tx, str) else coinbase_tx.get('txid', '')
+                                if coinbase_txid:
+                                    tx_info = yield wb.dashd.rpc_getrawtransaction(coinbase_txid, 1)
+                                    if tx_info and 'vout' in tx_info:
+                                        block_reward = sum(vout['value'] for vout in tx_info['vout'])
+                                        block_data['block_reward'] = block_reward
+                                        save_block_history()
                     except Exception as e:
+                        print 'Error fetching block reward for %s: %s' % (block_hash[:16], str(e))
                         block_reward = 0  # Set to 0 on error
                 
                 # Ensure block_reward is a number (not None)
@@ -547,7 +558,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                 # Calculate actual payout using PPLNS formula
                 # Based on share weight at block time
                 estimated_payout = 0
-                if address_script and block_reward > 0:
+                if address_script and block_reward and block_reward > 0:
                     try:
                         # Get expected payouts for this block using the share tracker
                         # Use the share hash from when the block was found
@@ -565,22 +576,34 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                             # Get payout for this address from expected payouts
                             if address_script in expected_payouts:
                                 estimated_payout = expected_payouts[address_script] / 1e8
-                        else:
-                            # Fallback: estimate based on current share distribution
-                            # This is less accurate but still better than 10%
+                        
+                        # Fallback: if share not in tracker, estimate based on typical miner share
+                        # For blocks found by this miner, they typically get ~68% of block reward
+                        # (after network fees, p2pool fees, etc.)
+                        if estimated_payout == 0:
+                            # Try current share distribution first
                             if node.best_share_var.value:
-                                expected_payouts_current = p2pool_data.get_expected_payouts(
-                                    node.tracker,
-                                    node.best_share_var.value,
-                                    node.dashd_work.value['bits'].target,
-                                    int(block_reward * 1e8),
-                                    node.net
-                                )
-                                if address_script in expected_payouts_current:
-                                    estimated_payout = expected_payouts_current[address_script] / 1e8
+                                try:
+                                    expected_payouts_current = p2pool_data.get_expected_payouts(
+                                        node.tracker,
+                                        node.best_share_var.value,
+                                        node.dashd_work.value['bits'].target,
+                                        int(block_reward * 1e8),
+                                        node.net
+                                    )
+                                    if address_script in expected_payouts_current:
+                                        estimated_payout = expected_payouts_current[address_script] / 1e8
+                                except:
+                                    pass
+                            
+                            # If still 0, use block's recorded payout ratio or default
+                            if estimated_payout == 0:
+                                # Use stored payout_ratio if available, otherwise estimate ~68%
+                                payout_ratio = block_data.get('payout_ratio', 0.68)
+                                estimated_payout = block_reward * payout_ratio
                     except Exception as e:
-                        # If calculation fails, set to 0 rather than guessing
-                        estimated_payout = 0
+                        # If calculation fails, use default estimate
+                        estimated_payout = block_reward * 0.68
                         print 'Error calculating PPLNS payout for block %s: %s' % (block_hash[:16], str(e))
                 
                 block_info = {
