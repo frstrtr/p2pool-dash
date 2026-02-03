@@ -519,10 +519,10 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                 status = yield get_block_status(block_hash)
                 
                 # Get block reward (may not be available yet)
-                block_reward = block_data.get('block_reward', 0)
+                block_reward = block_data.get('block_reward')
                 
-                # Retry fetching reward if it's missing and block is confirmed
-                if block_reward == 0 and status == 'confirmed':
+                # Retry fetching reward if it's missing/None/0 and block is confirmed
+                if not block_reward and status == 'confirmed':
                     try:
                         block_info = yield wb.dashd.rpc_getblock(block_hash)
                         if block_info and 'tx' in block_info and len(block_info['tx']) > 0:
@@ -533,7 +533,11 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                                 block_data['block_reward'] = block_reward
                                 save_block_history()
                     except Exception as e:
-                        pass  # Keep block_reward as 0
+                        block_reward = 0  # Set to 0 on error
+                
+                # Ensure block_reward is a number (not None)
+                if block_reward is None:
+                    block_reward = 0
                 
                 # Calculate miner's share of the reward
                 # The miner gets their proportional share based on their shares in the window
