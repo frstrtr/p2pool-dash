@@ -430,7 +430,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     web_root.putChild('stratum_stats', WebInterface(get_stratum_stats))
     
     # ==== Individual miner stats endpoint ====
-    def get_miner_stats(address):
+    def get_miner_stats(address=None):
         """Get detailed statistics for a specific miner address"""
         if not address:
             return {'error': 'No address provided'}
@@ -502,7 +502,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     
     # ==== Individual miner payouts endpoint ====
     @defer.inlineCallbacks
-    def get_miner_payouts(address):
+    def get_miner_payouts(address=None):
         """Get payout history for a specific miner address"""
         if not address:
             defer.returnValue({'error': 'No address provided'})
