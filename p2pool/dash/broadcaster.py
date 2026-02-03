@@ -607,12 +607,20 @@ class DashNetworkBroadcaster(object):
         
         # Score all peers (only done when we need to connect to more)
         scored_peers = []
-        dashd_overlap_count = 0
+        
+        # Skip reason counters for detailed logging
+        skip_ipv6 = 0
+        skip_dashd_overlap = 0
+        skip_already_connected = 0
+        skip_pending = 0
+        skip_backoff = 0
+        skip_max_attempts = 0
         
         for addr, info in self.peer_db.items():
             host, port = addr
             # Skip IPv6 addresses (they often timeout and waste resources)
             if ':' in host:
+                skip_ipv6 += 1
                 continue
             # CRITICAL: Local dashd always gets maximum score
             if info.get('protected', False):
@@ -620,26 +628,27 @@ class DashNetworkBroadcaster(object):
                 scored_peers.append((score, addr, info))
             # Skip peers that dashd is already connected to (avoid duplication)
             elif addr in self.dashd_peers:
-                dashd_overlap_count += 1
+                skip_dashd_overlap += 1
                 continue
             # Skip already connected
             elif addr in self.connections:
+                skip_already_connected += 1
                 continue
             # Skip already pending connection attempts
             elif addr in self.pending_connections:
+                skip_pending += 1
                 continue
             # Check exponential backoff
             elif self._get_backoff_time(addr) > current_time:
+                skip_backoff += 1
                 continue
             # Check max attempt count (give up after too many failures)
             elif self.connection_attempts.get(addr, 0) >= self.max_connection_attempts:
+                skip_max_attempts += 1
                 continue
             else:
                 score = self._calculate_peer_score(info, current_time)
                 scored_peers.append((score, addr, info))
-        
-        if dashd_overlap_count > 0:
-            print 'Broadcaster: Excluded %d peers (already connected via dashd)' % dashd_overlap_count
         
         # Sort by score (highest first)
         scored_peers.sort(reverse=True)
@@ -648,10 +657,13 @@ class DashNetworkBroadcaster(object):
         target_peers = scored_peers[:available_slots]
         current_addrs = set(self.connections.keys())
         
+        # Detailed peer selection logging
         print 'Broadcaster: Peer selection:'
         print '  Database size: %d peers' % len(self.peer_db)
-        print '  Current connections: %d' % len(current_addrs)
+        print '  Skipped - IPv6: %d, dashd overlap: %d, connected: %d, pending: %d, backoff: %d, max attempts: %d' % (
+            skip_ipv6, skip_dashd_overlap, skip_already_connected, skip_pending, skip_backoff, skip_max_attempts)
         print '  Candidates scored: %d' % len(scored_peers)
+        print '  Current connections: %d' % len(current_addrs)
         print '  Discovery enabled: %s' % self.discovery_enabled
         
         # Disconnect from peers that dashd is now connected to (avoid duplication)
