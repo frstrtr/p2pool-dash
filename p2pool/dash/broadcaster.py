@@ -572,7 +572,36 @@ class DashNetworkBroadcaster(object):
         if self.local_dashd_addr in self.peer_db:
             self.peer_db[self.local_dashd_addr]['last_seen'] = current_time
         
-        # Score all peers
+        current_connections = len(self.connections)
+        
+        # Check if we're at capacity - skip expensive peer scoring if so
+        if current_connections >= self.max_peers:
+            if self.discovery_enabled:
+                print 'Broadcaster: At capacity (%d peers) - disabling discovery' % current_connections
+                self.discovery_enabled = False
+            return  # Nothing to do - we're at capacity
+        
+        # Re-enable discovery if we dropped below capacity
+        if not self.discovery_enabled:
+            print 'Broadcaster: Below capacity (%d/%d) - enabling discovery' % (current_connections, self.max_peers)
+            self.discovery_enabled = True
+        
+        # Check how many connections we're already attempting
+        pending_count = len(self.pending_connections)
+        if pending_count >= self.max_concurrent_connections:
+            return  # Don't start more connections - already at max concurrent
+        
+        # How many more connections can we attempt this cycle?
+        available_slots = min(
+            self.max_concurrent_connections - pending_count,
+            self.max_connections_per_cycle,
+            self.max_peers - current_connections
+        )
+        
+        if available_slots <= 0:
+            return  # No room for more connections
+        
+        # Score all peers (only done when we need to connect to more)
         scored_peers = []
         dashd_overlap_count = 0
         
@@ -611,76 +640,37 @@ class DashNetworkBroadcaster(object):
         # Sort by score (highest first)
         scored_peers.sort(reverse=True)
         
-        # Select top N peers to connect to
-        target_peers = scored_peers[:self.max_peers]
-        target_addrs = set(addr for _, addr, _ in target_peers)
+        # Select top N peers to connect to (limited by available_slots)
+        target_peers = scored_peers[:available_slots]
         current_addrs = set(self.connections.keys())
-        
-        # Check if we're at capacity - disable discovery if so
-        if len(current_addrs) >= self.max_peers:
-            if self.discovery_enabled:
-                print 'Broadcaster: At capacity (%d peers) - disabling discovery' % len(current_addrs)
-                self.discovery_enabled = False
-        elif not self.discovery_enabled and len(current_addrs) < self.max_peers:
-            print 'Broadcaster: Below capacity (%d/%d) - enabling discovery' % (len(current_addrs), self.max_peers)
-            self.discovery_enabled = True
         
         print 'Broadcaster: Peer selection:'
         print '  Database size: %d peers' % len(self.peer_db)
         print '  Current connections: %d' % len(current_addrs)
-        print '  Target connections: %d' % len(target_addrs)
+        print '  Candidates scored: %d' % len(scored_peers)
         print '  Discovery enabled: %s' % self.discovery_enabled
         
-        # Disconnect from peers not in target list OR that overlap with dashd
-        to_disconnect = current_addrs - target_addrs
-        
-        # Also disconnect from any peers that dashd is now connected to (avoid duplication)
+        # Disconnect from peers that dashd is now connected to (avoid duplication)
         dashd_overlap_disconnect = set()
         for addr in current_addrs:
             conn = self.connections.get(addr)
             if conn and not conn.get('protected', False) and addr in self.dashd_peers:
                 dashd_overlap_disconnect.add(addr)
-                to_disconnect.add(addr)
         
         if dashd_overlap_disconnect:
             print 'Broadcaster: Disconnecting from %d peers (now connected via dashd):' % len(dashd_overlap_disconnect)
             for addr in dashd_overlap_disconnect:
                 print '  - %s (avoiding duplication)' % _safe_addr_str(addr)
-        
-        if to_disconnect:
-            print 'Broadcaster: Disconnecting from %d peers total:' % len(to_disconnect)
-        
-        for addr in to_disconnect:
-            conn = self.connections.get(addr)
-            if conn and not conn.get('protected', False):
-                if addr not in dashd_overlap_disconnect:  # Already logged above
-                    print '  - Disconnecting %s' % _safe_addr_str(addr)
                 self._disconnect_peer(addr)
-            elif conn and conn.get('protected', False):
-                print '  - PRESERVING protected connection to %s (local dashd)' % _safe_addr_str(addr)
         
-        # Rate-limited connection to new peers
-        # Check how many connections we're already attempting
-        pending_count = len(self.pending_connections)
-        if pending_count >= self.max_concurrent_connections:
-            print 'Broadcaster: Already %d pending connections, skipping new attempts' % pending_count
-        else:
-            # How many more connections can we attempt this cycle?
-            available_slots = min(
-                self.max_concurrent_connections - pending_count,
-                self.max_connections_per_cycle,
-                self.max_peers - len(self.connections)
-            )
-            
-            # Get peers to connect to (already filtered in scored_peers)
-            # Also exclude pending connections to prevent duplicate concurrent attempts
-            to_connect = [addr for score, addr, info in scored_peers 
-                         if addr not in self.connections 
-                         and addr not in self.pending_connections
-                         and not info.get('protected')][:available_slots]
-            
-            if to_connect:
-                print 'Broadcaster: Starting %d new connection attempts (max %d concurrent):' % (len(to_connect), self.max_concurrent_connections)
+        # Get peers to connect to from scored list
+        to_connect = [addr for score, addr, info in target_peers 
+                     if addr not in self.connections 
+                     and addr not in self.pending_connections
+                     and not info.get('protected')]
+        
+        if to_connect:
+            print 'Broadcaster: Starting %d new connection attempts (max %d concurrent):' % (len(to_connect), self.max_concurrent_connections)
             
             for addr in to_connect:
                 # Mark as pending before starting
