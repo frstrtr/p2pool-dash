@@ -1570,7 +1570,18 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             accurate_count = len(valid_luck) - approximate_count
             
             if valid_luck:
-                avg_luck = sum(valid_luck) / len(valid_luck)
+                # Use aggregate luck: sum(expected) / sum(actual) * 100
+                # This is the correct statistical measure, unlike arithmetic mean of ratios
+                # which is biased upward by blocks found very quickly
+                valid_blocks_for_agg = [b for b in blocks if b.get('luck') is not None 
+                                        and b.get('expected_time') and b.get('time_to_find')
+                                        and b['expected_time'] > 0 and b['time_to_find'] > 0]
+                if valid_blocks_for_agg:
+                    total_expected = sum(b['expected_time'] for b in valid_blocks_for_agg)
+                    total_actual = sum(b['time_to_find'] for b in valid_blocks_for_agg)
+                    avg_luck = (total_expected / total_actual) * 100 if total_actual > 0 else None
+                else:
+                    avg_luck = sum(valid_luck) / len(valid_luck)
                 # Add summary to first item
                 if blocks:
                     blocks[0]['pool_avg_luck'] = avg_luck
@@ -1621,6 +1632,11 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         luck_values = [b['luck'] for b in valid_blocks]
         times_to_find = [b['time_to_find'] for b in valid_blocks if b.get('time_to_find') and b.get('time_to_find') > 0]
         
+        # Blocks with both expected_time and time_to_find for aggregate luck calculation
+        agg_blocks = [b for b in valid_blocks 
+                      if b.get('expected_time') and b.get('time_to_find')
+                      and b['expected_time'] > 0 and b['time_to_find'] > 0]
+        
         # Current expected time to block
         current_expected_time = None
         try:
@@ -1657,37 +1673,38 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         if current_expected_time and time_since_last and time_since_last > 0:
             current_luck_trend = (current_expected_time / time_since_last) * 100
         
-        # Calculate overall average including current unfinished round
-        # Use aggressive weighted average to prevent sharp spikes after finding a block
+        # Calculate overall aggregate luck including current unfinished round
+        # Aggregate luck = sum(expected_times) / sum(actual_times) * 100
+        # This is the correct statistical measure - arithmetic mean of ratios is biased
+        # because E[expected/actual] != sum(expected)/sum(actual) for exponential distributions
         avg_luck = None
-        if luck_values:
-            if current_luck_trend is not None and len(luck_values) > 0:
-                # Aggressive weight for current round based on time progress
-                # Use logarithmic decay: as round progresses, weight increases
-                # But never more than 0.3 to prevent sharp transitions
-                num_blocks = len(luck_values)
+        if agg_blocks:
+            total_expected = sum(b['expected_time'] for b in agg_blocks)
+            total_actual = sum(b['time_to_find'] for b in agg_blocks)
+            
+            if current_luck_trend is not None and current_expected_time and time_since_last and time_since_last > 0:
+                # Include current unfinished round in aggregate calculation
+                # Weight it by how much time has elapsed relative to expected
+                import math
+                progress_ratio = time_since_last / current_expected_time if current_expected_time > 0 else 0
                 
-                # Calculate weight based on time progress through expected time
-                time_weight = 0.05  # Start very low
-                if current_expected_time and time_since_last and current_expected_time > 0:
-                    progress_ratio = time_since_last / current_expected_time
-                    # Logarithmic increase: weight grows slowly even as time passes
-                    # log10(x+1) gives: 0→0, 10→0.48, 100→0.70, 1000→0.85
-                    import math
-                    time_weight = min(0.25, 0.05 + 0.20 * math.log10(progress_ratio + 1))
+                # Current round contributes proportionally to time elapsed
+                # but capped to avoid dominating when round is very long
+                round_weight = min(1.0, progress_ratio)
                 
-                # Further reduce weight if we have many blocks (more stable history)
-                if num_blocks >= 20:
-                    time_weight *= 0.5  # Max 0.125 weight for 20+ blocks
-                elif num_blocks >= 10:
-                    time_weight *= 0.7  # Max 0.175 weight for 10-19 blocks
+                # Add current round: expected_time is current_expected_time, actual is time_since_last
+                weighted_expected = current_expected_time * round_weight
+                weighted_actual = time_since_last * round_weight
                 
-                # Apply weighted average
-                total = sum(luck_values) + (current_luck_trend * time_weight)
-                avg_luck = total / (num_blocks + time_weight)
+                total_expected_with_round = total_expected + weighted_expected
+                total_actual_with_round = total_actual + weighted_actual
+                
+                avg_luck = (total_expected_with_round / total_actual_with_round) * 100 if total_actual_with_round > 0 else None
             else:
-                # Only use found blocks
-                avg_luck = sum(luck_values) / len(luck_values)
+                avg_luck = (total_expected / total_actual) * 100 if total_actual > 0 else None
+        elif luck_values:
+            # Fallback if no blocks have both expected_time and time_to_find
+            avg_luck = sum(luck_values) / len(luck_values)
         elif current_luck_trend is not None:
             # No found blocks yet, use current round luck
             avg_luck = current_luck_trend
@@ -1698,9 +1715,9 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             luck_available=True,
             luck_approximate=True,  # Note: luck uses current hashrate, not historical
             
-            # Luck statistics
-            avg_luck=avg_luck,  # Overall average including current round
-            average_luck=sum(luck_values) / len(luck_values) if luck_values else None,  # Only found blocks
+            # Luck statistics (aggregate: sum(expected)/sum(actual)*100)
+            avg_luck=avg_luck,  # Overall aggregate including current round
+            average_luck=((sum(b['expected_time'] for b in agg_blocks) / sum(b['time_to_find'] for b in agg_blocks)) * 100) if agg_blocks else None,  # Only found blocks (aggregate)
             min_luck=min(luck_values) if luck_values else None,
             max_luck=max(luck_values) if luck_values else None,
             
@@ -1714,8 +1731,8 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             time_since_last_block=time_since_last,
             current_luck_trend=current_luck_trend,
             
-            # Note about approximation
-            note="Luck values are approximate (calculated using current pool hashrate)",
+            # Note about calculation method
+            note="Luck uses aggregate method: sum(expected_times)/sum(actual_times)*100",
             
             # Individual block luck (newest first)
             blocks=[dict(

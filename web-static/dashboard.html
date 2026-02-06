@@ -1943,21 +1943,36 @@
                             }
                         }
                         
-                        // 7-day luck: include current round if in window
+                        // 7-day luck: use aggregate method (sum of expected / sum of actual * 100)
+                        // Arithmetic mean of ratios is statistically biased for exponential distributions
                         if (sevenDayBlocks.length > 0) {
-                            var sevenDaySum = d3.sum(sevenDayBlocks, function(b) { return b.luck; });
-                            var sevenDayCount = sevenDayBlocks.length;
+                            var sevenDayExpected = d3.sum(sevenDayBlocks, function(b) { return b.expected_time || 0; });
+                            var sevenDayActual = d3.sum(sevenDayBlocks, function(b) { return b.time_to_find || 0; });
                             
-                            // Add current round if recent enough and we have decayed value
-                            if (currentRoundLuck !== null && luckData.time_since_last_block < (7 * 24 * 60 * 60)) {
-                                sevenDaySum += currentRoundLuck;
-                                sevenDayCount += 1;
+                            // Only use blocks that have both expected_time and time_to_find
+                            var validSevenDay = sevenDayBlocks.filter(function(b) { return b.expected_time > 0 && b.time_to_find > 0; });
+                            
+                            if (validSevenDay.length > 0) {
+                                sevenDayExpected = d3.sum(validSevenDay, function(b) { return b.expected_time; });
+                                sevenDayActual = d3.sum(validSevenDay, function(b) { return b.time_to_find; });
+                                
+                                // Add current round if recent enough and we have the data
+                                if (currentRoundLuck !== null && luckData.time_since_last_block < (7 * 24 * 60 * 60) &&
+                                    luckData.current_expected_time > 0 && luckData.time_since_last_block > 0) {
+                                    // Weight current round by progress (capped at 1.0)
+                                    var roundProgress = Math.min(1.0, luckData.time_since_last_block / luckData.current_expected_time);
+                                    sevenDayExpected += luckData.current_expected_time * roundProgress;
+                                    sevenDayActual += luckData.time_since_last_block * roundProgress;
+                                }
+                                
+                                var sevenDayLuck = sevenDayActual > 0 ? (sevenDayExpected / sevenDayActual) * 100 : 0;
+                                d3.select('#luck_seven_days')
+                                    .text('7d: ' + d3.format('.0f')(sevenDayLuck) + '%')
+                                    .style('background', sevenDayLuck >= 100 ? 'var(--success)' : (sevenDayLuck >= 75 ? 'var(--warning)' : 'var(--danger)'));
+                            } else {
+                                // Fallback: no blocks with timing data
+                                d3.select('#luck_seven_days').text('7d: -').style('background', 'var(--primary)');
                             }
-                            
-                            var sevenDayLuck = sevenDaySum / sevenDayCount;
-                            d3.select('#luck_seven_days')
-                                .text('7d: ' + d3.format('.0f')(sevenDayLuck) + '%')
-                                .style('background', sevenDayLuck >= 100 ? 'var(--success)' : (sevenDayLuck >= 75 ? 'var(--warning)' : 'var(--danger)'));
                         } else if (currentRoundLuck !== null) {
                             // Only current round in window
                             d3.select('#luck_seven_days')
@@ -1967,21 +1982,32 @@
                             d3.select('#luck_seven_days').text('7d: -').style('background', 'var(--primary)');
                         }
 
-                        // 30-day luck: include current round if in window
+                        // 30-day luck: use aggregate method (sum of expected / sum of actual * 100)
                         if (thirtyDayBlocks.length > 0) {
-                            var thirtyDaySum = d3.sum(thirtyDayBlocks, function(b) { return b.luck; });
-                            var thirtyDayCount = thirtyDayBlocks.length;
+                            // Only use blocks that have both expected_time and time_to_find
+                            var validThirtyDay = thirtyDayBlocks.filter(function(b) { return b.expected_time > 0 && b.time_to_find > 0; });
                             
-                            // Add current round if recent enough and we have decayed value
-                            if (currentRoundLuck !== null && luckData.time_since_last_block < (30 * 24 * 60 * 60)) {
-                                thirtyDaySum += currentRoundLuck;
-                                thirtyDayCount += 1;
+                            if (validThirtyDay.length > 0) {
+                                var thirtyDayExpected = d3.sum(validThirtyDay, function(b) { return b.expected_time; });
+                                var thirtyDayActual = d3.sum(validThirtyDay, function(b) { return b.time_to_find; });
+                                
+                                // Add current round if recent enough and we have the data
+                                if (currentRoundLuck !== null && luckData.time_since_last_block < (30 * 24 * 60 * 60) &&
+                                    luckData.current_expected_time > 0 && luckData.time_since_last_block > 0) {
+                                    // Weight current round by progress (capped at 1.0)
+                                    var roundProgress30 = Math.min(1.0, luckData.time_since_last_block / luckData.current_expected_time);
+                                    thirtyDayExpected += luckData.current_expected_time * roundProgress30;
+                                    thirtyDayActual += luckData.time_since_last_block * roundProgress30;
+                                }
+                                
+                                var thirtyDayLuck = thirtyDayActual > 0 ? (thirtyDayExpected / thirtyDayActual) * 100 : 0;
+                                d3.select('#luck_thirty_days')
+                                    .text('30d: ' + d3.format('.0f')(thirtyDayLuck) + '%')
+                                    .style('background', thirtyDayLuck >= 100 ? 'var(--success)' : (thirtyDayLuck >= 75 ? 'var(--warning)' : 'var(--danger)'));
+                            } else {
+                                // Fallback: no blocks with timing data
+                                d3.select('#luck_thirty_days').text('30d: -').style('background', 'var(--primary)');
                             }
-                            
-                            var thirtyDayLuck = thirtyDaySum / thirtyDayCount;
-                            d3.select('#luck_thirty_days')
-                                .text('30d: ' + d3.format('.0f')(thirtyDayLuck) + '%')
-                                .style('background', thirtyDayLuck >= 100 ? 'var(--success)' : (thirtyDayLuck >= 75 ? 'var(--warning)' : 'var(--danger)'));
                         } else if (currentRoundLuck !== null) {
                             // Only current round in window
                             d3.select('#luck_thirty_days')
