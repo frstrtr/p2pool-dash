@@ -1139,6 +1139,10 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         # Add all actual blocks in window
         result.extend(blocks_in_window)
         
+        # Add current difficulty at end (before interpolation so it's included)
+        if current_diff:
+            result.append({'ts': now, 'network_diff': current_diff})
+        
         # Add interpolated points to fill gaps if needed
         # If we have very few points, add some intermediate samples
         if len(result) < 10:
@@ -1150,19 +1154,35 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                 'year': 26,
             }.get(period, 12)
             
-            fill_diff = blocks_in_window[-1]['network_diff'] if blocks_in_window else (
-                current_diff if current_diff else start_diff)
+            # Sort current results to interpolate between actual data points
+            result.sort(key=lambda x: x['ts'])
             
             time_step = period_seconds / float(num_fill)
             for i in range(1, num_fill):
                 fill_time = min_time + (i * time_step)
                 # Only add if we don't already have a point near this time
                 if not any(abs(r['ts'] - fill_time) < time_step / 2 for r in result):
+                    # Linear interpolation between surrounding known points
+                    prev_point = None
+                    next_point = None
+                    for r in result:
+                        if r['ts'] <= fill_time:
+                            prev_point = r
+                        elif next_point is None:
+                            next_point = r
+                    
+                    if prev_point and next_point and next_point['ts'] > prev_point['ts']:
+                        # Linearly interpolate difficulty
+                        frac = (fill_time - prev_point['ts']) / (next_point['ts'] - prev_point['ts'])
+                        fill_diff = prev_point['network_diff'] + frac * (next_point['network_diff'] - prev_point['network_diff'])
+                    elif prev_point:
+                        fill_diff = prev_point['network_diff']
+                    elif next_point:
+                        fill_diff = next_point['network_diff']
+                    else:
+                        fill_diff = current_diff if current_diff else start_diff
+                    
                     result.append({'ts': fill_time, 'network_diff': fill_diff})
-        
-        # Add current difficulty at end
-        if current_diff:
-            result.append({'ts': now, 'network_diff': current_diff})
         
         # Sort by timestamp
         result.sort(key=lambda x: x['ts'])
