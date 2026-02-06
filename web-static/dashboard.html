@@ -2598,7 +2598,8 @@
         // Configure Highcharts global options
         Highcharts.setOptions({
             global: { useUTC: false },
-            lang: { thousandsSep: ',' }
+            lang: { thousandsSep: ',' },
+            accessibility: { enabled: false }
         });
 
         var hashrateChart = null;
@@ -3010,6 +3011,16 @@
                 return {x: point.x, y: transformLuck(point.y)};
             });
             
+            // Sort all data arrays by timestamp to avoid Highcharts warning #15
+            hashrate.sort(function(a, b) { return a[0] - b[0]; });
+            doarate.sort(function(a, b) { return a[0] - b[0]; });
+            minerCount.sort(function(a, b) { return a[0] - b[0]; });
+            uniqueMinerCount.sort(function(a, b) { return a[0] - b[0]; });
+            connectedCount.sort(function(a, b) { return a[0] - b[0]; });
+            netDiffData.sort(function(a, b) { return a[0] - b[0]; });
+            blockMarkers.sort(function(a, b) { return a.x - b.x; });
+            luckTrendData.sort(function(a, b) { return a.x - b.x; });
+
             // Debug: log processed results
             console.log('Compact - blockMarkers:', blockMarkers.length, 'luckTrendData:', luckTrendData.length, 'minTime:', new Date(minTime), 'maxTime:', new Date(maxTime));
             if (blocks.length > 0) {
@@ -3687,6 +3698,16 @@
                 return {x: point.x, y: transformLuckFS(point.y)};
             });
             
+            // Sort all data arrays by timestamp to avoid Highcharts warning #15
+            hashrate.sort(function(a, b) { return a[0] - b[0]; });
+            doarate.sort(function(a, b) { return a[0] - b[0]; });
+            minerCount.sort(function(a, b) { return a[0] - b[0]; });
+            uniqueMinerCount.sort(function(a, b) { return a[0] - b[0]; });
+            connectedCount.sort(function(a, b) { return a[0] - b[0]; });
+            netDiffData.sort(function(a, b) { return a[0] - b[0]; });
+            blockMarkers.sort(function(a, b) { return a.x - b.x; });
+            luckTrendData.sort(function(a, b) { return a.x - b.x; });
+
             // Update fullscreen stats
             var current = values[values.length - 1] || 0;
             var sum = values.reduce(function(a, b) { return a + b; }, 0);

@@ -337,10 +337,11 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
         node.tracker.removed.watch(lambda share: ss.forget_share(share.hash))
         node.tracker.verified.removed.watch(lambda share: ss.forget_verified_share(share.hash))
         
-        # Create archive directory for old shares
+        # Create archive directory for old shares (unless archiving is disabled)
         archive_dir = os.path.join(datadir_path, 'share_archive')
-        if not os.path.exists(archive_dir):
-            os.makedirs(archive_dir)
+        if not args.disable_share_archive:
+            if not os.path.exists(archive_dir):
+                os.makedirs(archive_dir)
         
         # Migration backup directory (one-time use)
         migration_backup_dir = os.path.join(datadir_path, 'pre_archival_backup')
@@ -448,7 +449,11 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
                 return False
         
         def archive_old_shares(reason='periodic'):
-            """Archive old shares to file and remove from storage"""
+            """Archive old shares to file and remove from storage.
+            
+            When --disable-share-archive is set, old shares are still removed
+            from storage but NOT written to archive text files (saves disk space).
+            """
             import time
             
             current_height = node.tracker.get_height(node.best_share_var.value) if node.best_share_var.value else 0
@@ -468,6 +473,16 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
             
             if not shares_to_archive:
                 return 0
+            
+            archived_count = len(shares_to_archive)
+            
+            if args.disable_share_archive:
+                # Just forget old shares from storage without writing archive files
+                for share_hash in shares_to_archive:
+                    ss.forget_share(share_hash)
+                if archived_count > 0:
+                    print 'Pruned %d old shares from storage (%s) [archive disabled]' % (archived_count, reason)
+                return archived_count
             
             # Create archive file with timestamp
             archive_filename = os.path.join(archive_dir, 'shares_%d.txt' % int(time.time()))
@@ -620,14 +635,20 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
         # STARTUP OPTIMIZATION: Archive old shares immediately
         # This prevents keeping orphaned/old shares in memory that will be archived anyway
         print 'Checking for old shares to archive on startup...'
+        if args.disable_share_archive:
+            print '  Share archiving disabled (--disable-share-archive), old shares will be pruned without writing archive files'
         current_height = node.tracker.get_height(node.best_share_var.value) if node.best_share_var.value else 0
         if current_height > 2*net.CHAIN_LENGTH:
-            # ONE-TIME MIGRATION BACKUP: Create backup before first archival
-            create_migration_backup()
+            # ONE-TIME MIGRATION BACKUP: Create backup before first archival (skip if archiving disabled)
+            if not args.disable_share_archive:
+                create_migration_backup()
             
             archived = archive_old_shares('startup cleanup')
             if archived > 0:
-                print 'Startup optimization: archived %d old shares' % archived
+                if args.disable_share_archive:
+                    print 'Startup optimization: pruned %d old shares (no archive files written)' % archived
+                else:
+                    print 'Startup optimization: archived %d old shares' % archived
                 print 'Note: Shares removed from disk storage (pickle files will be cleaned by periodic saves)'
                 print 'Note: Shares remain in memory until naturally pruned by clean_tracker()'
                 
@@ -1160,6 +1181,9 @@ def run():
     parser.add_argument('--compact-on-shutdown',
         help='compact share storage on graceful shutdown (removes archived shares, saves disk space)',
         action='store_true', default=False, dest='compact_on_shutdown')
+    parser.add_argument('--disable-share-archive',
+        help='disable archiving old shares to text files (saves disk space on production nodes)',
+        action='store_true', default=False, dest='disable_share_archive')
     
     dashd_group.add_argument(metavar='DASHD_RPCUSERPASS',
         help='dashd RPC interface username, then password, space-separated (only one being provided will cause the username to default to being empty, and none will cause P2Pool to read them from dash.conf)',

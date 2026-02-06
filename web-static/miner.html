@@ -823,8 +823,13 @@
                 }
             }
             
+            // Sort data arrays by timestamp to avoid Highcharts warning #15
+            hashrateData.sort(function(a, b) { return a[0] - b[0]; });
+            doaData.sort(function(a, b) { return a[0] - b[0]; });
+
             // Render combined hashrate & DOA chart
             Highcharts.chart('combined_chart', {
+                accessibility: { enabled: false },
                 chart: {
                     type: 'line',
                     backgroundColor: 'transparent',
@@ -1000,7 +1005,11 @@
                 }
             }
             
+            // Sort payout data by timestamp to avoid Highcharts warning #15
+            payoutData.sort(function(a, b) { return a[0] - b[0]; });
+
             Highcharts.chart('payout_chart', {
+                accessibility: { enabled: false },
                 chart: {
                     type: 'area',
                     backgroundColor: 'transparent',
