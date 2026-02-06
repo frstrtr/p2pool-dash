@@ -2361,6 +2361,42 @@
         var fullscreenChart = null;
         var seriesVisibility = { good: true, doa: true, blocks: true, workers: false, miners: true, connected: true, lucktrend: true, netdiff: false };
         
+        // Right Y-axis configuration: which axes exist and which series control their visibility
+        // yAxis[1] = Luck (lucktrend), yAxis[2] = Miners (workers/miners/connected), yAxis[3] = Net Diff (netdiff)
+        var RIGHT_AXIS_WIDTH = 45;  // px per visible right Y-axis
+        var RIGHT_AXIS_BASE = 10;   // base right margin when no right axes visible
+        
+        function getVisibleRightAxes() {
+            // Returns array of yAxis indices that should be visible based on series visibility
+            var axes = [];
+            if (seriesVisibility.lucktrend) axes.push(1);
+            if (seriesVisibility.workers || seriesVisibility.miners || seriesVisibility.connected) axes.push(2);
+            if (seriesVisibility.netdiff) axes.push(3);
+            return axes;
+        }
+        
+        function updateChartRightMargin(chart) {
+            if (!chart) return;
+            var visibleAxes = getVisibleRightAxes();
+            var marginRight = RIGHT_AXIS_BASE + visibleAxes.length * RIGHT_AXIS_WIDTH;
+            
+            // Update axis offsets: each visible right axis gets its own slot
+            for (var axIdx = 1; axIdx <= 3; axIdx++) {
+                if (!chart.yAxis[axIdx]) continue;
+                var slotIndex = visibleAxes.indexOf(axIdx);
+                var isVisible = slotIndex >= 0;
+                var offset = isVisible ? slotIndex * RIGHT_AXIS_WIDTH : 0;
+                chart.yAxis[axIdx].update({
+                    labels: {
+                        enabled: isVisible,
+                        x: offset + 5
+                    }
+                }, false);  // Don't redraw yet
+            }
+            
+            chart.update({ chart: { marginRight: marginRight } }, true);  // Redraw once
+        }
+
         function toggleSeries(seriesName, element) {
             seriesVisibility[seriesName] = !seriesVisibility[seriesName];
             
@@ -2384,11 +2420,9 @@
                     hashrateChart.series[seriesIndex].hide();
                 }
                 
-                // Toggle 100% guideline and Y-axis labels for luck trend
+                // Toggle 100% guideline for luck trend
                 if (seriesName === 'lucktrend' && hashrateChart.yAxis[1]) {
-                    // Update Y-axis with plotLine visibility and labels
                     hashrateChart.yAxis[1].update({
-                        labels: { enabled: seriesVisibility[seriesName] },
                         plotLines: seriesVisibility[seriesName] ? [{
                             value: 100,
                             color: '#ffc107',
@@ -2396,8 +2430,11 @@
                             width: 2,
                             label: { text: '100%', style: { color: '#ffc107', fontSize: '9px' }, align: 'right' }
                         }] : []
-                    });
+                    }, false);
                 }
+                
+                // Dynamically adjust right margin and axis offsets
+                updateChartRightMargin(hashrateChart);
             }
             
             if (fullscreenChart && fullscreenChart.series[seriesIndex]) {
@@ -2407,11 +2444,9 @@
                     fullscreenChart.series[seriesIndex].hide();
                 }
                 
-                // Toggle 100% guideline and Y-axis labels for luck trend
+                // Toggle 100% guideline for luck trend
                 if (seriesName === 'lucktrend' && fullscreenChart.yAxis[1]) {
-                    // Update Y-axis with plotLine visibility and labels
                     fullscreenChart.yAxis[1].update({
-                        labels: { enabled: seriesVisibility[seriesName] },
                         plotLines: seriesVisibility[seriesName] ? [{
                             value: 100,
                             color: '#ffc107',
@@ -2420,8 +2455,11 @@
                             zIndex: 3,
                             label: { text: '100%', style: { color: '#ffc107', fontSize: '11px' }, align: 'right' }
                         }] : []
-                    });
+                    }, false);
                 }
+                
+                // Dynamically adjust right margin and axis offsets
+                updateChartRightMargin(fullscreenChart);
             }
         }
         
@@ -3064,14 +3102,14 @@
                     spacingBottom: 0,
                     spacingLeft: 0,
                     marginTop: 15,
-                    marginRight: 85,
+                    marginRight: 10,
                     marginBottom: 28,
                     marginLeft: 80,
                     panning: { enabled: true, type: 'x' },
                     panKey: 'shift',
                     zoomType: 'x',
                     events: {
-                        load: function() { drawDiffRatioBars(this); },
+                        load: function() { drawDiffRatioBars(this); updateChartRightMargin(this); },
                         redraw: function() { drawDiffRatioBars(this); }
                     }
                 },
@@ -3081,7 +3119,7 @@
                     type: 'datetime',
                     lineColor: '#3a3a5a',
                     tickColor: '#3a3a5a',
-                    labels: { 
+                    labels: {
                         style: { color: '#e0e0e0', fontSize: '10px' }
                     },
                     gridLineColor: '#2a2a4a',
@@ -3718,14 +3756,14 @@
                     backgroundColor: 'transparent',
                     style: { fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif' },
                     marginTop: 20,
-                    marginRight: 90,
+                    marginRight: 10,
                     marginBottom: 90,  // Increased to accommodate legend without overlapping X-axis
                     marginLeft: 80,
                     panning: { enabled: true, type: 'x' },
                     panKey: 'shift',
                     zoomType: 'x',
                     events: {
-                        load: function() { drawDiffRatioBars(this); },
+                        load: function() { drawDiffRatioBars(this); updateChartRightMargin(this); },
                         redraw: function() { drawDiffRatioBars(this); }
                     }
                 },
