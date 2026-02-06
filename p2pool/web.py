@@ -973,6 +973,80 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     # Record initial sample
     record_net_diff_sample()
     
+    def backfill_net_diff_from_sharechain():
+        """Backfill network difficulty samples from sharechain on startup.
+        
+        Shares are created every ~30s and each has the network difficulty in its header.
+        This fills gaps when the node was offline. We detect difficulty changes between
+        consecutive shares to identify network block boundaries (~2.5 min).
+        """
+        if not node.best_share_var.value:
+            return
+        
+        try:
+            height = node.tracker.get_height(node.best_share_var.value)
+            if height < 2:
+                return
+            
+            # Determine the latest timestamp we already have
+            latest_existing_ts = net_diff_samples[-1]['ts'] if net_diff_samples else 0
+            
+            # Collect difficulty transitions from sharechain
+            new_samples = []
+            prev_diff = None
+            
+            for s in node.tracker.get_chain(node.best_share_var.value, min(height, node.net.CHAIN_LENGTH)):
+                diff = bitcoin_data.target_to_difficulty(s.header['bits'].target)
+                
+                if prev_diff is not None and abs(diff - prev_diff) > 0.01:
+                    # Difficulty changed — this share marks a network block boundary
+                    if s.timestamp > latest_existing_ts:
+                        new_samples.append({
+                            'ts': s.timestamp,
+                            'difficulty': diff,
+                        })
+                elif prev_diff is None:
+                    # First share — record its difficulty
+                    if s.timestamp > latest_existing_ts:
+                        new_samples.append({
+                            'ts': s.timestamp,
+                            'difficulty': diff,
+                        })
+                
+                prev_diff = diff
+            
+            if new_samples:
+                # Reverse since sharechain iterates newest-first
+                new_samples.reverse()
+                
+                # Merge with existing samples
+                net_diff_samples.extend(new_samples)
+                net_diff_samples.sort(key=lambda x: x['ts'])
+                
+                # Deduplicate close timestamps (within 30s)
+                if len(net_diff_samples) > 1:
+                    deduped = [net_diff_samples[0]]
+                    for s in net_diff_samples[1:]:
+                        if abs(s['ts'] - deduped[-1]['ts']) > 30:
+                            deduped.append(s)
+                    net_diff_samples[:] = deduped
+                
+                # Prune
+                if len(net_diff_samples) > MAX_NET_DIFF_SAMPLES:
+                    net_diff_samples[:] = net_diff_samples[-MAX_NET_DIFF_SAMPLES:]
+                
+                save_net_diff_samples()
+                print 'Backfilled %d net diff samples from sharechain (total: %d)' % (
+                    len(new_samples), len(net_diff_samples))
+            else:
+                print 'No new net diff samples to backfill from sharechain'
+                
+        except Exception as e:
+            log.err(e, 'Error backfilling net diff from sharechain:')
+    
+    # Backfill on startup after sharechain is loaded
+    reactor.callLater(30, backfill_net_diff_from_sharechain)
+    
     def get_time_weighted_average_difficulty(start_ts, end_ts):
         """Calculate time-weighted average network difficulty between two timestamps.
         
