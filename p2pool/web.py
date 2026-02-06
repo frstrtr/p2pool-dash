@@ -895,6 +895,148 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     web_root.putChild('block_history', WebInterface(lambda: block_history))
     
     # ==========================================================================
+    # Network difficulty sampling - recorded on every new blockchain block
+    # Since Dash uses DGW (Dark Gravity Wave), difficulty changes every block (~2.5 min).
+    # We capture the exact difficulty from each block template received from dashd.
+    # Format: {'samples': [{'ts': timestamp, 'difficulty': diff, 'height': block_height}, ...]}
+    # ==========================================================================
+    
+    net_diff_samples_file = os.path.join(datadir_path, 'net_diff_samples.json')
+    net_diff_samples = []
+    MAX_NET_DIFF_SAMPLES = 20000  # ~35 days at one sample per ~2.5 min block
+    
+    # Load existing net diff samples
+    if os.path.exists(net_diff_samples_file):
+        try:
+            with open(net_diff_samples_file, 'rb') as f:
+                data = json.loads(f.read())
+                net_diff_samples = data.get('samples', [])
+            print 'Loaded %d network difficulty samples' % len(net_diff_samples)
+        except Exception as e:
+            log.err(e, 'Error loading net diff samples:')
+            net_diff_samples = []
+    
+    def save_net_diff_samples():
+        """Save network difficulty samples to disk."""
+        try:
+            with open(net_diff_samples_file + '.new', 'wb') as f:
+                f.write(json.dumps({'samples': net_diff_samples}))
+            try:
+                os.rename(net_diff_samples_file + '.new', net_diff_samples_file)
+            except:
+                os.remove(net_diff_samples_file)
+                os.rename(net_diff_samples_file + '.new', net_diff_samples_file)
+        except Exception as e:
+            log.err(e, 'Error saving net diff samples:')
+    
+    net_diff_state = {'last_previous_block': None}
+    
+    def record_net_diff_sample():
+        """Record network difficulty from new block template. Called on dashd_work change."""
+        try:
+            work = wb.current_work.value
+            if not work or 'bits' not in work:
+                return
+            
+            previous_block = work.get('previous_block')
+            
+            # Only record if we have a new block (different previous_block)
+            if previous_block == net_diff_state['last_previous_block']:
+                return
+            net_diff_state['last_previous_block'] = previous_block
+            
+            difficulty = bitcoin_data.target_to_difficulty(work['bits'].target)
+            height = work.get('height')
+            
+            sample = {
+                'ts': time.time(),
+                'difficulty': difficulty,
+            }
+            if height is not None:
+                sample['height'] = height
+            
+            net_diff_samples.append(sample)
+            
+            # Prune old samples
+            if len(net_diff_samples) > MAX_NET_DIFF_SAMPLES:
+                net_diff_samples[:] = net_diff_samples[-MAX_NET_DIFF_SAMPLES:]
+            
+            # Save every 10 samples (~25 minutes)
+            if len(net_diff_samples) % 10 == 0:
+                save_net_diff_samples()
+                
+        except Exception as e:
+            log.err(e, 'Error recording net diff sample:')
+    
+    # Watch for new block templates from dashd
+    wb.current_work.changed.watch(lambda _: record_net_diff_sample())
+    # Record initial sample
+    record_net_diff_sample()
+    
+    def get_time_weighted_average_difficulty(start_ts, end_ts):
+        """Calculate time-weighted average network difficulty between two timestamps.
+        
+        Uses actual difficulty samples recorded from each blockchain block.
+        Returns (avg_difficulty, sample_count) or (None, 0) if insufficient data.
+        """
+        if not net_diff_samples or start_ts >= end_ts:
+            return None, 0
+        
+        # Find samples relevant to the time range
+        # Include the last sample before start_ts for interpolation
+        relevant_samples = []
+        prior_sample = None
+        for s in net_diff_samples:
+            if s['ts'] < start_ts:
+                prior_sample = s
+            elif s['ts'] <= end_ts:
+                relevant_samples.append(s)
+        
+        if not relevant_samples and not prior_sample:
+            return None, 0
+        
+        # Build full list with prior sample if available
+        if prior_sample:
+            relevant_samples.insert(0, prior_sample)
+        
+        if len(relevant_samples) < 1:
+            return None, 0
+        
+        if len(relevant_samples) == 1:
+            return relevant_samples[0]['difficulty'], 1
+        
+        # Time-weighted average: each sample's difficulty is weighted by duration until next sample
+        total_weighted = 0.0
+        total_time = 0.0
+        
+        for i in range(len(relevant_samples) - 1):
+            s_start = max(relevant_samples[i]['ts'], start_ts)
+            s_end = min(relevant_samples[i + 1]['ts'], end_ts)
+            duration = s_end - s_start
+            if duration > 0:
+                total_weighted += relevant_samples[i]['difficulty'] * duration
+                total_time += duration
+        
+        # Last sample extends to end of range
+        last_sample = relevant_samples[-1]
+        if last_sample['ts'] < end_ts:
+            duration = end_ts - max(last_sample['ts'], start_ts)
+            if duration > 0:
+                total_weighted += last_sample['difficulty'] * duration
+                total_time += duration
+        
+        if total_time > 0:
+            return total_weighted / total_time, len(relevant_samples)
+        return None, 0
+    
+    # Expose net diff samples info via API
+    web_root.putChild('net_diff_samples', WebInterface(lambda: {
+        'sample_count': len(net_diff_samples),
+        'oldest_sample': net_diff_samples[0] if net_diff_samples else None,
+        'newest_sample': net_diff_samples[-1] if net_diff_samples else None,
+    }))
+
+    # ==========================================================================
     # Hashrate sampling for precise luck calculation
     # Stores pool hashrate samples at each share submission for time-weighted average
     # Format: {'samples': [{'ts': timestamp, 'hashrate': H/s, 'network_diff': diff}, ...]}
@@ -1046,10 +1188,12 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         'sample_interval': SAMPLE_INTERVAL,
     }))
     
-    # Expose network difficulty history from blocks and current difficulty
-    # Returns network difficulty data points for graphing with gap filling
+    # Expose network difficulty history from real per-block samples
+    # Since Dash changes difficulty every block (~2.5 min via DGW),
+    # we use net_diff_samples recorded from each block template.
+    # Falls back to block_history + interpolation if no samples available yet.
     def get_network_difficulty_samples(period='day'):
-        """Get network difficulty samples with interpolation for gaps."""
+        """Get network difficulty samples for graphing."""
         now = time.time()
         period_seconds = {
             'hour': 60 * 60,
@@ -1069,46 +1213,83 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         except:
             pass
         
-        # Get ALL blocks with network difficulty from both sources
+        # PRIMARY SOURCE: Use real per-block difficulty samples
+        samples_in_window = [s for s in net_diff_samples if s['ts'] >= min_time]
+        
+        if samples_in_window:
+            # Find the last sample before the window for a starting point
+            prior_sample = None
+            for s in net_diff_samples:
+                if s['ts'] < min_time:
+                    prior_sample = s
+                else:
+                    break
+            
+            result = []
+            
+            # Add starting point
+            if prior_sample:
+                result.append({'ts': min_time, 'network_diff': prior_sample['difficulty']})
+            
+            # Add all real samples
+            for s in samples_in_window:
+                result.append({'ts': s['ts'], 'network_diff': s['difficulty']})
+            
+            # Add current difficulty at end
+            if current_diff and result and abs(result[-1]['ts'] - now) > 30:
+                result.append({'ts': now, 'network_diff': current_diff})
+            
+            # Downsample for longer periods to avoid sending too many points
+            max_points = {
+                'hour': 30,
+                'day': 600,
+                'week': 1000,
+                'month': 1500,
+                'year': 2000,
+            }.get(period, 600)
+            
+            if len(result) > max_points:
+                # Keep every Nth point, plus always keep first and last
+                step = len(result) / float(max_points)
+                downsampled = [result[0]]
+                pos = step
+                while int(pos) < len(result) - 1:
+                    downsampled.append(result[int(pos)])
+                    pos += step
+                downsampled.append(result[-1])
+                result = downsampled
+            
+            log.msg('Net Diff: Returning %d real samples for period %s' % (len(result), period))
+            return result
+        
+        # FALLBACK: Use block_history + interpolation (pre-sampling data)
+        log.msg('Net Diff: No real samples in window, falling back to block history')
+        
         all_blocks = []
         
-        # 1. Get blocks from persistent storage (block_history)
-        history_count = 0
         for block_hash, block_data in block_history.items():
             if block_data.get('network_diff') is not None:
                 all_blocks.append({
                     'ts': block_data['ts'],
                     'network_diff': block_data['network_diff']
                 })
-                history_count += 1
         
-        log.msg('Net Diff: block_history has %d blocks with network_diff' % history_count)
-        
-        # 2. Get blocks from sharechain (the blocks currently displayed on dashboard)
-        sharechain_count = 0
         if node.best_share_var.value is not None:
             try:
                 height = node.tracker.get_height(node.best_share_var.value)
-                log.msg('Net Diff: sharechain height = %d' % height)
                 if height >= 1:
                     for s in node.tracker.get_chain(node.best_share_var.value, min(height, node.net.CHAIN_LENGTH)):
                         if s.pow_hash <= s.header['bits'].target:
-                            # This is a found block
                             network_diff = bitcoin_data.target_to_difficulty(s.header['bits'].target)
                             all_blocks.append({
                                 'ts': s.timestamp,
                                 'network_diff': network_diff
                             })
-                            sharechain_count += 1
-                log.msg('Net Diff: sharechain has %d found blocks' % sharechain_count)
             except Exception as e:
                 log.err(e, 'Error getting blocks from sharechain for net diff:')
         
-        # Sort by timestamp
         all_blocks.sort(key=lambda x: x['ts'])
-        log.msg('Net Diff: Total blocks collected: %d' % len(all_blocks))
         
-        # Find the last block before the time window starts
         prior_block = None
         for block in all_blocks:
             if block['ts'] < min_time:
@@ -1116,53 +1297,33 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             else:
                 break
         
-        # Get blocks within the time window
         blocks_in_window = [b for b in all_blocks if b['ts'] >= min_time]
-        log.msg('Net Diff: Blocks in time window (%s): %d' % (period, len(blocks_in_window)))
         
-        # Build result with interpolation
         result = []
-        
-        # Determine starting difficulty
         start_diff = prior_block['network_diff'] if prior_block else (
             blocks_in_window[0]['network_diff'] if blocks_in_window else current_diff)
         
         if not start_diff:
-            log.msg('Net Diff: No starting difficulty found, returning empty')
             return []
         
-        log.msg('Net Diff: Starting difficulty: %.2f' % start_diff)
-        
-        # Add starting point
         result.append({'ts': min_time, 'network_diff': start_diff})
-        
-        # Add all actual blocks in window
         result.extend(blocks_in_window)
         
-        # Add current difficulty at end (before interpolation so it's included)
         if current_diff:
             result.append({'ts': now, 'network_diff': current_diff})
         
-        # Add interpolated points to fill gaps if needed
-        # If we have very few points, add some intermediate samples
+        # Interpolate to fill gaps if few points
         if len(result) < 10:
             num_fill = {
-                'hour': 6,
-                'day': 12,
-                'week': 14,
-                'month': 15,
-                'year': 26,
+                'hour': 6, 'day': 12, 'week': 14, 'month': 15, 'year': 26,
             }.get(period, 12)
             
-            # Sort current results to interpolate between actual data points
             result.sort(key=lambda x: x['ts'])
-            
             time_step = period_seconds / float(num_fill)
+            
             for i in range(1, num_fill):
                 fill_time = min_time + (i * time_step)
-                # Only add if we don't already have a point near this time
                 if not any(abs(r['ts'] - fill_time) < time_step / 2 for r in result):
-                    # Linear interpolation between surrounding known points
                     prev_point = None
                     next_point = None
                     for r in result:
@@ -1172,7 +1333,6 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                             next_point = r
                     
                     if prev_point and next_point and next_point['ts'] > prev_point['ts']:
-                        # Linearly interpolate difficulty
                         frac = (fill_time - prev_point['ts']) / (next_point['ts'] - prev_point['ts'])
                         fill_diff = prev_point['network_diff'] + frac * (next_point['network_diff'] - prev_point['network_diff'])
                     elif prev_point:
@@ -1181,17 +1341,10 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                         fill_diff = next_point['network_diff']
                     else:
                         fill_diff = current_diff if current_diff else start_diff
-                    
                     result.append({'ts': fill_time, 'network_diff': fill_diff})
         
-        # Sort by timestamp
         result.sort(key=lambda x: x['ts'])
-        
-        log.msg('Net Diff: Returning %d samples' % len(result))
-        if result:
-            log.msg('Net Diff: First sample ts=%d diff=%.2f' % (result[0]['ts'], result[0]['network_diff']))
-            log.msg('Net Diff: Last sample ts=%d diff=%.2f' % (result[-1]['ts'], result[-1]['network_diff']))
-        
+        log.msg('Net Diff: Returning %d fallback samples for period %s' % (len(result), period))
         return result
     
     class NetworkDifficultyResource(deferred_resource.DeferredResource):
@@ -1227,6 +1380,9 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         if hashrate_samples:
             print 'Saving %d hashrate samples on shutdown...' % len(hashrate_samples)
             save_hashrate_samples()
+        if net_diff_samples:
+            print 'Saving %d net diff samples on shutdown...' % len(net_diff_samples)
+            save_net_diff_samples()
     stop_event.watch(save_samples_on_shutdown)
     
     # Cache for block status to avoid repeated RPC calls
@@ -1540,6 +1696,13 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                 tw_avg_hashrate, sample_count = get_time_weighted_average_hashrate(
                     prev_block['ts'], block['ts'])
                 
+                # Try to calculate time-weighted average difficulty from per-block samples
+                tw_avg_diff, diff_sample_count = get_time_weighted_average_difficulty(
+                    prev_block['ts'], block['ts'])
+                
+                # Use time-weighted difficulty if we have enough samples, else fall back to block's difficulty
+                effective_diff = tw_avg_diff if tw_avg_diff and diff_sample_count >= 2 else block_network_diff
+                
                 if tw_avg_hashrate and sample_count >= 2:
                     # Use time-weighted average from actual samples
                     block['avg_hashrate_used'] = tw_avg_hashrate
@@ -1547,10 +1710,13 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                     block['luck_method'] = 'time_weighted_avg'
                     block['luck_approximate'] = False
                     
-                    if block_network_diff and tw_avg_hashrate > 0:
-                        expected_time = (block_network_diff * 2**32) / tw_avg_hashrate
+                    if effective_diff and tw_avg_hashrate > 0:
+                        expected_time = (effective_diff * 2**32) / tw_avg_hashrate
                         block['expected_time'] = expected_time
                         block['luck'] = (expected_time / actual_time) * 100
+                        if tw_avg_diff and diff_sample_count >= 2:
+                            block['avg_difficulty_used'] = tw_avg_diff
+                            block['diff_samples_used'] = diff_sample_count
                 else:
                     # Fallback: Calculate simple average hashrate between prev block and this block
                     prev_hashrate = None
@@ -1670,10 +1836,24 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                         node.tracker, node.best_share_var.value, lookbehind)
                     effective_hashrate = pool_hashrate / (1 - stale_prop) if stale_prop < 1 else pool_hashrate
                     
-                    if wb.current_work.value and 'bits' in wb.current_work.value and effective_hashrate > 0:
-                        block_difficulty = bitcoin_data.target_to_difficulty(
-                            wb.current_work.value['bits'].target)
-                        current_expected_time = (block_difficulty * 2**32) / effective_hashrate
+                    if effective_hashrate > 0:
+                        # Use time-weighted average difficulty for current round if available
+                        block_difficulty = None
+                        if blocks:
+                            newest_block = max(blocks, key=lambda x: x['ts'])
+                            tw_diff, diff_count = get_time_weighted_average_difficulty(
+                                newest_block['ts'], time.time())
+                            if tw_diff and diff_count >= 2:
+                                block_difficulty = tw_diff
+                        
+                        # Fallback to current snapshot difficulty
+                        if not block_difficulty:
+                            if wb.current_work.value and 'bits' in wb.current_work.value:
+                                block_difficulty = bitcoin_data.target_to_difficulty(
+                                    wb.current_work.value['bits'].target)
+                        
+                        if block_difficulty:
+                            current_expected_time = (block_difficulty * 2**32) / effective_hashrate
         except Exception as e:
             log.err(e, 'Error calculating expected time for luck_stats:')
         
