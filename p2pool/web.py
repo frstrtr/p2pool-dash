@@ -977,8 +977,9 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         """Backfill network difficulty samples from sharechain on startup.
         
         Shares are created every ~30s and each has the network difficulty in its header.
-        This fills gaps when the node was offline. We detect difficulty changes between
-        consecutive shares to identify network block boundaries (~2.5 min).
+        This fills gaps when the node was offline. We group consecutive shares with the
+        same difficulty (one network block) and record one sample per group using the
+        earliest share timestamp as the time the difficulty took effect.
         """
         if not node.best_share_var.value:
             return
@@ -991,34 +992,36 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             # Determine the latest timestamp we already have
             latest_existing_ts = net_diff_samples[-1]['ts'] if net_diff_samples else 0
             
-            # Collect difficulty transitions from sharechain
-            new_samples = []
-            prev_diff = None
-            
+            # Collect all (timestamp, difficulty) pairs from sharechain (newest first)
+            share_diffs = []
             for s in node.tracker.get_chain(node.best_share_var.value, min(height, node.net.CHAIN_LENGTH)):
                 diff = bitcoin_data.target_to_difficulty(s.header['bits'].target)
-                
-                if prev_diff is not None and abs(diff - prev_diff) > 0.01:
-                    # Difficulty changed — this share marks a network block boundary
-                    if s.timestamp > latest_existing_ts:
+                share_diffs.append((s.timestamp, diff))
+            
+            if not share_diffs:
+                print 'No shares found in sharechain for net diff backfill'
+                return
+            
+            # Reverse to oldest-first
+            share_diffs.reverse()
+            
+            # Group consecutive shares with the same difficulty
+            # Each group = one network block period
+            # Record one sample per group using the first share's timestamp
+            new_samples = []
+            current_diff = None
+            
+            for ts, diff in share_diffs:
+                if current_diff is None or abs(diff - current_diff) > 0.01:
+                    # New difficulty level — new network block
+                    current_diff = diff
+                    if ts > latest_existing_ts:
                         new_samples.append({
-                            'ts': s.timestamp,
+                            'ts': ts,
                             'difficulty': diff,
                         })
-                elif prev_diff is None:
-                    # First share — record its difficulty
-                    if s.timestamp > latest_existing_ts:
-                        new_samples.append({
-                            'ts': s.timestamp,
-                            'difficulty': diff,
-                        })
-                
-                prev_diff = diff
             
             if new_samples:
-                # Reverse since sharechain iterates newest-first
-                new_samples.reverse()
-                
                 # Merge with existing samples
                 net_diff_samples.extend(new_samples)
                 net_diff_samples.sort(key=lambda x: x['ts'])
@@ -1028,6 +1031,9 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                     deduped = [net_diff_samples[0]]
                     for s in net_diff_samples[1:]:
                         if abs(s['ts'] - deduped[-1]['ts']) > 30:
+                            deduped.append(s)
+                        elif abs(s['difficulty'] - deduped[-1]['difficulty']) > 0.01:
+                            # Different difficulty even if close timestamp — keep it
                             deduped.append(s)
                     net_diff_samples[:] = deduped
                 
