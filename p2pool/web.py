@@ -989,8 +989,11 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             if height < 2:
                 return
             
-            # Determine the latest timestamp we already have
-            latest_existing_ts = net_diff_samples[-1]['ts'] if net_diff_samples else 0
+            # Build a set of existing timestamps to avoid duplicates
+            existing_ts_set = set()
+            for s in net_diff_samples:
+                # Round to 60s buckets for loose matching
+                existing_ts_set.add(int(s['ts']) // 60)
             
             # Collect all (timestamp, difficulty) pairs from sharechain (newest first)
             share_diffs = []
@@ -1015,27 +1018,19 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                 if current_diff is None or abs(diff - current_diff) > 0.01:
                     # New difficulty level — new network block
                     current_diff = diff
-                    if ts > latest_existing_ts:
+                    # Only add if we don't already have a sample near this time
+                    ts_bucket = int(ts) // 60
+                    if ts_bucket not in existing_ts_set:
                         new_samples.append({
                             'ts': ts,
                             'difficulty': diff,
                         })
+                        existing_ts_set.add(ts_bucket)
             
             if new_samples:
                 # Merge with existing samples
                 net_diff_samples.extend(new_samples)
                 net_diff_samples.sort(key=lambda x: x['ts'])
-                
-                # Deduplicate close timestamps (within 30s)
-                if len(net_diff_samples) > 1:
-                    deduped = [net_diff_samples[0]]
-                    for s in net_diff_samples[1:]:
-                        if abs(s['ts'] - deduped[-1]['ts']) > 30:
-                            deduped.append(s)
-                        elif abs(s['difficulty'] - deduped[-1]['difficulty']) > 0.01:
-                            # Different difficulty even if close timestamp — keep it
-                            deduped.append(s)
-                    net_diff_samples[:] = deduped
                 
                 # Prune
                 if len(net_diff_samples) > MAX_NET_DIFF_SAMPLES:
