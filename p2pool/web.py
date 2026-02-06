@@ -903,7 +903,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     
     net_diff_samples_file = os.path.join(datadir_path, 'net_diff_samples.json')
     net_diff_samples = []
-    MAX_NET_DIFF_SAMPLES = 20000  # ~35 days at one sample per ~2.5 min block
+    MAX_NET_DIFF_SAMPLES = 50000  # ~87 days at one sample per ~2.5 min block
     
     # Load existing net diff samples
     if os.path.exists(net_diff_samples_file):
@@ -1052,8 +1052,10 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     def backfill_net_diff_from_dashd():
         """Backfill network difficulty from dashd RPC for periods before sharechain coverage.
         
-        Queries getblockhash + getblockheader for each block height going back up to
-        MAX_NET_DIFF_SAMPLES blocks. Only fills gaps before the oldest existing sample.
+        Queries getblockhash + getblockheader for each block height going back.
+        Uses block_history to determine the oldest pool block and backfills all the way
+        to cover the full history of blocks found by this node.
+        Only fills gaps before the oldest existing sample.
         Runs after sharechain backfill to avoid redundant work.
         """
         try:
@@ -1068,24 +1070,62 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             # Find the oldest sample we already have
             oldest_existing_ts = net_diff_samples[0]['ts'] if net_diff_samples else time.time()
             
-            # How many blocks do we need? One year max, but cap at MAX_NET_DIFF_SAMPLES
-            # Dash block time ~2.5 min = 576 blocks/day
+            # How many blocks do we need? 
+            # Calculate based on block_history - go back to oldest pool block + margin
             max_blocks = MAX_NET_DIFF_SAMPLES - len(net_diff_samples)
             if max_blocks <= 0:
                 print 'Net diff dashd backfill: already have %d samples, no backfill needed' % len(net_diff_samples)
                 return
             
-            # Cap to reasonable amount (7 days = ~4032 blocks)
-            max_blocks = min(max_blocks, 4032)
+            # Try to determine how far back we need from block_history
+            oldest_pool_block_ts = oldest_existing_ts
+            if block_history:
+                try:
+                    oldest_hist_ts = min(b.get('ts', time.time()) for b in block_history.values() if b.get('ts'))
+                    if oldest_hist_ts < oldest_pool_block_ts:
+                        oldest_pool_block_ts = oldest_hist_ts
+                except (ValueError, TypeError):
+                    pass
             
-            print 'Net diff dashd backfill: fetching up to %d blocks before ts=%d (height=%d)' % (
-                max_blocks, int(oldest_existing_ts), current_height)
+            # Calculate blocks needed to reach oldest pool block timestamp
+            # Add 1-day margin (576 blocks) before the oldest pool block for context
+            blocks_per_day = 576  # Dash: ~2.5 min blocks
+            time_gap = oldest_existing_ts - oldest_pool_block_ts
+            blocks_needed = int(time_gap / 150) + blocks_per_day  # 150s = 2.5 min avg
+            
+            if blocks_needed <= 0:
+                print 'Net diff dashd backfill: samples already cover block history (oldest sample: %d, oldest pool block: %d)' % (
+                    int(oldest_existing_ts), int(oldest_pool_block_ts))
+                return
+            
+            # Cap to what we have room for
+            max_blocks = min(max_blocks, blocks_needed)
+            
+            print 'Net diff dashd backfill: fetching up to %d blocks before ts=%d (oldest pool block ts=%d, height=%d)' % (
+                max_blocks, int(oldest_existing_ts), int(oldest_pool_block_ts), current_height)
             
             new_samples = []
-            batch_size = 50  # Process in batches to avoid overwhelming dashd
-            start_height = max(1, current_height - max_blocks)
+            batch_size = 100  # Process in batches to avoid overwhelming dashd
             
-            for h in range(start_height, current_height):
+            # Find the height corresponding to the oldest existing sample
+            # Start from current height and work backwards
+            # First, find what height our oldest sample is near
+            oldest_sample_height = None
+            if net_diff_samples and net_diff_samples[0].get('height'):
+                oldest_sample_height = net_diff_samples[0]['height']
+            
+            if oldest_sample_height:
+                start_height = max(1, oldest_sample_height - max_blocks)
+                end_height = oldest_sample_height
+            else:
+                start_height = max(1, current_height - max_blocks)
+                end_height = current_height
+            
+            print 'Net diff dashd backfill: scanning heights %d to %d (%d blocks)' % (
+                start_height, end_height, end_height - start_height)
+            
+            fetched = 0
+            for h in range(start_height, end_height):
                 try:
                     block_hash = yield wb.dashd.rpc_getblockhash(h)
                     header = yield wb.dashd.rpc_getblockheader(block_hash)
@@ -1103,21 +1143,29 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                     # Skip individual block errors
                     continue
                 
+                fetched += 1
                 # Yield control every batch to avoid blocking the reactor
-                if len(new_samples) % batch_size == 0 and new_samples:
-                    yield deferral.sleep(0.1)
+                if fetched % batch_size == 0:
+                    yield deferral.sleep(0.05)
+                    if fetched % 5000 == 0:
+                        print 'Net diff dashd backfill: fetched %d/%d blocks (%d new samples)...' % (
+                            fetched, end_height - start_height, len(new_samples))
             
             if new_samples:
                 net_diff_samples.extend(new_samples)
                 net_diff_samples.sort(key=lambda x: x['ts'])
                 
-                # Prune
+                # Prune oldest if over limit
                 if len(net_diff_samples) > MAX_NET_DIFF_SAMPLES:
                     net_diff_samples[:] = net_diff_samples[-MAX_NET_DIFF_SAMPLES:]
                 
                 save_net_diff_samples()
-                print 'Backfilled %d net diff samples from dashd RPC (total: %d)' % (
-                    len(new_samples), len(net_diff_samples))
+                
+                oldest_ts = net_diff_samples[0]['ts'] if net_diff_samples else 0
+                newest_ts = net_diff_samples[-1]['ts'] if net_diff_samples else 0
+                span_days = (newest_ts - oldest_ts) / 86400.0 if oldest_ts and newest_ts else 0
+                print 'Backfilled %d net diff samples from dashd RPC (total: %d, spanning %.1f days)' % (
+                    len(new_samples), len(net_diff_samples), span_days)
             else:
                 print 'No new net diff samples from dashd RPC backfill'
                 
@@ -1886,17 +1934,26 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                         block['avg_hashrate_used'] = avg_hashrate
                         block['luck_method'] = 'simple_avg'
                         
-                        # Calculate expected time using average hashrate
-                        if block_network_diff and avg_hashrate > 0:
-                            expected_time = (block_network_diff * 2**32) / avg_hashrate
+                        # Calculate expected time using average hashrate and best available difficulty
+                        diff_to_use = effective_diff or block_network_diff
+                        if diff_to_use and avg_hashrate > 0:
+                            expected_time = (diff_to_use * 2**32) / avg_hashrate
                             block['expected_time'] = expected_time
                             block['luck'] = (expected_time / actual_time) * 100
-                    elif block_hashrate and block_network_diff:
+                            if tw_avg_diff and diff_sample_count >= 2:
+                                block['avg_difficulty_used'] = tw_avg_diff
+                                block['diff_samples_used'] = diff_sample_count
+                    elif block_hashrate:
                         # Fallback to single hashrate
+                        diff_to_use = effective_diff or block_network_diff
                         block['luck_method'] = 'single_hashrate'
-                        expected_time = (block_network_diff * 2**32) / block_hashrate
-                        block['expected_time'] = expected_time
-                        block['luck'] = (expected_time / actual_time) * 100
+                        if diff_to_use and block_hashrate > 0:
+                            expected_time = (diff_to_use * 2**32) / block_hashrate
+                            block['expected_time'] = expected_time
+                            block['luck'] = (expected_time / actual_time) * 100
+                            if tw_avg_diff and diff_sample_count >= 2:
+                                block['avg_difficulty_used'] = tw_avg_diff
+                                block['diff_samples_used'] = diff_sample_count
             
             # Restore original order (newest first)
             blocks = sorted(blocks_sorted, key=lambda x: x['ts'], reverse=True)
