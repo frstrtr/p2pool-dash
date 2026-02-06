@@ -1882,7 +1882,7 @@
                     var baseLuck = luckData.current_luck_trend;
                     
                     // Fetch network difficulty and pool hashrate to calculate pool block time for decay
-                    d3.json('../web/network_difficulty?period=day', function(netDiffData) {
+                    d3.json('../network_difficulty?period=day', function(netDiffData) {
                         d3.json('../local_stats', function(localStats) {
                             var currentLuck = baseLuck; // Default to non-decayed
                             
@@ -1921,7 +1921,7 @@
                 var thirtyDayBlocks = luckData.blocks.filter(function(b) { return b.ts >= thirtyDaysAgo && b.luck; });
 
                 // Fetch network difficulty and pool hashrate for sophisticated decay calculation
-                d3.json('../web/network_difficulty?period=day', function(netDiffData) {
+                d3.json('../network_difficulty?period=day', function(netDiffData) {
                     d3.json('../local_stats', function(localStats) {
                         var currentRoundLuck = null;
                         
