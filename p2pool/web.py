@@ -1659,7 +1659,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
                 defer.returnValue('pending')
     
     @defer.inlineCallbacks
-    def get_recent_blocks(limit=50):
+    def get_recent_blocks(limit=None):
         """Get recent blocks from both persistent storage and sharechain.
         
         Returns blocks from block_history.json (persistent) merged with 
@@ -1667,7 +1667,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
         are displayed even after they leave sharechain memory.
         
         Args:
-            limit: Maximum number of blocks to return (default: 50)
+            limit: Maximum number of blocks to return (default: None = all)
         """
         # Start with all blocks from persistent storage
         blocks_dict = {}  # Use dict to avoid duplicates, keyed by block_hash
