@@ -1048,6 +1048,85 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
     # Backfill on startup after sharechain is loaded
     reactor.callLater(30, backfill_net_diff_from_sharechain)
     
+    @defer.inlineCallbacks
+    def backfill_net_diff_from_dashd():
+        """Backfill network difficulty from dashd RPC for periods before sharechain coverage.
+        
+        Queries getblockhash + getblockheader for each block height going back up to
+        MAX_NET_DIFF_SAMPLES blocks. Only fills gaps before the oldest existing sample.
+        Runs after sharechain backfill to avoid redundant work.
+        """
+        try:
+            # Get current blockchain height
+            work = wb.current_work.value
+            if not work or 'height' not in work:
+                print 'Net diff dashd backfill: no current work available'
+                return
+            
+            current_height = work['height']
+            
+            # Find the oldest sample we already have
+            oldest_existing_ts = net_diff_samples[0]['ts'] if net_diff_samples else time.time()
+            
+            # How many blocks do we need? One year max, but cap at MAX_NET_DIFF_SAMPLES
+            # Dash block time ~2.5 min = 576 blocks/day
+            max_blocks = MAX_NET_DIFF_SAMPLES - len(net_diff_samples)
+            if max_blocks <= 0:
+                print 'Net diff dashd backfill: already have %d samples, no backfill needed' % len(net_diff_samples)
+                return
+            
+            # Cap to reasonable amount (7 days = ~4032 blocks)
+            max_blocks = min(max_blocks, 4032)
+            
+            print 'Net diff dashd backfill: fetching up to %d blocks before ts=%d (height=%d)' % (
+                max_blocks, int(oldest_existing_ts), current_height)
+            
+            new_samples = []
+            batch_size = 50  # Process in batches to avoid overwhelming dashd
+            start_height = max(1, current_height - max_blocks)
+            
+            for h in range(start_height, current_height):
+                try:
+                    block_hash = yield wb.dashd.rpc_getblockhash(h)
+                    header = yield wb.dashd.rpc_getblockheader(block_hash)
+                    
+                    if header and 'time' in header and 'difficulty' in header:
+                        block_ts = header['time']
+                        # Only add if before our oldest existing sample
+                        if block_ts < oldest_existing_ts:
+                            new_samples.append({
+                                'ts': block_ts,
+                                'difficulty': header['difficulty'],
+                                'height': h,
+                            })
+                except Exception as e:
+                    # Skip individual block errors
+                    continue
+                
+                # Yield control every batch to avoid blocking the reactor
+                if len(new_samples) % batch_size == 0 and new_samples:
+                    yield deferral.sleep(0.1)
+            
+            if new_samples:
+                net_diff_samples.extend(new_samples)
+                net_diff_samples.sort(key=lambda x: x['ts'])
+                
+                # Prune
+                if len(net_diff_samples) > MAX_NET_DIFF_SAMPLES:
+                    net_diff_samples[:] = net_diff_samples[-MAX_NET_DIFF_SAMPLES:]
+                
+                save_net_diff_samples()
+                print 'Backfilled %d net diff samples from dashd RPC (total: %d)' % (
+                    len(new_samples), len(net_diff_samples))
+            else:
+                print 'No new net diff samples from dashd RPC backfill'
+                
+        except Exception as e:
+            log.err(e, 'Error backfilling net diff from dashd:')
+    
+    # Backfill from dashd after sharechain backfill completes (60s delay)
+    reactor.callLater(60, backfill_net_diff_from_dashd)
+    
     def get_time_weighted_average_difficulty(start_ts, end_ts):
         """Calculate time-weighted average network difficulty between two timestamps.
         
