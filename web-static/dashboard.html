@@ -2381,16 +2381,14 @@
             var marginRight = RIGHT_AXIS_BASE + visibleAxes.length * RIGHT_AXIS_WIDTH;
             
             // Update axis offsets: each visible right axis gets its own slot
+            // Use Highcharts 'offset' property which moves the entire axis (line + labels)
             for (var axIdx = 1; axIdx <= 3; axIdx++) {
                 if (!chart.yAxis[axIdx]) continue;
                 var slotIndex = visibleAxes.indexOf(axIdx);
                 var isVisible = slotIndex >= 0;
-                var offset = isVisible ? slotIndex * RIGHT_AXIS_WIDTH : 0;
                 chart.yAxis[axIdx].update({
-                    labels: {
-                        enabled: isVisible,
-                        x: offset + 5
-                    }
+                    offset: isVisible ? slotIndex * RIGHT_AXIS_WIDTH : 0,
+                    labels: { enabled: isVisible }
                 }, false);  // Don't redraw yet
             }
             
@@ -3109,7 +3107,7 @@
                     panKey: 'shift',
                     zoomType: 'x',
                     events: {
-                        load: function() { drawDiffRatioBars(this); updateChartRightMargin(this); },
+                        load: function() { var c = this; drawDiffRatioBars(c); setTimeout(function() { updateChartRightMargin(c); }, 0); },
                         redraw: function() { drawDiffRatioBars(this); }
                     }
                 },
@@ -3763,7 +3761,7 @@
                     panKey: 'shift',
                     zoomType: 'x',
                     events: {
-                        load: function() { drawDiffRatioBars(this); updateChartRightMargin(this); },
+                        load: function() { var c = this; drawDiffRatioBars(c); setTimeout(function() { updateChartRightMargin(c); }, 0); },
                         redraw: function() { drawDiffRatioBars(this); }
                     }
                 },
