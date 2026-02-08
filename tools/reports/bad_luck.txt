@@ -1,0 +1,81 @@
+Loading all shares from store...
+Loaded 11107 shares in 9.2 seconds
+
+======================================================================
+SHARECHAIN OVERVIEW
+======================================================================
+Total shares:     11107
+Time span:        2026-02-03 16:38 UTC to 2026-02-06 07:12 UTC
+Duration:         62.6 hours (2.6 days)
+Blocks found:     6
+
+Last block found: 2026-02-04 15:52:06 UTC
+Latest share:     2026-02-06 07:12:52 UTC
+Drought duration: 39.3 hours (1.6 days)
+
+======================================================================
+STATISTICAL ANALYSIS
+======================================================================
+
+--- Block-finding period (up to last block) ---
+  Shares:               4134
+  Time span:            02-03 16:38 to 02-04 15:52 (23.2 hours)
+  Blocks found:         6
+  Est. pool hashrate:   22.32 TH/s
+  Avg network diff:     109,519,888
+  Est. network hash:    3.14 PH/s
+  Pool fraction:        0.7116%
+  Network blocks in period: 557.5
+  Expected blocks (sum of P per share): 4.0234
+  Expected blocks (hashrate method):    3.9677
+  P(>= 6 blocks | expected=4.0234) = 0.2185 = 21.85%
+
+--- Drought period (after last block) ---
+  Shares:               6973
+  Time span:            02-04 15:52 to 02-06 07:12 (39.3 hours)
+  Blocks found:         0
+  Est. pool hashrate:   19.96 TH/s
+  Avg network diff:     111,132,181
+  Est. network hash:    3.18 PH/s
+  Pool fraction:        0.6273%
+  Network blocks in period: 944.2
+  Expected blocks (sum of P per share): 6.0819
+  Expected blocks (hashrate method):    5.9225
+
+  >>> P(0 blocks | expected=6.0819) = e^(-6.0819) = 0.0023 = 0.23%
+  >>> That's about 1 in 438 chance
+  >>> VERDICT: Unlucky, but not impossibly so (happens ~0% of the time)
+
+--- Overall ---
+  Shares:               11107
+  Time span:            02-03 16:38 to 02-06 07:12 (62.6 hours)
+  Blocks found:         6
+  Est. pool hashrate:   20.83 TH/s
+  Avg network diff:     110,532,089
+  Est. network hash:    3.16 PH/s
+  Pool fraction:        0.6583%
+  Network blocks in period: 1501.9
+  Expected blocks (sum of P per share): 10.1053
+  Expected blocks (hashrate method):    9.8860
+  P(>= 6 blocks | expected=10.1053) = 0.9368 = 93.68%
+
+======================================================================
+DROUGHT ANALYSIS (up to NOW)
+======================================================================
+Hours since last block: 39.4 (1.6 days)
+Recent pool hashrate:   8.15 TH/s
+Recent network diff:    106,544,122
+Expected blocks/hour:   0.0641
+Expected blocks/day:    1.54
+Expected blocks in drought (39.4 h): 2.5243
+
+P(0 blocks in 39.4 hours) = 0.0801 = 8.01%
+That's about 1 in 12 chance
+
+Expected drought durations:
+  50% chance of drought >= 10.8 hours (0.5 days)
+  25% chance of drought >= 21.6 hours (0.9 days)
+  10% chance of drought >= 35.9 hours (1.5 days)
+   5% chance of drought >= 46.7 hours (1.9 days)
+   1% chance of drought >= 71.8 hours (3.0 days)
+

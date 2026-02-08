@@ -1,0 +1,263 @@
+======================================================================
+P2POOL-DASH LUCK RECOVERED — FINAL REPORT
+Generated: 2026-02-07 17:00 UTC (21:00 MUT)
+======================================================================
+
+                    🎉 BLOCK FOUND — DROUGHT OVER 🎉
+
+Note: Blocks listed here were found by MINERS ON THE P2POOL NETWORK,
+not by this specific node. This node has no miners connected — it
+acts as a relay. Shares and blocks propagate across p2pool's peer-to-
+peer network and appear in the local sharestore.
+
+======================================================================
+P2POOL NETWORK PARTICIPANTS (from sharechain)
+======================================================================
+Total shares:  10,702 across 4 unique node addresses
+
+  XoZcEFbqwnty5secW7HYjdQEZYfubMkURu:  4,727 shares (44.2%)
+  XwHXpqimXJoQJ1ZiUpLHAJwm5isVv434Bs:  4,102 shares (38.3%)
+  Xq8Dt8kFfbozuH1kymTaYKcRhvcFuuXKyW:  1,688 shares (15.8%)
+  XhSrhUp7VDZsjVRmzNVCgQUpoJaTLpNzQP:    185 shares  (1.7%)
+
+All 4 blocks were found by node: XoZcEFbqwnty5secW7HYjdQEZYfubMkURu
+
+======================================================================
+BLOCKS FOUND (4 total, all by same node)
+======================================================================
+
+--- Block #1 (drought breaker) ---
+Block hash:       000000000000002385facc58fe57ab43f380a17f9040a62b2505f744d3539da5
+Timestamp:        2026-02-07 16:58:14 UTC (20:58 MUT)
+Subsidy:          1.77200094 DASH
+Network diff:     105,172,320
+PoW diff:         120,903,597
+Hash quality:     1.1496x (PoW diff / net diff)
+Share diff:       125,516
+Absheight:        240,401
+Node address:     XoZcEFbqwnty5secW7HYjdQEZYfubMkURu
+Coinbase:         /P2Pool-DASH/
+Previous block:   000000000000001263ee51b008ef5146d9dd48d82328c8a1ef20f46ef3714e96
+Source:           shares.10 line 1652
+
+--- Block #2 ---
+Block hash:       0000000000000009e29123ecb6c0701fd74ad6f2dbec4c73997317c842b13e06
+Timestamp:        2026-02-08 00:46:07 UTC
+Subsidy:          1.77056589 DASH
+Network diff:     95,119,629
+PoW diff:         434,485,580
+Hash quality:     4.5678x (PoW diff / net diff)
+Share diff:       97,943
+Absheight:        241,792
+Node address:     XoZcEFbqwnty5secW7HYjdQEZYfubMkURu
+Coinbase:         /P2Pool-DASH/
+Previous block:   000000000000000df6e14af21b3dc4ddf72447da885327a08fe7c5060531f193
+Source:           shares.11 line 2288
+
+--- Block #3 (2.5 min after #2!) ---
+Block hash:       0000000000000010e35870da5bda2d9a989404f5af2f5d118e6a3fa6692044dc
+Timestamp:        2026-02-08 00:48:39 UTC
+Subsidy:          1.77054396 DASH
+Network diff:     101,222,231
+PoW diff:         254,315,751
+Hash quality:     2.5124x (PoW diff / net diff)
+Share diff:       94,052
+Absheight:        241,800
+Node address:     XoZcEFbqwnty5secW7HYjdQEZYfubMkURu
+Coinbase:         /P2Pool-DASH/
+Previous block:   000000000000000baf9a787f8616e21ce011c9e4f7d7ae47e1c863ad0a8064f5
+Source:           shares.11 line 2300
+
+--- Block #4 ---
+Block hash:       000000000000002416bd8f6c3ae37f9acaa56e6ffc5983e76a82242af33586dc
+Timestamp:        2026-02-08 01:44:52 UTC
+Subsidy:          1.77310429 DASH
+Network diff:     118,532,837
+PoW diff:         119,009,172
+Hash quality:     1.0040x (PoW diff / net diff — barely passed!)
+Share diff:       120,437
+Absheight:        241,971
+Node address:     XoZcEFbqwnty5secW7HYjdQEZYfubMkURu
+Coinbase:         /P2Pool-DASH/
+Previous block:   000000000000001ce1043ed3b2d1dcfc74f0e9acb3b6e870b7009563663dcca4
+Source:           shares.11 line 2650
+
+Total block rewards: 7.08621508 DASH
+
+Hash quality summary (PoW diff / net diff):
+  Block #1:  1.15x   — solid pass
+  Block #2:  4.57x   — exceptional hash quality
+  Block #3:  2.51x   — strong hash quality
+  Block #4:  1.00x   — barely passed target (equally valid!)
+
+Note: Hash quality (PoW diff / net diff) is NOT a measure of luck.
+Luck = time to find a block vs expectation. Hash quality measures
+how far the PoW hash exceeded the network target. A block at 1.00x
+is equally valid and equally "lucky" as one at 4.57x. However, hash
+quality is valuable data for future temporal level organization.
+
+======================================================================
+THE DROUGHT — BY THE NUMBERS
+======================================================================
+Previous block:   2026-02-04 15:52:06 UTC
+Recovery block:   2026-02-07 16:58:14 UTC
+Total drought:    73 hours 6 minutes (3.05 days)
+
+Drought probability thresholds crossed:
+  ✓ 50% chance of drought >= 10.8 hours (0.5 days)
+  ✓ 25% chance of drought >= 21.6 hours (0.9 days)
+  ✓ 10% chance of drought >= 35.9 hours (1.5 days)
+  ✓  5% chance of drought >= 46.7 hours (1.9 days)
+  ✓  1% chance of drought >= 71.8 hours (3.0 days)  ← broke through here
+
+The drought reached the 1% probability threshold before ending.
+In other words, 99% of the time the pool would have found a block
+sooner. A genuinely rare event, but not impossible.
+
+Note on "luck": Luck in mining is purely about TIME — how long it
+takes to find a block relative to statistical expectation. The ratio
+of actual PoW diff to network diff in a found block is NOT a measure
+of luck — it is simply the hash quality of that particular share.
+A block that barely passes the target is equally valid and equally
+"lucky" as one that exceeds it by 4x. The hash quality metric may
+be useful for other purposes (e.g. temporal level organization).
+
+======================================================================
+INVESTIGATION TIMELINE
+======================================================================
+
+--- Report #1: bad_luck.txt (2026-02-06 ~07:12 UTC) ---
+  Sharechain window: 62.6 hours (Feb 3–6)
+  Blocks in window: 6 (all in first 23.2 hours)
+  Drought at time: 39.3 hours
+  P(0 blocks in drought): 0.23% (1 in 438)
+  Verdict: Unlucky but not impossible
+
+--- Report #2: bad_luck_report2.txt (2026-02-07 ~07:11 UTC) ---
+  Sharechain window: 54.3 hours (Feb 5–7)
+  Blocks in window: 0 (previous blocks rotated out)
+  P(0 blocks): 0.06% (1 in 1,590)
+  Verdict: Very unusual — worth investigating
+  Per-share verification: All 9,719 shares checked, 0 blocks
+  Closest share: ratio 1.06 (6% away from block!)
+  Confirmed: No bugs, genuine bad luck
+
+--- Report #3: bad_luck_3.txt (2026-02-07 ~16:35 UTC) ---
+  Multiple snapshots throughout the day
+  Tracked closest shares in real-time
+  Ruled out DashMate 3 as cause (layer-2 only)
+  Analyzed 42% unknown miner (no impact on our probability)
+  Confirmed ChainLocks active (51% attack mitigated)
+  12 of top 20 closest shares from Feb 7
+  Calculated 12.3% chance of block in next hour
+
+--- Block Found: 2026-02-07 16:58:14 UTC ---
+  Just 23 minutes after final analysis!
+
+======================================================================
+WHAT WE INVESTIGATED & RULED OUT
+======================================================================
+
+1. SOFTWARE BUGS                                          ❌ Not the cause
+   - Every share verified for correct PoW hashing
+   - Difficulty comparison logic confirmed correct
+   - Block template from Dash Core normal
+   - No submission bugs (no blocks existed to submit)
+
+2. DASHMATE 3 / PLATFORM v3.0                             ❌ Not the cause
+   - Layer-2 update only (Platform Addresses, SDK)
+   - No changes to PoW mining or consensus rules
+   - Dash Core v23.0.2 fully up to date
+   - No new version bits or softforks
+
+3. 42% UNKNOWN MINER                                      ❌ Not the cause
+   - Mining is memoryless — dominant miner doesn't
+     change other miners' block probability
+   - ChainLocks (DIP-0008) prevents 51% attacks
+   - LLMQ of 400 masternodes signs each block
+   - Need ~30% of masternodes to break (not hashrate)
+
+4. NODE/NETWORK ISSUES                                     ❌ Not the cause
+   - Dash Core synced, no warnings
+   - ChainLocks active at height 2,418,558
+   - Block template generating correctly
+   - Pool producing ~200+ shares/hour consistently
+
+5. STATISTICAL BAD LUCK                                    ✅ THE CAUSE
+   - 1% probability event (1 in ~100)
+   - Shares consistently reached high PoW difficulties
+   - Multiple shares came within 1.05x–2x of target
+   - Final block beat target by 15% when it came
+
+======================================================================
+CLOSEST SHARES DURING THE DROUGHT — HALL OF NEAR-MISSES
+======================================================================
+
+These shares came closest to being blocks but didn't quite make it:
+
+Date/Time (UTC)     Ratio   PoW Diff        Net Diff        Note
+----------------------------------------------------------------------
+Feb 05 02:58        1.0597  128,977,130     136,672,810     Just 6% away!
+Feb 05 09:59        1.3997   89,441,434     125,193,450     40% away
+Feb 07 04:09        1.5327   66,803,911     102,391,698     53% away
+Feb 07 16:14        1.4519   75,189,555     109,166,726     45% away
+Feb 07 09:05        1.9779   45,897,185      90,779,951     98% away
+
+And then, 44 minutes after that last near-miss at 16:14...
+
+Feb 07 16:58        <1.0    120,903,597     105,172,320     ✅ BLOCK!
+
+======================================================================
+POOL PERFORMANCE DURING DROUGHT
+======================================================================
+
+All blocks found by miners on the p2pool network (not this node).
+
+                    Block-finding     Drought          Overall
+                    (Feb 3-4)         (Feb 4-7)        (Feb 3-7)
+----------------------------------------------------------------------
+Duration            23.2 hours        73.1 hours       96.3 hours
+Shares              ~4,100            ~18,000+         ~22,000+
+Blocks found        6                 0 → 1            7
+Expected blocks     ~4.0              ~9.5             ~13.5
+Pool hashrate       22.3 TH/s        17-20 TH/s       ~19 TH/s
+Pool fraction       0.71%             0.54%            ~0.6%
+
+The pool was LUCKY in the first period (found blocks faster than
+expected) and UNLUCKY in the drought (took much longer than
+expected). Luck = time to find blocks vs expected time.
+
+======================================================================
+KEY TAKEAWAYS
+======================================================================
+
+1. VARIANCE IS REAL — Even with consistent hashrate and correct
+   software, droughts happen. A 3-day drought at 0.5% pool
+   fraction is rare (~1%) but inevitable over long timeframes.
+
+2. THE MATH WORKS — Our probability calculations were accurate.
+   We predicted 12.3% chance per hour, and the block came within
+   23 minutes of that calculation. The Poisson model is reliable.
+
+3. NO PANIC NEEDED — Thorough investigation confirmed everything
+   was working correctly. The temptation to "fix" something that
+   isn't broken could have introduced real problems.
+
+4. MONITORING MATTERS — The analysis tools (check_sharestore_stats,
+   check_sharestore_blocks) proved invaluable for diagnosing the
+   situation and maintaining confidence in the pool's operation.
+
+5. DASH IS RESILIENT — ChainLocks protect against 51% attacks
+   regardless of mining centralization. The 42% unknown miner
+   is a centralization concern but not an existential threat.
+
+======================================================================
+BLOCK CONFIRMED ON-CHAIN
+======================================================================
+Block hash:   000000000000002385facc58fe57ab43f380a17f9040a62b2505f744d3539da5
+Reward:       1.77200094 DASH
+Status:       MINED ✅
+Found by:     P2Pool network (relayed to this node)
+
+The drought is over. The pool lives on. Back to mining! ⛏️
+======================================================================
