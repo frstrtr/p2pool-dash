@@ -22,6 +22,7 @@ from nattraverso import portmapper, ipdiscover
 import dash.p2p as dash_p2p, dash.data as dash_data
 from dash import stratum, worker_interface, helper
 from util import fixargparse, jsonrpc, variable, deferral, math, logging, switchprotocol
+from util.telegram import TelegramNotifier
 from . import networks, web, work
 import p2pool, p2pool.data as p2pool_data, p2pool.node as p2pool_node
 
@@ -73,7 +74,7 @@ class keypool():
 
 
 @defer.inlineCallbacks
-def main(args, net, datadir_path, merged_urls, worker_endpoint):
+def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifier=None):
     try:
         print 'p2pool (version %s)' % (p2pool.__version__,)
         print
@@ -117,6 +118,61 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint):
         
         if not args.testnet:
             factory = yield connect_p2p()
+        
+        # Initialize multi-peer broadcaster if enabled
+        broadcaster = None
+        if args.broadcaster_enabled:
+            print ''
+            print '=' * 70
+            print 'INITIALIZING MULTI-PEER BROADCASTER'
+            print '=' * 70
+            try:
+                from dash.broadcaster import DashNetworkBroadcaster, _safe_addr_str
+                
+                local_dashd_addr = (args.dashd_address, args.dashd_p2p_port)
+                broadcaster = DashNetworkBroadcaster(
+                    net=net,
+                    dashd=dashd,
+                    local_dashd_factory=factory,
+                    local_dashd_addr=local_dashd_addr,
+                    datadir_path=datadir_path
+                )
+                
+                # Configure settings
+                broadcaster.max_peers = args.broadcaster_max_peers
+                broadcaster.min_peers = args.broadcaster_min_peers
+                
+                # Start the broadcaster (bootstrap and begin peer management)
+                yield broadcaster.start()
+                
+                # Register with helper module
+                helper.set_broadcaster(broadcaster)
+                
+                print ''
+                print '*** BROADCASTER READY ***'
+                print '  Max peers: %d' % broadcaster.max_peers
+                print '  Min peers: %d' % broadcaster.min_peers
+                print '  Local dashd: %s (PROTECTED)' % _safe_addr_str(local_dashd_addr)
+                print '  Peer database: %d peers' % len(broadcaster.peer_db)
+                print '  Active connections: %d' % len(broadcaster.connections)
+                print '=' * 70
+                print ''
+                
+            except Exception as e:
+                print >>sys.stderr, ''
+                print >>sys.stderr, '*** BROADCASTER INITIALIZATION FAILED ***'
+                print >>sys.stderr, '  Error: %s' % str(e).encode('ascii', 'replace')
+                print >>sys.stderr, '  Falling back to local dashd only mode'
+                print >>sys.stderr, '=' * 70
+                print >>sys.stderr, ''
+                log.err(e, 'Broadcaster initialization error:')
+                broadcaster = None
+        else:
+            print ''
+            print 'Multi-peer broadcaster: DISABLED'
+            print '  Using local dashd only for block propagation'
+            print '  (Use without --disable-broadcaster to enable multi-peer broadcasting)'
+            print ''
         
         print 'Determining payout address...'
         pubkeys = keypool()
@@ -219,20 +275,58 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint):
         print "Loading shares..."
         shares = {}
         known_verified = set()
+        last_print_time = [time.time()]
+        last_count = [0]
         def share_cb(share):
             share.time_seen = 0 # XXX
             shares[share.hash] = share
-            if len(shares) % 1000 == 0 and shares:
-                print "    %i" % (len(shares),)
+            count = len(shares)
+            now = time.time()
+            elapsed = now - last_print_time[0]
+            # Print every 1000 shares, OR every 100 shares if >10000 loaded, OR every 5 seconds
+            if (count % 1000 == 0 or 
+                (count > 10000 and count % 100 == 0) or 
+                (elapsed > 5.0)):
+                if count > 0:
+                    # If triggered by timeout and very few shares loaded, indicate slow processing
+                    if elapsed > 5.0 and (count - last_count[0]) < 50:
+                        print "    %i (validating complex shares...)" % (count,)
+                    else:
+                        print "    %i" % (count,)
+                    last_print_time[0] = now
+                    last_count[0] = count
         ss = p2pool_data.ShareStore(os.path.join(datadir_path, 'shares.'), net, share_cb, known_verified.add)
         print "    ...done loading %i shares (%i verified)!" % (len(shares), len(known_verified))
         print
         
         
         print 'Initializing work...'
+        print '    Building share chain graph from %i shares...' % (len(shares),)
         
         node = p2pool_node.Node(factory, dashd, shares.values(), known_verified, net)
         yield node.start()
+        
+        # Install signal handlers for graceful shutdown
+        def sigterm_handler(signum, frame):
+            """Handle SIGTERM/SIGINT by setting stopping flag before reactor stops"""
+            # Set stopping flag on p2p_node if it exists (created later in main())
+            if hasattr(node, 'p2p_node') and node.p2p_node:
+                node.p2p_node.stopping = True
+            # Also set flag on main node for reference
+            node.stopping = True
+            if broadcaster:
+                try:
+                    broadcaster.stop()
+                except:
+                    pass
+            # Now let reactor stop normally
+            reactor.callFromThread(reactor.stop)
+        
+        signal.signal(signal.SIGTERM, sigterm_handler)
+        signal.signal(signal.SIGINT, sigterm_handler)
+        
+        print '    ...share chain initialized!'
+        print
         
         for share_hash in shares:
             if share_hash not in node.tracker.items:
@@ -243,12 +337,384 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint):
         node.tracker.removed.watch(lambda share: ss.forget_share(share.hash))
         node.tracker.verified.removed.watch(lambda share: ss.forget_verified_share(share.hash))
         
-        def save_shares():
-            for share in node.tracker.get_chain(node.best_share_var.value, min(node.tracker.get_height(node.best_share_var.value), 2*net.CHAIN_LENGTH)):
+        # Create archive directory for old shares (unless archiving is disabled)
+        archive_dir = os.path.join(datadir_path, 'share_archive')
+        if not args.disable_share_archive:
+            if not os.path.exists(archive_dir):
+                os.makedirs(archive_dir)
+        
+        # Migration backup directory (one-time use)
+        migration_backup_dir = os.path.join(datadir_path, 'pre_archival_backup')
+        migration_flag = os.path.join(datadir_path, '.archival_migration_done')
+        
+        def create_migration_backup():
+            """One-time backup before first archival operation"""
+            import time
+            import shutil
+            import glob
+            
+            # Check if migration already done
+            if os.path.exists(migration_flag):
+                return True  # Already migrated
+            
+            try:
+                print 'Creating one-time migration backup before archival...'
+                
+                # Create backup directory
+                if not os.path.exists(migration_backup_dir):
+                    os.makedirs(migration_backup_dir)
+                
+                # Find all pickle files
+                pickle_pattern = os.path.join(datadir_path, net.NAME, 'shares.*')
+                pickle_files = glob.glob(pickle_pattern)
+                
+                if not pickle_files:
+                    print '  No pickle files to backup'
+                    # Still mark as done
+                    with open(migration_flag, 'w') as f:
+                        f.write('Migration completed: %s\n' % time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime()))
+                        f.write('No pickle files found\n')
+                    return True
+                
+                # Copy each pickle file
+                backed_up = 0
+                total_size = 0
+                for pickle_file in pickle_files:
+                    if os.path.exists(pickle_file):
+                        backup_path = os.path.join(migration_backup_dir, os.path.basename(pickle_file))
+                        shutil.copy2(pickle_file, backup_path)
+                        backed_up += 1
+                        total_size += os.path.getsize(pickle_file)
+                
+                # Create restoration script
+                restore_script = os.path.join(migration_backup_dir, 'restore_backup.sh')
+                with open(restore_script, 'w') as f:
+                    f.write('#!/bin/bash\n')
+                    f.write('# P2Pool Share Backup Restoration Script\n')
+                    f.write('# Created: %s\n\n' % time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime()))
+                    f.write('set -e\n\n')
+                    f.write('echo "WARNING: This will restore your shares to pre-archival state"\n')
+                    f.write('echo "Press Ctrl+C to cancel, or Enter to continue..."\n')
+                    f.write('read\n\n')
+                    f.write('# Stop p2pool if running\n')
+                    f.write('echo "Stopping p2pool..."\n')
+                    f.write('pkill -f "python.*run_p2pool.py" || true\n')
+                    f.write('sleep 2\n\n')
+                    f.write('# Restore files\n')
+                    f.write('echo "Restoring pickle files..."\n')
+                    f.write('cp -v "$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"/shares.* "%s/"\n\n' % os.path.join(datadir_path, net.NAME))
+                    f.write('# Remove migration flag to allow re-migration\n')
+                    f.write('rm -f "%s"\n\n' % migration_flag)
+                    f.write('echo "Restoration complete! You can now restart p2pool."\n')
+                os.chmod(restore_script, 0755)
+                
+                # Create manifest
+                manifest_path = os.path.join(migration_backup_dir, 'BACKUP_INFO.txt')
+                with open(manifest_path, 'w') as f:
+                    f.write('P2Pool Pre-Archival Migration Backup\n')
+                    f.write('====================================\n\n')
+                    f.write('Created: %s\n' % time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime()))
+                    f.write('Files backed up: %d\n' % backed_up)
+                    f.write('Total size: %.2f MB\n' % (total_size / 1048576.0))
+                    f.write('Chain height: %d\n' % (node.tracker.get_height(node.best_share_var.value) if node.best_share_var.value else 0))
+                    f.write('Shares in tracker: %d\n\n' % len(node.tracker.items))
+                    f.write('Backup files:\n')
+                    for pickle_file in sorted(pickle_files):
+                        if os.path.exists(pickle_file):
+                            f.write('  %s (%d bytes)\n' % (os.path.basename(pickle_file), os.path.getsize(pickle_file)))
+                    f.write('\nTo restore this backup:\n')
+                    f.write('  1. Stop p2pool\n')
+                    f.write('  2. Run: %s\n' % restore_script)
+                    f.write('  3. Restart p2pool\n\n')
+                    f.write('Or manually:\n')
+                    f.write('  cp %s/shares.* %s/\n' % (migration_backup_dir, os.path.join(datadir_path, net.NAME)))
+                    f.write('  rm %s\n' % migration_flag)
+                
+                print '  Backup created: %s' % migration_backup_dir
+                print '  Files: %d (%.2f MB)' % (backed_up, total_size / 1048576.0)
+                print '  Restore script: %s' % restore_script
+                
+                # Mark migration as done
+                with open(migration_flag, 'w') as f:
+                    f.write('Archival migration completed: %s\n' % time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime()))
+                    f.write('Backup location: %s\n' % migration_backup_dir)
+                    f.write('Files backed up: %d\n' % backed_up)
+                    f.write('Total size: %.2f MB\n' % (total_size / 1048576.0))
+                
+                print '  Migration backup complete!'
+                return True
+            except Exception as e:
+                print 'Warning: Failed to create migration backup: %s' % str(e)
+                print '  Continuing anyway - archival will proceed without backup'
+                return False
+        
+        def archive_old_shares(reason='periodic'):
+            """Archive old shares to file and remove from storage.
+            
+            When --disable-share-archive is set, old shares are still removed
+            from storage but NOT written to archive text files (saves disk space).
+            """
+            import time
+            
+            current_height = node.tracker.get_height(node.best_share_var.value) if node.best_share_var.value else 0
+            save_height = min(current_height, 2*net.CHAIN_LENGTH)
+            
+            # Build set of shares we want to keep
+            shares_to_keep = set()
+            for share in node.tracker.get_chain(node.best_share_var.value, save_height):
+                shares_to_keep.add(share.hash)
+            
+            # Find old shares to archive - ss.known is dict of filename -> (share_hashes, verified_hashes)
+            all_stored_hashes = set()
+            for filename, (share_hashes, verified_hashes) in ss.known.iteritems():
+                all_stored_hashes.update(share_hashes)
+            
+            shares_to_archive = all_stored_hashes - shares_to_keep
+            
+            if not shares_to_archive:
+                return 0
+            
+            archived_count = len(shares_to_archive)
+            
+            if args.disable_share_archive:
+                # Just forget old shares from storage without writing archive files
+                for share_hash in shares_to_archive:
+                    ss.forget_share(share_hash)
+                if archived_count > 0:
+                    print 'Pruned %d old shares from storage (%s) [archive disabled]' % (archived_count, reason)
+                return archived_count
+            
+            # Create archive file with timestamp
+            archive_filename = os.path.join(archive_dir, 'shares_%d.txt' % int(time.time()))
+            
+            archived_count = 0
+            try:
+                with open(archive_filename, 'w') as archive_file:
+                    archive_file.write('# P2Pool Share Archive - Created: %s\n' % time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime()))
+                    archive_file.write('# Reason: %s\n' % reason)
+                    archive_file.write('# Chain height: %d, Shares in active chain: %d\n' % (current_height, len(shares_to_keep)))
+                    archive_file.write('# Format: share_hash timestamp verified\n\n')
+                    
+                    for share_hash in shares_to_archive:
+                        # Get share from tracker if available (has metadata)
+                        if share_hash in node.tracker.items:
+                            share = node.tracker.items[share_hash]
+                            verified = 'verified' if share_hash in node.tracker.verified.items else 'unverified'
+                            archive_file.write('%064x %d %s\n' % (share_hash, share.timestamp, verified))
+                        else:
+                            # Share not in tracker, just record the hash
+                            archive_file.write('%064x - unknown\n' % share_hash)
+                        archived_count += 1
+                        
+                        # Remove from active storage (disk)
+                        # Note: Shares remain in tracker memory until clean_tracker() prunes them
+                        ss.forget_share(share_hash)
+                
+                if archived_count > 0:
+                    print 'Archived %d old shares to %s (%s)' % (archived_count, os.path.basename(archive_filename), reason)
+            except Exception as e:
+                print 'Warning: Failed to archive shares: %s' % str(e)
+            
+            return archived_count
+        
+        startup_archive_done = [False]  # Mutable flag to track if startup archival happened
+        
+        def rebuild_share_storage():
+            """Force complete rebuild of share storage files (removes archived shares from disk).
+            
+            WARNING: Only call during shutdown or when no mining is active!
+            If rebuild fails, shares will be automatically recovered from network peers.
+            """
+            import glob
+            
+            try:
+                import fcntl
+                use_locking = True
+            except ImportError:
+                # Windows doesn't have fcntl
+                use_locking = False
+            
+            print 'Starting share storage rebuild...'
+            
+            current_height = node.tracker.get_height(node.best_share_var.value) if node.best_share_var.value else 0
+            save_height = min(current_height, 2*net.CHAIN_LENGTH)
+            
+            # Get ALL shares from tracker that are within depth limit
+            # This includes main chain + orphans/side chains
+            shares_to_keep = []
+            for share_hash, share in node.tracker.items.iteritems():
+                try:
+                    height = node.tracker.get_height(share_hash)
+                    if height >= current_height - save_height:
+                        shares_to_keep.append(share)
+                except:
+                    # If we can't get height, it's disconnected - skip it
+                    pass
+            
+            print 'Rebuilding with %d shares (from %d in tracker)' % (len(shares_to_keep), len(node.tracker.items))
+            
+            # Check if any files are locked (mining active)
+            pickle_pattern = os.path.join(datadir_path, 'shares.*')
+            pickle_files = glob.glob(pickle_pattern)
+            print 'Found %d existing pickle files to compact' % len(pickle_files)
+            
+            if use_locking:
+                lock_handles = []
+                for pickle_file in pickle_files:
+                    try:
+                        fh = open(pickle_file, 'rb')
+                        fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        lock_handles.append(fh)
+                    except IOError:
+                        print 'ERROR: Cannot rebuild - file is locked (mining operations active?)'
+                        for fh in lock_handles:
+                            fh.close()
+                        return False
+                
+                # Release locks before deletion (files can't be deleted while locked)
+                for fh in lock_handles:
+                    fh.close()
+                lock_handles = []
+            
+            try:
+                # Delete all existing pickle files
+                deleted_count = 0
+                for pickle_file in pickle_files:
+                    try:
+                        print 'Deleting %s...' % pickle_file
+                        os.remove(pickle_file)
+                        deleted_count += 1
+                    except Exception as e:
+                        print 'Warning: Failed to remove %s: %s' % (pickle_file, e)
+                print 'Successfully deleted %d files' % deleted_count
+                
+                # Clear ShareStore internal state
+                ss.known.clear()
+                ss.known_desired.clear()
+                
+                # Rebuild with all active shares (main chain + recent orphans)
+                for share in shares_to_keep:
+                    ss.add_share(share)
+                    if share.hash in node.tracker.verified.items:
+                        ss.add_verified_hash(share.hash)
+                
+                new_files, _ = ss.get_filenames_and_next()
+                print 'Rebuild complete: %d shares written to %d files' % (len(shares_to_keep), len(new_files))
+                print 'Storage compacted: %d files -> %d files' % (len(pickle_files), len(new_files))
+                return True
+                
+            except Exception as e:
+                print 'Rebuild failed:', str(e)
+                print 'Shares will be automatically recovered from network peers on next restart'
+                return False
+        
+        def persist_shares():
+            """Save current shares to disk without archiving"""
+            current_height = node.tracker.get_height(node.best_share_var.value) if node.best_share_var.value else 0
+            save_height = min(current_height, 2*net.CHAIN_LENGTH)
+            
+            # Build set of shares we want to keep and save them
+            shares_to_keep = set()
+            for share in node.tracker.get_chain(node.best_share_var.value, save_height):
+                shares_to_keep.add(share.hash)
                 ss.add_share(share)
                 if share.hash in node.tracker.verified.items:
                     ss.add_verified_hash(share.hash)
+        
+        def save_shares():
+            """Save current shares and archive old ones (periodic)"""
+            # First persist current shares
+            persist_shares()
+            
+            # Then archive old shares (skip first call if startup archival just ran)
+            if startup_archive_done[0]:
+                startup_archive_done[0] = False  # Reset flag
+                return  # Skip first periodic call to avoid double-archival
+            archive_old_shares('periodic')
+        
+        # STARTUP OPTIMIZATION: Archive old shares immediately
+        # This prevents keeping orphaned/old shares in memory that will be archived anyway
+        print 'Checking for old shares to archive on startup...'
+        if args.disable_share_archive:
+            print '  Share archiving disabled (--disable-share-archive), old shares will be pruned without writing archive files'
+        current_height = node.tracker.get_height(node.best_share_var.value) if node.best_share_var.value else 0
+        if current_height > 2*net.CHAIN_LENGTH:
+            # ONE-TIME MIGRATION BACKUP: Create backup before first archival (skip if archiving disabled)
+            if not args.disable_share_archive:
+                create_migration_backup()
+            
+            archived = archive_old_shares('startup cleanup')
+            if archived > 0:
+                if args.disable_share_archive:
+                    print 'Startup optimization: pruned %d old shares (no archive files written)' % archived
+                else:
+                    print 'Startup optimization: archived %d old shares' % archived
+                print 'Note: Shares removed from disk storage (pickle files will be cleaned by periodic saves)'
+                print 'Note: Shares remain in memory until naturally pruned by clean_tracker()'
+                
+                startup_archive_done[0] = True  # Set flag to skip next periodic call
+        else:
+            print 'Chain height %d <= 2*CHAIN_LENGTH (%d), no archival needed yet' % (current_height, 2*net.CHAIN_LENGTH)
+        
+        # Start periodic save (every 60 seconds)
         deferral.RobustLoopingCall(save_shares).start(60)
+        
+        # Register graceful shutdown handler
+        @defer.inlineCallbacks
+        def shutdown_handler():
+            """Archive shares and optionally compact storage on graceful shutdown"""
+            import sys
+            print '=' * 70
+            print 'GRACEFUL SHUTDOWN INITIATED'
+            print '=' * 70
+            sys.stdout.flush()
+            
+            # Archive shares
+            print 'Archiving shares...'
+            sys.stdout.flush()
+            try:
+                save_shares()  # Final save and archive
+                print 'Shutdown archival complete'
+                sys.stdout.flush()
+            except Exception as e:
+                print 'Warning: Shutdown archival failed: %s' % str(e)
+                sys.stdout.flush()
+                
+            # Stop P2P node gracefully
+            print 'Stopping P2P node...'
+            sys.stdout.flush()
+            try:
+                yield node.stop()
+                print 'P2P node stopped'
+                sys.stdout.flush()
+            except Exception as e:
+                print 'Warning: P2P node shutdown error: %s' % str(e)
+                sys.stdout.flush()
+                
+            # Stop broadcaster if running
+            if broadcaster:
+                print 'Stopping broadcaster...'
+                sys.stdout.flush()
+                try:
+                    broadcaster.stop()
+                    print 'Broadcaster stopped'
+                    sys.stdout.flush()
+                except Exception as e:
+                    print 'Warning: Broadcaster shutdown error: %s' % str(e)
+                    sys.stdout.flush()
+            
+            # Compact storage if requested
+            if args.compact_on_shutdown:
+                print 'Compacting share storage...'
+                sys.stdout.flush()
+                if rebuild_share_storage():
+                    print 'Share storage compaction successful'
+                else:
+                    print 'Share storage compaction skipped or failed'
+                sys.stdout.flush()
+        
+        # Register with reactor stop event
+        reactor.addSystemEventTrigger('before', 'shutdown', shutdown_handler)
         
         print '    ...success!'
         print
@@ -271,20 +737,30 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint):
                     addrs.update(dict((tuple(k), v) for k, v in json.loads(f.read())))
             except:
                 print >>sys.stderr, 'error parsing addrs'
-        for addr_df in map(parse, net.BOOTSTRAP_ADDRS):
+        # Skip bootstrap in solo mode (PERSIST=False) - no sharechain to sync
+        bootstrap_addrs = net.BOOTSTRAP_ADDRS if net.PERSIST else []
+        for addr_df in map(parse, bootstrap_addrs):
             try:
                 addr = yield addr_df
                 if addr not in addrs:
                     addrs[addr] = (0, time.time(), time.time())
-            except:
-                log.err()
+            except Exception as e:
+                # DNS lookup failures for bootstrap nodes are expected - just log briefly
+                if 'DNS' in str(type(e).__name__) or 'DNS' in str(e):
+                    pass  # Silently skip DNS failures for bootstrap nodes
+                else:
+                    log.err()
         
         connect_addrs = set()
         for addr_df in map(parse, args.p2pool_nodes):
             try:
                 connect_addrs.add((yield addr_df))
-            except:
-                log.err()
+            except Exception as e:
+                # DNS lookup failures should be logged but not as full tracebacks
+                if 'DNS' in str(type(e).__name__) or 'DNS' in str(e):
+                    print 'Warning: DNS lookup failed for p2pool node'
+                else:
+                    log.err()
         
         node.p2p_node = p2pool_node.P2PNode(node,
             port=args.p2pool_port,
@@ -327,13 +803,13 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint):
         print 'Listening for workers on %r port %i...' % (worker_endpoint[0], worker_endpoint[1])
         
         wb = work.WorkerBridge(node, my_pubkey_hash, args.donation_percentage, merged_urls, args.worker_fee, args, pubkeys, dashd)
-        web_root = web.get_web_root(wb, datadir_path, dashd_getnetworkinfo_var, static_dir=args.web_static)
+        web_root, record_block_found, get_last_block_info = web.get_web_root(wb, datadir_path, dashd_getnetworkinfo_var, static_dir=args.web_static)
         caching_wb = worker_interface.CachingWorkerBridge(wb)
         worker_interface.WorkerInterface(caching_wb).attach_to(web_root, get_handler=lambda request: request.redirect('/static/'))
         web_serverfactory = server.Site(web_root)
         
         
-        serverfactory = switchprotocol.FirstByteSwitchFactory({'{': stratum.StratumServerFactory(caching_wb)}, web_serverfactory)
+        serverfactory = switchprotocol.FirstByteSwitchFactory({'{': stratum.StratumServerFactory(caching_wb, net)}, web_serverfactory)
         deferral.retry('Error binding to worker port:', traceback=False)(reactor.listenTCP)(worker_endpoint[1], serverfactory, interface=worker_endpoint[0])
         
         with open(os.path.join(os.path.join(datadir_path, 'ready_flag')), 'wb') as f:
@@ -342,6 +818,99 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint):
         print '    ...success!'
         print
         
+        # Hook block recording for accurate luck calculation and Telegram notifications
+        # (telegram_notifier already initialized earlier for error reporting)
+        @defer.inlineCallbacks
+        def on_verified_share(share):
+            """Record block finds with hashrate data and send Telegram notification."""
+            if share.pow_hash <= share.header['bits'].target:
+                # This is a block! Record it with current hashrate
+                block_hash = '%064x' % share.header_hash
+                try:
+                    block_height = p2pool_data.parse_bip0034(share.share_data['coinbase'])[0]
+                except Exception:
+                    block_height = 0
+                share_hash = '%064x' % share.hash
+                miner_address = dash_data.script2_to_address(share.new_script, net.PARENT)
+                explorer_url = net.PARENT.BLOCK_EXPLORER_URL_PREFIX + block_hash
+                
+                # Get previous block info for luck calculation BEFORE recording this block
+                prev_block = get_last_block_info()
+                
+                # Get pool hashrate and network difficulty
+                pool_hashrate = None
+                network_diff = None
+                try:
+                    height = node.tracker.get_height(node.best_share_var.value)
+                    if height >= 2:
+                        lookbehind = min(height, 3600 // net.SHARE_PERIOD)
+                        if lookbehind >= 2:
+                            raw_hashrate = p2pool_data.get_pool_attempts_per_second(
+                                node.tracker, node.best_share_var.value, lookbehind)
+                            stale_prop = p2pool_data.get_average_stale_prop(
+                                node.tracker, node.best_share_var.value, lookbehind)
+                            pool_hashrate = raw_hashrate / (1 - stale_prop) if stale_prop < 1 else raw_hashrate
+                    # Get network difficulty
+                    if node.dashd_work.value and 'bits' in node.dashd_work.value:
+                        network_diff = dash_data.target_to_difficulty(node.dashd_work.value['bits'].target)
+                except Exception:
+                    pass
+                
+                # Record block for luck calculation
+                record_block_found(block_hash, block_height, share_hash, miner_address, share.timestamp)
+                
+                # Calculate and log luck
+                luck_str = ''
+                if prev_block and pool_hashrate and network_diff:
+                    try:
+                        actual_time = share.timestamp - prev_block['ts']
+                        if actual_time > 0:
+                            # Use average of previous and current hashrate if available
+                            prev_hashrate = prev_block.get('pool_hashrate')
+                            if prev_hashrate:
+                                avg_hashrate = (prev_hashrate + pool_hashrate) / 2
+                            else:
+                                avg_hashrate = pool_hashrate
+                            
+                            expected_time = (network_diff * 2**32) / avg_hashrate
+                            luck = (expected_time / actual_time) * 100
+                            
+                            luck_str = ' Luck: %.1f%% (found in %s, expected %s)' % (
+                                luck,
+                                math.format_dt(actual_time),
+                                math.format_dt(expected_time)
+                            )
+                    except Exception as e:
+                        if p2pool.DEBUG:
+                            print 'Error calculating luck: %s' % str(e)
+                elif pool_hashrate and network_diff:
+                    # First block or no previous block data - just show expected time
+                    try:
+                        expected_time = (network_diff * 2**32) / pool_hashrate
+                        luck_str = ' (expected time to block: %s)' % math.format_dt(expected_time)
+                    except Exception:
+                        pass
+                
+                # Print luck info
+                if luck_str:
+                    print 'BLOCK LUCK:%s' % luck_str
+                
+                # Send Telegram notification (don't block on this)
+                if telegram_notifier is not None and telegram_notifier.is_configured():
+                    try:
+                        yield telegram_notifier.announce_block_found(
+                            net_name=net.NAME,
+                            block_height=block_height,
+                            block_hash=block_hash,
+                            miner_address=miner_address,
+                            explorer_url=explorer_url,
+                            pool_hashrate=pool_hashrate
+                        )
+                    except Exception as e:
+                        print 'Telegram notification error: %s' % str(e)
+        
+        node.tracker.verified.added.watch(on_verified_share)
+        print 'Block recording for luck calculation enabled'
         
         # done!
         print 'Started successfully!'
@@ -363,7 +932,10 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint):
             signal.siginterrupt(signal.SIGALRM, False)
             deferral.RobustLoopingCall(signal.alarm, 30).start(1)
         
+        # DEPRECATED: IRC announcements - use Telegram instead (telegram_config.json)
+        # Kept for backwards compatibility but Freenode is largely defunct
         if args.irc_announce:
+            print 'WARNING: IRC announcements are deprecated. Use Telegram instead (configure telegram_config.json)'
             from twisted.words.protocols import irc
             class IRCClient(irc.IRCClient):
                 nickname = 'p2pool%02i' % (random.randrange(100),)
@@ -426,9 +998,15 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint):
                     datums, dt = wb.local_rate_monitor.get_datums_in_last()
                     my_att_s = sum(datum['work']/dt for datum in datums)
                     my_shares_per_s = sum(datum['work']/dt/dash_data.target_to_average_attempts(datum['share_target']) for datum in datums)
-                    this_str += '\n Local: %sH/s in last %s Local dead on arrival: %s Expected time to share: %s' % (
+                    
+                    # Get worker/miner info
+                    miner_hash_rates, miner_dead_hash_rates = wb.get_local_rates()
+                    num_workers = len(miner_hash_rates)
+                    
+                    this_str += '\n Local: %sH/s in last %s Workers: %i Local dead on arrival: %s Expected time to share: %s' % (
                         math.format(int(my_att_s)),
                         math.format_dt(dt),
+                        num_workers,
                         math.format_binomial_conf(sum(1 for datum in datums if datum['dead']), len(datums), 0.95),
                         math.format_dt(1/my_shares_per_s) if my_shares_per_s else '???',
                     )
@@ -495,6 +1073,9 @@ def run():
     parser.add_argument('--debug',
         help='enable debugging mode',
         action='store_const', const=True, default=False, dest='debug')
+    parser.add_argument('--bench',
+        help='enable benchmarking mode (print performance timing info)',
+        action='store_const', const=True, default=False, dest='bench')
     parser.add_argument('-a', '--address',
         help='generate payouts to this address (default: <address requested from dashd>), or (dynamic)',
         type=str, action='store', default=None, dest='address')
@@ -510,9 +1091,15 @@ def run():
     parser.add_argument('--logfile',
         help='''log to this file (default: data/<NET>/log)''',
         type=str, action='store', default=None, dest='logfile')
+    parser.add_argument('--no-console',
+        help='disable console output (use when running as daemon with output redirected to log)',
+        action='store_true', default=False, dest='no_console')
     parser.add_argument('--web-static',
         help='use an alternative web frontend in this directory (otherwise use the built-in frontend)',
         type=str, action='store', default=None, dest='web_static')
+    parser.add_argument('--web-password', metavar='USERNAME:PASSWORD',
+        help='enable HTTP Basic Authentication for web interface (format: username:password)',
+        type=str, action='store', default=None, dest='web_password')
     parser.add_argument('--merged',
         help='call getauxblock on this url to get work for merged mining (example: http://ncuser:ncpass@127.0.0.1:10332/)',
         type=str, action='append', default=[], dest='merged_urls')
@@ -523,10 +1110,10 @@ def run():
         help='use Windows IOCP API in order to avoid errors due to large number of sockets being open',
         action='store_true', default=False, dest='iocp')
     parser.add_argument('--irc-announce',
-        help='announce any blocks found on irc://irc.freenode.net/#p2pool',
+        help='[DEPRECATED] use Telegram instead (configure telegram_config.json)',
         action='store_true', default=False, dest='irc_announce')
     parser.add_argument('--no-bugreport',
-        help='disable submitting caught exceptions to the author',
+        help='disable error reporting (errors sent to Telegram if configured with error_notifications=true)',
         action='store_true', default=False, dest='no_bugreport')
     
     p2pool_group = parser.add_argument_group('p2pool interface')
@@ -559,6 +1146,9 @@ def run():
     worker_group.add_argument('-f', '--fee', metavar='FEE_PERCENTAGE',
         help='''charge workers mining to their own dash address (by setting their miner's username to a dash address) this percentage fee to mine on your p2pool instance. Amount displayed at http://127.0.0.1:WORKER_PORT/fee (default: 0)''',
         type=float, action='store', default=0, dest='worker_fee')
+    worker_group.add_argument('-s', '--share-rate', metavar='SECONDS_PER_SHARE',
+        help='Auto-adjust stratum mining difficulty on each connection to target this many seconds per pseudoshare (default: 10)',
+        type=float, action='store', default=10., dest='share_rate')
     
     dashd_group = parser.add_argument_group('dashd interface')
     dashd_group.add_argument('--dashd-config-path', metavar='DASHD_CONFIG_PATH',
@@ -577,6 +1167,24 @@ def run():
         help='''connect to P2P interface at this port (default: %s <read from dash.conf if password not provided>)''' % ', '.join('%s:%i' % (name, net.PARENT.P2P_PORT) for name, net in sorted(realnets.items())),
         type=int, action='store', default=None, dest='dashd_p2p_port')
     
+    broadcaster_group = parser.add_argument_group('multi-peer broadcaster (experimental)')
+    broadcaster_group.add_argument('--disable-broadcaster',
+        help='disable multi-peer block broadcasting (uses only local dashd for propagation)',
+        action='store_false', default=True, dest='broadcaster_enabled')
+    broadcaster_group.add_argument('--broadcaster-max-peers', metavar='MAX_PEERS',
+        help='maximum number of Dash network peers to maintain connections to (default: 20)',
+        type=int, action='store', default=20, dest='broadcaster_max_peers')
+    broadcaster_group.add_argument('--broadcaster-min-peers', metavar='MIN_PEERS',
+        help='minimum number of peers required for healthy operation (default: 5)',
+        type=int, action='store', default=5, dest='broadcaster_min_peers')
+    
+    parser.add_argument('--compact-on-shutdown',
+        help='compact share storage on graceful shutdown (removes archived shares, saves disk space)',
+        action='store_true', default=False, dest='compact_on_shutdown')
+    parser.add_argument('--disable-share-archive',
+        help='disable archiving old shares to text files (saves disk space on production nodes)',
+        action='store_true', default=False, dest='disable_share_archive')
+    
     dashd_group.add_argument(metavar='DASHD_RPCUSERPASS',
         help='dashd RPC interface username, then password, space-separated (only one being provided will cause the username to default to being empty, and none will cause P2Pool to read them from dash.conf)',
         type=str, action='store', default=[], nargs='*', dest='dashd_rpc_userpass')
@@ -589,12 +1197,29 @@ def run():
     else:
         p2pool.DEBUG = False
     
+    if args.bench:
+        p2pool.BENCH = True
+    else:
+        p2pool.BENCH = False
+    
     net_name = args.net_name + ('_testnet' if args.testnet else '')
     net = networks.nets[net_name]
     
     datadir_path = os.path.join((os.path.join(os.path.dirname(sys.argv[0]), 'data') if args.datadir is None else args.datadir), net_name)
     if not os.path.exists(datadir_path):
         os.makedirs(datadir_path)
+    
+    # Initialize security config and handle web password
+    from p2pool.util import security_config
+    sec_config = security_config.security_config
+    sec_config.set_datadir(datadir_path)
+    
+    if args.web_password:
+        if ':' not in args.web_password:
+            parser.error('--web-password must be in format username:password')
+        username, password = args.web_password.split(':', 1)
+        sec_config.set_web_password(username, password)
+        print 'Web interface password protection enabled for user: %s' % username
     
     if len(args.dashd_rpc_userpass) > 2:
         parser.error('a maximum of two arguments are allowed')
@@ -675,7 +1300,12 @@ def run():
         args.logfile = os.path.join(datadir_path, 'log')
     
     logfile = logging.LogFile(args.logfile)
-    pipe = logging.TimestampingPipe(logging.TeePipe([logging.EncodeReplacerPipe(sys.stderr), logfile]))
+    # If --no-console is set (daemon mode), only write to logfile to avoid double logging
+    # when shell also redirects stdout/stderr to log file
+    if args.no_console:
+        pipe = logging.TimestampingPipe(logfile)
+    else:
+        pipe = logging.TimestampingPipe(logging.TeePipe([logging.EncodeReplacerPipe(sys.stderr), logfile]))
     sys.stdout = logging.AbortPipe(pipe)
     sys.stderr = log.DefaultObserver.stderr = logging.AbortPipe(logging.PrefixPipe(pipe, '> '))
     if hasattr(signal, "SIGUSR1"):
@@ -687,15 +1317,16 @@ def run():
     deferral.RobustLoopingCall(logfile.reopen).start(5)
     
     class ErrorReporter(object):
-        def __init__(self):
+        def __init__(self, telegram_notifier):
             self.last_sent = None
+            self.telegram = telegram_notifier
         
         def emit(self, eventDict):
             if not eventDict["isError"]:
                 return
             
-            if self.last_sent is not None and time.time() < self.last_sent + 5:
-                return
+            if self.last_sent is not None and time.time() < self.last_sent + 30:
+                return  # Rate limit to once per 30 seconds
             self.last_sent = time.time()
             
             if 'failure' in eventDict:
@@ -704,15 +1335,48 @@ def run():
             else:
                 text = " ".join([str(m) for m in eventDict["message"]]) + "\n"
             
-            from twisted.web import client
-            client.getPage(
-                url='http://u.forre.st/p2pool_error.cgi',
-                method='POST',
-                postdata=p2pool.__version__ + ' ' + net.NAME + '\n' + text,
-                timeout=15,
-            ).addBoth(lambda x: None)
-    if not args.no_bugreport:
-        log.addObserver(ErrorReporter().emit)
+            # Add version and network info
+            error_header = 'P2Pool %s (%s)\n\n' % (p2pool.__version__, net.NAME)
+            error_text = error_header + text
+            
+            # Send to Telegram if configured (non-blocking)
+            if self.telegram and self.telegram.is_configured():
+                self.telegram.send_error_notification(error_text, error_type='Error')
     
-    reactor.callWhenRunning(main, args, net, datadir_path, merged_urls, worker_endpoint)
+    # Initialize Telegram notifier early for error reporting
+    telegram_notifier = TelegramNotifier(datadir_path, net.NAME)
+    
+    if not args.no_bugreport:
+        log.addObserver(ErrorReporter(telegram_notifier).emit)
+    
+    # Filter out benign OpenSSL import errors and DNS lookup failures from Twisted
+    original_observer = log.theLogPublisher.observers[0] if log.theLogPublisher.observers else None
+    def filter_openssl_errors(eventDict):
+        # Check for OpenSSL ImportError or DNS failures in failure or isError events
+        if eventDict.get('isError'):
+            msg = eventDict.get('message', '')
+            why = eventDict.get('why', '')
+            failure = eventDict.get('failure')
+            
+            # Build text to check from all available sources
+            check_text = str(msg) + str(why)
+            if failure:
+                check_text += failure.getTraceback()
+            
+            # Suppress OpenSSL import errors from twisted.web (HTTPS redirect issue)
+            if 'No module named OpenSSL' in check_text:
+                return  # Suppress this error
+            
+            # Suppress DNS lookup failures for bootstrap nodes (expected when nodes are down)
+            if 'DNSLookupError' in check_text or 'DNS lookup failed' in check_text:
+                return  # Suppress DNS failures
+        
+        if original_observer:
+            original_observer(eventDict)
+    
+    if original_observer:
+        log.removeObserver(original_observer)
+        log.addObserver(filter_openssl_errors)
+    
+    reactor.callWhenRunning(main, args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifier)
     reactor.run()
