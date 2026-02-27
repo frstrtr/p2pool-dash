@@ -107,6 +107,7 @@ class dashd(object): # can be used as p2p factory, p2p protocol, or rpc jsonrpc 
             "curtime" : 1351659940,
             "bits" : "21008000",
             "height" : len(self.blocks),
+            "coinbase_payload" : "",
         }
 
 @apply
@@ -241,7 +242,7 @@ class Test(unittest.TestCase):
         # crawl web pages
         from p2pool import web
         stop_event = variable.Event()
-        web2_root = web.get_web_root(nodes[0].wb, tempfile.mkdtemp(), variable.Variable(None), stop_event)
+        web2_root, _ = web.get_web_root(nodes[0].wb, tempfile.mkdtemp(), variable.Variable(None), stop_event)
         web2_port = reactor.listenTCP(0, server.Site(web2_root))
         for name in web2_root.listNames() + ['web/' + x for x in web2_root.getChildWithDefault('web', None).listNames()]:
             if name in ['web/graph_data', 'web/share', 'web/share_data']: continue

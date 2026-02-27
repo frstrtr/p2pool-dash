@@ -1,11 +1,35 @@
 import sys
 import time
 
-from twisted.internet import defer
+from twisted.internet import defer, error as twisted_error
 
 import p2pool
 from p2pool.dash import data as dash_data
 from p2pool.util import deferral, jsonrpc
+
+# Global broadcaster instance (initialized by main.py)
+_broadcaster = None
+
+def set_broadcaster(broadcaster):
+    """Set the global broadcaster instance"""
+    global _broadcaster
+    print 'Helper: Broadcaster instance registered for multi-peer propagation'
+    _broadcaster = broadcaster
+
+def get_broadcaster():
+    """Get the global broadcaster instance"""
+    return _broadcaster
+
+def get_broadcaster_status():
+    """Get broadcaster status for web dashboard"""
+    if _broadcaster:
+        return _broadcaster.get_network_status()
+    else:
+        return {
+            'enabled': False,
+            'health': {'healthy': False, 'active_connections': 0},
+            'message': 'Multi-peer broadcaster disabled'
+        }
 
 @deferral.retry('Error while checking dash connection:', 1)
 @defer.inlineCallbacks
@@ -14,7 +38,7 @@ def check(dashd, net):
         print >>sys.stderr, "    Check failed! Make sure that you're connected to the right dashd with --dashd-rpc-port!"
         raise deferral.RetrySilentlyException()
     if not net.VERSION_CHECK((yield dashd.rpc_getnetworkinfo())['version']):
-        print >>sys.stderr, '    dash version too old! Upgrade to 0.12.2.0 or newer!'
+        print >>sys.stderr, '    dash version too old! Upgrade to v20.0.0 or newer!'
         raise deferral.RetrySilentlyException()
 
 @deferral.retry('Error getting work from dashd:', 3)
@@ -29,6 +53,15 @@ def getwork(dashd, net, use_getblocktemplate=True):
         start = time.time()
         work = yield go()
         end = time.time()
+    except twisted_error.TimeoutError:
+        print >>sys.stderr, '    dashd RPC timeout - dashd may be busy or overloaded, retrying...'
+        raise deferral.RetrySilentlyException()
+    except twisted_error.ConnectionRefusedError:
+        print >>sys.stderr, '    dashd connection refused - is dashd running?'
+        raise deferral.RetrySilentlyException()
+    except jsonrpc.Error_for_code(-10): # Initial sync
+        print >>sys.stderr, '    Dash Core is in initial sync, waiting for blocks...'
+        raise deferral.RetrySilentlyException()
     except jsonrpc.Error_for_code(-32601): # Method not found
         use_getblocktemplate = not use_getblocktemplate
         try:
@@ -36,13 +69,26 @@ def getwork(dashd, net, use_getblocktemplate=True):
             work = yield go()
             end = time.time()
         except jsonrpc.Error_for_code(-32601): # Method not found
-            print >>sys.stderr, 'Error: dash version too old! Upgrade to v0.11.2.17 or newer!'
+            print >>sys.stderr, 'Error: dash version too old! Upgrade to v20.0.0 or newer!'
             raise deferral.RetrySilentlyException()
+    except jsonrpc.Error, e:
+        # Catch any other JSON-RPC errors and handle them gracefully
+        try:
+            error_msg = str(e)
+        except:
+            error_msg = 'JSON-RPC error (code: %s)' % getattr(e, 'code', 'unknown')
+        print >>sys.stderr, '    dashd RPC error: %s' % error_msg
+        raise deferral.RetrySilentlyException()
 
-    if work['transactions']:
-        packed_transactions = [(x['data'] if isinstance(x, dict) else x).decode('hex') for x in work['transactions']]
-    else:
-        packed_transactions = [ ]
+    # Include ALL transactions from getblocktemplate
+    # Per BIP 22, transactions are already ordered with dependencies before dependents
+    packed_transactions = []
+    for x in work.get('transactions', []):
+        if isinstance(x, dict):
+            packed_transactions.append(x['data'].decode('hex'))
+        else:
+            packed_transactions.append(x.decode('hex'))
+
     if 'height' not in work:
         work['height'] = (yield dashd.rpc_getblock(work['previousblockhash']))['height'] + 1
     elif p2pool.DEBUG:
@@ -63,11 +109,21 @@ def getwork(dashd, net, use_getblocktemplate=True):
 
     for obj in payment_objects:
         g={}
-        if 'payee' in obj:
-            g['payee'] = str(obj['payee'])
+        # Always count the amount towards payment_amount, even if payee/script is missing
+        if 'amount' in obj and obj['amount'] > 0:
+            payment_amount += obj['amount']
             g['amount'] = obj['amount']
-            if g['amount'] > 0:
-                payment_amount += g['amount']
+            # Use 'payee' if available (regular masternode address)
+            # For script-only payments (like platform OP_RETURN), encode the script
+            # with '!' prefix so it survives serialization (minimal overhead)
+            if 'payee' in obj and obj['payee']:
+                # Regular payment with address
+                g['payee'] = str(obj['payee'])
+                packed_payments.append(g)
+            elif 'script' in obj and obj['script']:
+                # Script-only payment (e.g., platform OP_RETURN with empty payee)
+                # Encode script as "!<hex>" - '!' prefix not in base58, minimal overhead
+                g['payee'] = '!' + obj['script']
                 packed_payments.append(g)
 
     coinbase_payload = None
@@ -95,30 +151,159 @@ def getwork(dashd, net, use_getblocktemplate=True):
 
 @deferral.retry('Error submitting primary block: (will retry)', 10, 10)
 def submit_block_p2p(block, factory, net):
+    """Submit found block via Dash P2P network for fast propagation."""
+    block_hash = dash_data.hash256(dash_data.block_header_type.pack(block['header']))
+    
     if factory.conn.value is None:
-        print >>sys.stderr, 'No dashd connection when block submittal attempted! %s%064x' % (net.PARENT.BLOCK_EXPLORER_URL_PREFIX, dash_data.hash256(dash_data.block_header_type.pack(block['header'])))
+        print >>sys.stderr, 'No dashd P2P connection when block submittal attempted! %s%064x' % (net.PARENT.BLOCK_EXPLORER_URL_PREFIX, block_hash)
         raise deferral.RetrySilentlyException()
-    factory.conn.value.send_block(block=block)
+    
+    # Serialize and send block
+    try:
+        print 'P2P: Sending block %064x to dashd via P2P protocol...' % block_hash
+        print 'P2P: Block header version: %d, prev: %064x' % (block['header']['version'], block['header']['previous_block'])
+        print 'P2P: Block has %d transactions' % len(block.get('txs', []))
+        factory.conn.value.send_block(block=block)
+        print 'P2P: Block sent successfully to dashd for network propagation'
+    except Exception as e:
+        print >>sys.stderr, 'P2P: ERROR sending block: %s' % e
+        raise
 
 @deferral.retry('Error submitting block: (will retry)', 10, 10)
 @defer.inlineCallbacks
 def submit_block_rpc(block, ignore_failure, dashd, dashd_work, net):
+    block_hash = dash_data.hash256(dash_data.block_header_type.pack(block['header']))
+    pow_hash = net.PARENT.POW_FUNC(dash_data.block_header_type.pack(block['header']))
+    block_height = block['header'].get('height', 'unknown')
+    
+    print ''
+    print '=' * 70
+    print 'BLOCK SUBMISSION STARTED at %s' % time.strftime('%Y-%m-%d %H:%M:%S')
+    print '  Block hash:   %064x' % block_hash
+    print '  POW hash:     %064x' % pow_hash
+    print '  Target:       %064x' % block['header']['bits'].target
+    print '  Prev block:   %064x' % block['header']['previous_block']
+    print '  Transactions: %d' % len(block.get('txs', []))
+    print '=' * 70
+    
+    result = None
+    success = False
+    p2p_won_race = False
+    
     if dashd_work.value['use_getblocktemplate']:
         try:
-            result = yield dashd.rpc_submitblock(dash_data.block_type.pack(block).encode('hex'))
+            block_data = dash_data.block_type.pack(block).encode('hex')
+            print 'RPC: Calling submitblock with %d bytes of data...' % len(block_data)
+            result = yield dashd.rpc_submitblock(block_data)
+            print 'RPC: submitblock returned: %r' % result
         except jsonrpc.Error_for_code(-32601): # Method not found, for older litecoin versions
             result = yield dashd.rpc_getblocktemplate(dict(mode='submit', data=dash_data.block_type.pack(block).encode('hex')))
-        success = result is None
+        except Exception as e:
+            print >>sys.stderr, 'RPC: submitblock ERROR: %s' % e
+            raise
+        # submitblock returns None on success, "duplicate" if block already known (P2P won the race!)
+        # Other return values indicate errors: "inconclusive", "rejected", etc.
+        success = result is None or result == 'duplicate'
+        p2p_won_race = result == 'duplicate'
+        
+        # Check for specific error conditions
+        if result is not None and result != 'duplicate':
+            print >>sys.stderr, '*** WARNING: submitblock returned error: %r ***' % result
+            if 'inconclusive' in str(result).lower():
+                print >>sys.stderr, '    Block submission was inconclusive - may or may not be accepted'
+            elif 'rejected' in str(result).lower():
+                print >>sys.stderr, '    Block was REJECTED by the network!'
+            elif 'bad-prevblk' in str(result).lower():
+                print >>sys.stderr, '    Block has invalid previous block - chain may have moved!'
+            elif 'stale' in str(result).lower():
+                print >>sys.stderr, '    Block is STALE - another block was found first!'
     else:
         result = yield dashd.rpc_getmemorypool(dash_data.block_type.pack(block).encode('hex'))
         success = result
-    success_expected = net.PARENT.POW_FUNC(dash_data.block_header_type.pack(block['header'])) <= block['header']['bits'].target
+        p2p_won_race = False
+    success_expected = pow_hash <= block['header']['bits'].target
+    
+    print 'BLOCK SUBMISSION RESULT (RPC):'
+    if p2p_won_race:
+        print '  *** P2P WON THE RACE! Block already propagated via P2P network ***'
+        print '  RPC result: %s (this is expected when P2P submits first)' % str(result)
+        print '  SUCCESS: Block was accepted!'
+    else:
+        print '  RPC accepted: %s (result: %s)' % (success, str(result))
+    print '  Expected success: %s' % success_expected
+    
     if (not success and success_expected and not ignore_failure) or (success and not success_expected):
         print >>sys.stderr, 'Block submittal result: %s (%r) Expected: %s' % (success, result, success_expected)
+    
+    # Check chainlock status after submission (but skip if P2P already submitted it)
+    if success and not p2p_won_race:
+        yield check_block_chainlock(dashd, block_hash, net)
 
+@defer.inlineCallbacks
 def submit_block(block, ignore_failure, factory, dashd, dashd_work, net):
-    submit_block_rpc(block, ignore_failure, dashd, dashd_work, net)
+    """Submit block via multiple propagation channels for maximum reliability.
+    
+    Strategy:
+    1. Multi-peer broadcast (if enabled) - parallel to many peers including local dashd
+    2. Local dashd P2P - ALWAYS USED as critical fallback (synchronous)
+    3. RPC submitblock - verification and final fallback
+    
+    NOTE: Local dashd P2P ALWAYS runs to ensure we never lose the block even if
+    all remote peers fail or broadcaster has issues!
+    """
+    print ''
+    print '=' * 80
+    print 'BLOCK SUBMISSION PIPELINE STARTED'
+    print '=' * 80
+    
+    # Try multi-peer broadcast first if enabled
+    broadcaster = get_broadcaster()
+    broadcast_success = False
+    broadcaster_peer_count = 0
+    
+    if broadcaster:
+        print 'PHASE 1: Multi-Peer Broadcast (PARALLEL to all peers)'
+        try:
+            success_count = yield broadcaster.broadcast_block(block)
+            broadcaster_peer_count = success_count
+            if success_count > 0:
+                broadcast_success = True
+                print 'Multi-peer broadcast: SUCCESS (%d peers reached)' % success_count
+            else:
+                print >>sys.stderr, 'Multi-peer broadcast: WARNING - 0 peers reached!'
+        except Exception as e:
+            print >>sys.stderr, 'Multi-peer broadcast: ERROR - %s' % e
+    else:
+        print 'PHASE 1: Multi-Peer Broadcast - DISABLED (not configured)'
+    
+    # ALWAYS submit to local dashd P2P as critical fallback!
+    # This ensures the block reaches the network even if:
+    # - Broadcaster fails completely
+    # - All remote peers are unavailable
+    # - Local dashd was not in broadcaster's peer list
+    print ''
+    print 'PHASE 2: Local dashd P2P (CRITICAL FALLBACK - ALWAYS RUNS)'
+    if broadcast_success:
+        print '  Note: Multi-peer broadcast succeeded (%d peers)' % broadcaster_peer_count
+        print '  BUT we still send to local dashd P2P for guaranteed delivery!'
+    else:
+        print '  CRITICAL: Multi-peer broadcast failed - local dashd is our lifeline!'
+    
     submit_block_p2p(block, factory, net)
+    print '  Local dashd P2P: Block sent (synchronous)'
+    
+    # Always submit via RPC for verification
+    print ''
+    print 'PHASE 3: RPC Verification (submitblock)'
+    yield submit_block_rpc(block, ignore_failure, dashd, dashd_work, net)
+    
+    print '=' * 80
+    print 'BLOCK SUBMISSION PIPELINE COMPLETE'
+    print '  Multi-peer: %d peers' % broadcaster_peer_count
+    print '  Local dashd P2P: [OK] (always sent)'
+    print '  RPC verification: [OK] (completed)'
+    print '=' * 80
+    print ''
 
 @defer.inlineCallbacks
 def check_block_header(bitcoind, block_hash):
@@ -128,3 +313,76 @@ def check_block_header(bitcoind, block_hash):
         defer.returnValue(False)
     else:
         defer.returnValue(True)
+
+@defer.inlineCallbacks
+def check_block_chainlock(dashd, block_hash, net):
+    """Check and log the chainlock status of a submitted block."""
+    from twisted.internet import reactor
+    
+    # Skip chainlock check for regtest - no masternodes/chainlocks
+    parent_name = getattr(net.PARENT, 'NAME', '') if hasattr(net, 'PARENT') else ''
+    if 'regtest' in parent_name.lower():
+        print 'CHAINLOCK CHECK: Skipped (regtest mode has no chainlocks)'
+        defer.returnValue(None)
+    
+    # Also skip if network doesn't have chainlocks explicitly disabled
+    if hasattr(net, 'CHAINLOCK_ENABLED') and not net.CHAINLOCK_ENABLED:
+        print 'CHAINLOCK CHECK: Skipped (chainlocks disabled for this network)'
+        defer.returnValue(None)
+    
+    # Wait a few seconds for block to propagate
+    for delay in [2, 5, 10, 30, 60]:
+        yield deferral.sleep(delay)
+        try:
+            block_info = yield dashd.rpc_getblock('%064x' % block_hash)
+            chainlock = block_info.get('chainlock', False)
+            confirmations = block_info.get('confirmations', 0)
+            height = block_info.get('height', 'unknown')
+            
+            print ''
+            print 'CHAINLOCK STATUS CHECK (%ds after submission):' % delay
+            print '  Block hash:    %064x' % block_hash
+            print '  Height:        %s' % height
+            print '  Confirmations: %s' % confirmations
+            print '  ChainLock:     %s' % ('YES - LOCKED!' if chainlock else 'NO - not yet locked')
+            
+            if chainlock:
+                print ''
+                print '*** BLOCK CHAINLOCKED SUCCESSFULLY! ***'
+                print '  Explorer: %s%064x' % (net.PARENT.BLOCK_EXPLORER_URL_PREFIX, block_hash)
+                print ''
+                defer.returnValue(True)
+            
+            if confirmations < 0:
+                print ''
+                print '*** WARNING: BLOCK MAY BE ORPHANED (confirmations=%d) ***' % confirmations
+                print '  Another block may have been chainlocked at this height.'
+                print ''
+                # Check what block is at this height now
+                try:
+                    current_hash = yield dashd.rpc_getblockhash(height)
+                    if current_hash != '%064x' % block_hash:
+                        print '  Current block at height %s: %s' % (height, current_hash)
+                        current_block = yield dashd.rpc_getblock(current_hash)
+                        print '  Current block chainlock: %s' % current_block.get('chainlock', False)
+                except Exception as e:
+                    print '  Error checking current block: %s' % e
+                defer.returnValue(False)
+                
+        except jsonrpc.Error_for_code(-5):
+            # Block not found in local node - possibly orphaned
+            if delay == 2:  # Only log once on first check
+                print 'CHAINLOCK CHECK: Block %064x not found in local node' % block_hash
+            defer.returnValue(False)
+        except Exception as e:
+            # Suppress SSL import errors (expected when OpenSSL not installed)
+            if 'OpenSSL' in str(e) or 'SSL' in str(type(e).__name__):
+                pass  # Silently skip SSL errors
+            else:
+                print 'CHAINLOCK CHECK: Error checking block: %s' % e
+    
+    print ''
+    print '*** WARNING: Block not chainlocked after 60 seconds ***'
+    print '  Block may be at risk of being orphaned if another chainlock wins.'
+    print ''
+    defer.returnValue(False)

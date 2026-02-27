@@ -5,6 +5,7 @@ import time
 from twisted.internet import defer, reactor
 from twisted.python import log
 
+import p2pool
 from p2pool import data as p2pool_data, p2p
 from p2pool.dash import data as dash_data, helper, height_tracker
 from p2pool.util import deferral, variable
@@ -213,7 +214,15 @@ class Node(object):
         def poll_header():
             if self.factory.conn.value is None:
                 return
-            handle_header((yield self.factory.conn.value.get_block_header(self.dashd_work.value['previous_block'])))
+            try:
+                header = yield self.factory.conn.value.get_block_header(self.dashd_work.value['previous_block'])
+                handle_header(header)
+            except defer.TimeoutError:
+                # Dashd didn't respond in time, will retry on next call
+                print 'Warning: Timeout while requesting block header from dashd'
+            except Exception as e:
+                # Log other errors but don't crash
+                print 'Warning: Error while requesting block header:', str(e)
         self.dashd_work.changed.watch(lambda _: poll_header())
         yield deferral.retry('Error while requesting best block header:')(poll_header)()
         
@@ -247,14 +256,14 @@ class Node(object):
                 dash_data.hash256(dash_data.tx_type.pack(tx)): tx,
             })
         # forward transactions seen to dashd
-        @self.known_txs_var.transitioned.watch
+        @self.known_txs_var.added.watch
         @defer.inlineCallbacks
-        def _(before, after):
+        def _(added):
             yield deferral.sleep(random.expovariate(1/1))
             if self.factory.conn.value is None:
                 return
-            for tx_hash in set(after) - set(before):
-                self.factory.conn.value.send_tx(tx=after[tx_hash])
+            for tx_hash, tx in added.iteritems():
+                self.factory.conn.value.send_tx(tx=tx)
         
         @self.tracker.verified.added.watch
         def _(share):
@@ -305,18 +314,17 @@ class Node(object):
                         break
     
     def get_current_txouts(self):
-	#i = 210240
-	real_subsidy = self.dashd_work.value['subsidy']
-	#while i <= self.dashd_work.value['height']:
-		#real_subsidy = real_subsidy*92.9/100
-		#i = i + 210240
         # Use value from getblocktemplate's result.
-        if self.dashd_work.value['payment_amount'] >= 0 :
-            real_pay = real_subsidy - self.dashd_work.value['payment_amount']
+        real_subsidy = self.dashd_work.value['subsidy']
+        payment_amount = self.dashd_work.value.get('payment_amount', -1)
+        
+        if payment_amount >= 0:
+            real_pay = real_subsidy - payment_amount
             return p2pool_data.get_expected_payouts(self.tracker, self.best_share_var.value, self.dashd_work.value['bits'].target, real_pay, self.net)
-            
-	if self.dashd_work.value['height'] > 158000+((576*30)* 17):
-		real_pay = (real_subsidy)*40/100
+        
+        # Fallback to legacy percentage-based calculation if payment_amount not available
+        if self.dashd_work.value['height'] > 158000+((576*30)* 17):
+            real_pay = (real_subsidy)*40/100
         elif self.dashd_work.value['height'] > 158000+((576*30)* 15):
             real_pay = (real_subsidy)*42.5/100
         elif self.dashd_work.value['height'] > 158000+((576*30)* 13):
@@ -344,7 +352,11 @@ class Node(object):
         return p2pool_data.get_expected_payouts(self.tracker, self.best_share_var.value, self.dashd_work.value['bits'].target, real_pay, self.net)
     
     def clean_tracker(self):
-        best, desired, decorated_heads, bad_peer_addresses = self.tracker.think(self.get_height_rel_highest, self.dashd_work.value['previous_block'], self.dashd_work.value['bits'], self.known_txs_var.value)
+        try:
+            best, desired, decorated_heads, bad_peer_addresses = self.tracker.think(self.get_height_rel_highest, self.dashd_work.value['previous_block'], self.dashd_work.value['bits'], self.known_txs_var.value)
+        except Exception as e:
+            log.err(e, 'Error in tracker.think() - continuing')
+            return  # Skip this iteration, try again next time
         
         # eat away at heads
         if decorated_heads:

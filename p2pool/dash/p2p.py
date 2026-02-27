@@ -19,7 +19,7 @@ class Protocol(p2protocol.Protocol):
 
     def connectionMade(self):
         self.send_version(
-            version=70223,
+            version=70238,
             services=1,
             time=int(time.time()),
             addr_to=dict(
@@ -53,7 +53,7 @@ class Protocol(p2protocol.Protocol):
     message_verack = pack.ComposedType([])
     def handle_verack(self):
         self.get_block = deferral.ReplyMatcher(lambda hash: self.send_getdata(requests=[dict(type='block', hash=hash)]))
-        self.get_block_header = deferral.ReplyMatcher(lambda hash: self.send_getheaders(version=1, have=[], last=hash))
+        self.get_block_header = deferral.ReplyMatcher(lambda hash: self.send_getheaders(version=70238, have=[], last=hash))
 
         if hasattr(self.factory, 'resetDelay'):
             self.factory.resetDelay()
@@ -97,7 +97,9 @@ class Protocol(p2protocol.Protocol):
                 28: 'quorum_recovered_sig',
                 29: 'clsig',
                 30: 'islock',
-                31: 'isdlock'
+                31: 'isdlock',
+                32: 'dsq',
+                33: 'platform_ban'
             })),
             ('hash', pack.IntType(256)),
         ]))),
@@ -114,7 +116,41 @@ class Protocol(p2protocol.Protocol):
 
     message_getdata = pack.ComposedType([
         ('requests', pack.ListType(pack.ComposedType([
-            ('type', pack.EnumType(pack.IntType(32), {1: 'tx', 2: 'block'})),
+            ('type', pack.EnumType(pack.IntType(32), {
+                1: 'tx',
+                2: 'block',
+                3: 'filtered_block',
+                4: 'txlock_request',
+                5: 'txlock_vote',
+                6: 'spork',
+                7: 'masternode_winner',
+                8: 'masternode_scanning_error',
+                9: 'budget_vote',
+                10: 'budget_proposal',
+                11: 'budget_finalized',
+                12: 'budget_finalized_vote',
+                13: 'masternode_quorum',
+                14: 'masternode_announce',
+                15: 'masternode_ping',
+                16: 'dstx',
+                17: 'governance_object',
+                18: 'governance_object_vote',
+                19: 'masternode_verify',
+                20: 'compact_block',
+                21: 'quorum_final_commitment',
+                22: 'quorum_dummy_commitment',
+                23: 'quorum_contrib',
+                24: 'quorum_complaint',
+                25: 'quorum_justification',
+                26: 'quorum_premature_commitment',
+                27: 'quorum_debug_status',
+                28: 'quorum_recovered_sig',
+                29: 'clsig',
+                30: 'islock',
+                31: 'isdlock',
+                32: 'dsq',
+                33: 'platform_ban'
+            })),
             ('hash', pack.IntType(256)),
         ]))),
     ])
