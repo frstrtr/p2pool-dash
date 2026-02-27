@@ -1,46 +1,334 @@
-Requirements:
--------------------------
-Generic:
+# P2Pool-Dash
 
-* Dashd >=0.18.0.0
-* Python >=2.7
-* Twisted >=13.0.0
-* Zope.interface >=3.8.0
-* pycrypto >= 2.6.1
+[![Release](https://img.shields.io/github/v/tag/frstrtr/p2pool-dash?label=release&sort=semver)](https://github.com/frstrtr/p2pool-dash/releases)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](COPYING)
 
-Linux:
+> **Lineage:** [dashpay/p2pool-dash](https://github.com/dashpay/p2pool-dash) (stale since May 2023) --> **frstrtr/p2pool-dash** (active)
 
-    sudo apt-get install python2 python2-dev python2-twisted python2-pip-whl python2-setuptools-whl
-    sudo apt-get install gcc g++
+Decentralized pool mining software for Dash cryptocurrency (X11).
 
-Install Python modules:
--------------------------
-Download the required submodules:
+### What's different from dashpay/p2pool-dash
 
-    git submodule init
-    git submodule update
+| Area | dashpay (stale) | frstrtr (this fork) |
+|------|----------------|---------------------|
+| **Dash Core** | v0.12-v18 era | v23+ (Protocol 70238+) |
+| **Dashboard** | Basic stats | Luck badges, difficulty tracking, block history graphs |
+| **Difficulty** | Basic | Variable difficulty + share-rate tuning |
+| **Share archive** | Not available | Persistent share/block history |
+| **Block propagation** | Basic relay | Enhanced reliable propagation |
+| **Extranonce** | Not supported | Full extranonce rolling support |
+| **Installation** | Requires Python 2.7 | PyPy on modern Ubuntu 24.04+ |
+| **Maintenance** | Last commit May 2023 | Active development |
 
-dash_hash:
+See also: [p2pool-merged-v36](https://github.com/frstrtr/p2pool-merged-v36) -- V36 share format with merged mining (LTC+DOGE), same developer.
 
-    cd dash_hash
-    python setup.py install --user
+## 📋 Documentation
 
-Running P2Pool:
--------------------------
-To use P2Pool, you must be running your own local dashd. For standard
-configurations, using P2Pool should be as simple as:
+**⚠️ IMPORTANT**: For complete installation instructions, troubleshooting, and configuration, please see:
 
-    python run_p2pool.py
+### **[📖 INSTALL.md - Complete Installation Guide](INSTALL.md)**
 
-Then run your miner program, connecting to 127.0.0.1 on port 7903 with any
-username and password.
+The installation guide covers:
+- ✅ System requirements and dependencies
+- ✅ Dash Core installation and configuration
+- ✅ Python 2.7 / PyPy setup (modern Ubuntu/Debian)
+- ✅ dash_hash module compilation
+- ✅ Standalone vs Multi-node configuration
+- ✅ Common issues and solutions (OpenSSL, missing modules, etc.)
+- ✅ Performance tuning and security
 
-If you are behind a NAT, you should enable TCP port forwarding on your
-router. Forward port 9998 to the host running P2Pool.
+## Quick Start
 
-Run for additional options.
+### Requirements
 
-    python run_p2pool.py --help
+* **Dash Core**: >=23.0.0 (Protocol 70238+)
+* **Python**: 2.7 (via PyPy recommended)
+* **Twisted**: >=19.10.0
+* **pycryptodome**: >=3.9.0
+* **dash_hash**: X11 hashing module (included as submodule)
+
+### Features
+
+* ✅ **Dash Core v23+**: Protocol 70238+ support
+* ✅ **Enhanced Dashboard**: Luck badges with exponential decay, network difficulty graphs, block history
+* ✅ **Variable Difficulty**: Configurable vardiff with --share-rate parameter, +difficulty and /difficulty modifiers
+* ✅ **Share Archive**: Persistent share and block history across restarts
+* ✅ **Peer Management**: Improved peer selection, connection dedup, capacity-aware discovery
+
+### Modern Ubuntu/Debian (24.04+)
+
+Python 2 is no longer available. Use PyPy:
+
+```bash
+# Install PyPy
+sudo snap install pypy --classic
+
+# Install dependencies
+pypy -m pip install twisted==19.10.0 pycryptodome
+
+# Clone and setup
+git clone https://github.com/frstrtr/p2pool-dash.git
+cd p2pool-dash
+git submodule init
+git submodule update
+
+# Build dash_hash
+cd dash_hash
+pypy setup.py install --user
+cd ..
+
+# Run P2Pool
+pypy run_p2pool.py --net dash -a YOUR_DASH_ADDRESS
+```
+
+**See [INSTALL.md](INSTALL.md) for detailed instructions.**
+
+### Ubuntu 24.04 Automated Installer
+
+For Ubuntu 24.04 systems, we provide an automated installer script that sets up PyPy2, builds a local OpenSSL 1.1, and configures p2pool with systemd integration:
+
+```bash
+./install_p2pool_ubuntu_2404.sh
+```
+
+### Older Systems (Ubuntu 20.04 and earlier)
+
+If Python 2.7 is still available:
+
+```bash
+sudo apt-get install python2 python2-dev python2-twisted python2-pip gcc g++
+git clone https://github.com/frstrtr/p2pool-dash.git
+cd p2pool-dash
+git submodule init && git submodule update
+cd dash_hash && python2 setup.py install --user && cd ..
+python2 run_p2pool.py --net dash -a YOUR_DASH_ADDRESS
+```
+
+## Mining to P2Pool
+
+Point your miner to:
+```
+stratum+tcp://YOUR_IP:7903
+```
+
+Username: Your Dash address  
+Password: anything
+
+### Advanced Username Options
+
+You can append difficulty modifiers to your Dash address:
+
+**Pseudoshare difficulty** (for vardiff tuning):
+```
+YOUR_ADDRESS+DIFFICULTY
+Example: XdgF55wEHBRWwbuBniNYH4GvvaoYMgL84u+4096
+```
+
+**Actual share difficulty** (fixed minimum):
+```
+YOUR_ADDRESS/DIFFICULTY
+Example: XdgF55wEHBRWwbuBniNYH4GvvaoYMgL84u/65536
+```
+
+**Worker names** (for monitoring):
+```
+YOUR_ADDRESS.worker_name
+Example: XdgF55wEHBRWwbuBniNYH4GvvaoYMgL84u.antminer1
+```
+
+## Configuration Modes
+
+### Standalone Mode (Solo/Testing)
+Edit `p2pool/networks/dash.py`:
+```python
+PERSIST = False  # No peers required
+```
+
+### Multi-Node Mode (Pool Mining)
+Edit `p2pool/networks/dash.py`:
+```python
+PERSIST = True  # Connect to P2Pool network
+```
+
+**⚠️ IMPORTANT**: When upgrading to the latest version with Dash Platform support:
+- **Delete old sharechain data**: `data/dash/shares.*` and `data/dash/graph_db`
+- Old shares are incompatible due to `_script` field changes
+- All nodes in the P2Pool network must update together
+- **Protection**: Incompatible shares are validated and rejected BEFORE entering sharechain
+- Outdated peers receive clear upgrade instructions in logs
+
+**For detailed configuration, see [INSTALL.md](INSTALL.md).**
+
+## Command Line Options
+
+```bash
+pypy run_p2pool.py --help
+```
+
+Common options:
+- `--net dash` - Use Dash mainnet
+- `--net dash_testnet` - Use Dash testnet
+- `-a ADDRESS` - Your Dash payout address
+- `--dashd-rpc-port 9998` - Dash RPC port (default: 9998)
+- `--dashd-address 127.0.0.1` - Dash RPC address
+- `--share-rate SECONDS` - Target seconds per pseudoshare (default: 10)
+
+## Troubleshooting
+
+### Common Issues
+
+All issues and solutions are documented in **[INSTALL.md](INSTALL.md)**, including:
+
+- ❌ `ImportError: No module named dash_hash` → Rebuild dash_hash module
+- ❌ `AttributeError: ComposedWithContextualOptionalsType` → Update to latest version
+- ❌ `ValueError: Block not found` → Update to commit e9b5f57+
+- ❌ `ImportError: No module named bitcoin` → Update to latest version
+- ❌ `ImportError: No module named OpenSSL` → Non-fatal, can ignore or see INSTALL.md
+- ✅ `p2pool is not connected to any peers` → Fixed! No longer blocks work generation
+- ❌ High CPU usage → Limit miner threads with `-t` flag
+
+**See [INSTALL.md](INSTALL.md) for complete troubleshooting guide.**
+
+## Recent Updates
+
+### v23.0+ Critical Fixes
+- ✅ Missing type classes in pack.py (ComposedWithContextualOptionalsType, ContextualOptionalType, BoolType)
+- ✅ Wrong module import (bitcoin → dash)
+- ✅ Block hash formatting (zero-padding)
+- ✅ Empty payee address handling
+- ✅ Removed defunct bootstrap nodes
+- ✅ Standalone mode support (PERSIST=False)
+
+### Enhanced Features (December 2025)
+- ✅ Enhanced difficulty control (+diff, /diff modifiers)
+- ✅ X11 DUMB_SCRYPT_DIFF constant for accurate difficulty display
+- ✅ Worker IP tracking infrastructure
+- ✅ Configurable vardiff with --share-rate parameter (default: 10 seconds)
+- ✅ Improved min_share_target bounds for better difficulty adjustment
+- ✅ Fixed Dash-specific got_response() signature compatibility
+- ✅ **Block luck calculation** with time-weighted average hashrate
+- ✅ **Hashrate sampling** for precise luck statistics
+- ✅ **Telegram notifications** for block announcements
+- ✅ **Block status tracking** (confirmed/orphaned/pending)
+- ✅ **Dash Platform support** (v20+): Handles OP_RETURN platform payments (22.5% block subsidy)
+- ✅ **Packed object compatibility**: Fixed share verification for _script field handling
+- ✅ **Mainnet ready**: Full support for masternode/platform/superblock payment structures
+- ✅ **Solo mining support**: Removed peer connection requirement - works standalone with PERSIST=True
+- ✅ **Incompatible share protection**: Pre-validation prevents outdated shares from entering sharechain
+- ✅ **Smart peer connections**: Temporary bans for failing peers, counts total connections (incoming+outgoing)
+
+## Port Forwarding
+
+If behind NAT, forward these ports:
+- **8999**: P2Pool P2P (for peer connections)
+- **7903**: Stratum (for miners)
+
+Do NOT forward port 9998 (Dash RPC - security risk)
+
+## Web Interface & API
+
+P2Pool provides a web interface at `http://YOUR_IP:7903/`:
+
+### Web Pages
+- `/static/index.html` - Classic status page
+- `/static/dashboard.html` - Modern dashboard with graphs
+- `/static/graphs.html` - Detailed statistics graphs
+
+### API Endpoints
+- `/local_stats` - Local node statistics
+- `/global_stats` - Pool-wide statistics
+- `/recent_blocks` - Recently found blocks with luck info
+- `/current_payouts` - Current payout distribution
+- `/hashrate_samples` - Hashrate sampling stats for luck calculation
+- `/block_history` - Historical block data
+
+### Luck Calculation
+
+Block luck shows how "lucky" the pool was finding each block:
+- **>100%** (green): Found faster than expected
+- **75-100%** (yellow): Normal range
+- **<75%** (red): Found slower than expected
+
+Luck is calculated using: `(expected_time / actual_time) × 100%`
+
+The pool uses three methods for hashrate estimation (in order of preference):
+1. **Time-weighted average**: Uses actual hashrate samples between blocks (most precise)
+2. **Simple average**: Average of hashrates at previous and current block
+3. **Single hashrate**: Fallback to current pool hashrate
+
+### Telegram Notifications
+
+To enable Telegram block announcements:
+1. Create a bot via [@BotFather](https://t.me/botfather)
+2. Edit `data/dash/telegram_config.json`:
+```json
+{
+  "enabled": true,
+  "bot_token": "YOUR_BOT_TOKEN",
+  "chat_id": "YOUR_CHAT_ID"
+}
+```
+
+### Connection Threat Detection
+
+The Stratum interface includes intelligent threat detection that monitors connection patterns per IP address. The system calculates a **connection-to-worker ratio** to distinguish between:
+
+- **Normal**: Legitimate multi-rig miners (e.g., 7 connections running 7 unique workers = 1:1 ratio)
+- **Elevated**: Suspicious patterns (e.g., 10 connections but only 2 workers = 5:1 ratio)
+- **High**: Likely attack or misconfiguration (e.g., 20 connections with 3 workers = 6.7:1 ratio)
+
+#### Configuration
+
+Thresholds are configurable per network in `p2pool/networks/*.py`:
+
+```python
+# Default values (dash.py)
+CONNECTION_WORKER_ELEVATED = 4.0   # Flag if >4 connections per worker
+CONNECTION_WORKER_WARNING = 6.0     # Flag as high if >6 connections per worker
+```
+
+This ensures legitimate miners running multiple machines from the same IP are not incorrectly flagged as threats, while still detecting actual connection flooding attempts.
+
+### Persistent Block History
+
+P2Pool stores all found blocks in `data/dash/block_history.json` for permanent record-keeping. This allows the web interface to display complete historical data including:
+
+- Block height, hash, and timestamp
+- Network difficulty and block reward
+- Pool hashrate at the time of discovery
+- Block status (confirmed/orphaned/pending)
+- Luck calculation with time-weighted averages
+
+#### Populating Historical Blocks
+
+If you want to add previously mined blocks to the persistent history (e.g., after a fresh install), use the `scripts/populate_block_history.py` utility:
+
+```bash
+# Create a file with block heights (one per line)
+cat > historical_blocks.txt <<EOF
+2389670
+2389615
+2389577
+EOF
+
+# Populate block history from blockchain
+pypy scripts/populate_block_history.py \
+    --datadir data/dash \
+    --blocks-file historical_blocks.txt \
+    --dashd-rpc-username YOUR_RPC_USER \
+    --dashd-rpc-password YOUR_RPC_PASS
+```
+
+Or specify blocks directly:
+```bash
+pypy scripts/populate_block_history.py \
+    --datadir data/dash \
+    --blocks 2389670,2389615,2389577 \
+    --dashd-rpc-username YOUR_RPC_USER \
+    --dashd-rpc-password YOUR_RPC_PASS
+```
+
+The script will query dashd to fetch block rewards, timestamps, and difficulty, then merge this data into your block history. This ensures consistent graphs and statistics even for blocks found before the current p2pool installation.
 
 Official wiki :
 -------------------------
