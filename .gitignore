@@ -13,3 +13,11 @@ build/
 ltc_scrypt.so
 
 .DS_Store
+.github/
+enable_opnsense_ssh.sh
+block_history.json
+
+# Log files
+log*.txt
+log*.log
+*.log

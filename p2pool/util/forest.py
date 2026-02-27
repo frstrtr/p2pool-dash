@@ -12,7 +12,11 @@ class TrackerSkipList(skiplist.SkipList):
         skiplist.SkipList.__init__(self)
         self.tracker = tracker
         
-        self.tracker.removed.watch_weakref(self, lambda self, item: self.forget_item(item.hash))
+        # Use a safe callback that handles weakref becoming None during GC
+        def safe_forget(self_ref, item):
+            if self_ref is not None:
+                self_ref.forget_item(item.hash)
+        self.tracker.removed.watch_weakref(self, safe_forget)
     
     def previous(self, element):
         return self.tracker._delta_type.from_element(self.tracker.items[element]).tail

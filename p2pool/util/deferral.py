@@ -39,7 +39,7 @@ def retry(message='Error:', delay=3, max_retries=None, traceback=True):
             for i in itertools.count():
                 try:
                     result = yield func(*args, **kwargs)
-                except Exception as e:
+                except Exception, e:
                     if i == max_retries:
                         raise
                     if not isinstance(e, RetrySilentlyException):
@@ -189,10 +189,11 @@ class DeferredCacher(object):
                 self.waiting.pop(key).callback(None)
                 if fail.check(RetrySilentlyException):
                     return
-                print
-                print 'Error when requesting noncached value:'
-                fail.printTraceback()
-                print
+                # Commented out: These errors are expected from sharechain iteration (non-block shares)
+                # print
+                # print 'Error when requesting noncached value for key: %r' % (key,)
+                # fail.printTraceback()
+                # print
             self.func(key).addCallback(cb).addErrback(eb)
         if default is not self._nothing:
             return default

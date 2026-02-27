@@ -78,7 +78,7 @@ class HeightTracker(object):
         if last in self._requested:
             return
         self._requested.add(last)
-        (yield self._factory.getProtocol()).send_getheaders(version=1, have=[], last=last)
+        (yield self._factory.getProtocol()).send_getheaders(version=70238, have=[], last=last)
     
     def get_height_rel_highest(self, block_hash):
         # callers: highest height can change during yields!
@@ -95,7 +95,7 @@ def get_height_rel_highest_func(dashd, factory, best_block_func, net):
         @defer.inlineCallbacks
         def height_cacher(block_hash):
             try:
-                x = yield dashd.rpc_getblock('%x' % (block_hash,))
+                x = yield dashd.rpc_getblock('%064x' % (block_hash,))
             except jsonrpc.Error_for_code(-5): # Block not found
                 if not p2pool.DEBUG:
                     raise deferral.RetrySilentlyException()

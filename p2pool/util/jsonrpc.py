@@ -20,7 +20,16 @@ class Error(Exception):
         #    raise TypeError('message must be a unicode')
         self.code, self.message, self.data = code, message, data
     def __str__(self):
-        return '%i %s' % (self.code, self.message) + (' %r' % (self.data, ) if self.data is not None else '')
+        try:
+            # Try to encode message safely, replacing unicode characters that can't be encoded
+            if isinstance(self.message, unicode):
+                safe_message = self.message.encode('ascii', 'replace')
+            else:
+                safe_message = str(self.message)
+            return '%i %s' % (self.code, safe_message) + (' %r' % (self.data, ) if self.data is not None else '')
+        except:
+            # Fallback to code only if message encoding fails
+            return 'Error code: %i' % self.code
     def _to_obj(self):
         return {
             'code': self.code,
@@ -67,16 +76,6 @@ def _handle(data, provider, preargs=(), response_handler=None):
                 
                 id_ = req.get('id', None)
                 method = req.get('method', None)
-
-                # return an error message that sgminer understands
-                if method == 'mining.extranonce.subscribe':
-                    defer.returnValue(json.dumps(dict(
-                        id=id_,
-                        result=None,
-                        error=[-3, "Method 'subscribe' not found for service 'mining.extranonce'", None],
-                    )))
-                    return
-
                 if not isinstance(method, basestring):
                     raise Error_for_code(-32600)(u'Invalid Request')
                 params = req.get('params', [])
@@ -137,11 +136,11 @@ def _http_do(url, headers, timeout, method, params):
     else:
         resp = json.loads(data)
     
+    if resp['id'] != id_:
+        raise ValueError('invalid id')
     if 'error' in resp and resp['error'] is not None:
         raise Error_for_code(resp['error']['code'])(resp['error']['message'], resp['error'].get('data', None))
     defer.returnValue(resp['result'])
-    if resp['id'] != id_:
-        raise ValueError('invalid id')
 HTTPProxy = lambda url, headers={}, timeout=5: Proxy(lambda method, params: _http_do(url, headers, timeout, method, params))
 
 class HTTPServer(deferred_resource.DeferredResource):

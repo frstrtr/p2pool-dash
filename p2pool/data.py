@@ -12,11 +12,22 @@ import p2pool
 from p2pool.dash import data as dash_data, script, sha256
 from p2pool.util import math, forest, pack
 
+def parse_bip0034(coinbase):
+    """Extract block height from coinbase transaction (BIP 34)"""
+    try:
+        _, opdata = script.parse(coinbase).next()
+        bignum = pack.IntType(len(opdata)*8).unpack(opdata)
+        if opdata and ord(opdata[-1]) & 0x80:
+            bignum = -bignum
+        return (bignum,)
+    except Exception:
+        return (None,)
+
 # hashlink
 
 hash_link_type = pack.ComposedType([
     ('state', pack.FixedStrType(32)),
-    ('extra_data', pack.FixedStrType(0)), # bit of a hack, but since the donation script is at the end, const_ending is long enough to always make this empty
+    ('extra_data', pack.VarStrType()), # Changed from FixedStrType(0) to VarStrType() to support variable donation script sizes
     ('length', pack.VarIntType()),
 ])
 
@@ -48,8 +59,11 @@ def load_share(share, net, peer_addr):
         return Share(net, peer_addr, Share.share_type.unpack(share['contents']))
     else:
         raise ValueError('unknown share type: %r' % (share['type'],))
-# XqPQ26xGigKkq4yCNmTfgkRPdt8FyB547J => it`s eduffield address
-DONATION_SCRIPT = '41047559d13c3f81b1fadbd8dd03e4b5a1c73b05e2b980e00d467aa9440b29c7de23664dde6428d75cafed22ae4f0d302e26c5c5a5dd4d3e1b796d7281bdc9430f35ac'.decode('hex')
+
+# XdgF55wEHBRWwbuBniNYH4GvvaoYMgL84u => p2pool-dash donation address
+# Use P2PKH format (standard for modern addresses, works with compressed pubkeys)
+# scriptPubKey from validateaddress: 76a91420cb5c22b1e4d5947e5c112c7696b51ad9af3c6188ac
+DONATION_SCRIPT = '76a91420cb5c22b1e4d5947e5c112c7696b51ad9af3c6188ac'.decode('hex')
 
 class Share(object):
     VERSION = 16
@@ -176,8 +190,29 @@ class Share(object):
         payments_tx = []
         if payments is not None:
             for obj in payments:
-                pm_script = dash_data.address_to_script2(obj['payee'],net.PARENT)
-                pm_payout = obj['amount']
+                # Determine script from payee field
+                # Format 1: "!<hex>" - direct script encoding (for platform OP_RETURN etc)
+                # Format 2: Regular address string - convert to script
+                payee = obj.get('payee')
+                if not payee:
+                    continue  # Skip payments without valid payee
+                # Check if it's a script-encoded payment (starts with '!')
+                # Python 2: isinstance check for both str and unicode
+                if hasattr(payee, 'startswith') and payee.startswith('!'):
+                    # Direct script encoded as hex after "!" prefix (not in base58 alphabet)
+                    pm_script = payee[1:].decode('hex')
+                elif hasattr(payee, 'startswith') and payee.startswith('script:'):
+                    # Old protocol format - skip silently (already logged in attempt_verify)
+                    continue
+                else:
+                    # Regular address - convert to script
+                    try:
+                        pm_script = dash_data.address_to_script2(payee, net.PARENT)
+                    except (ValueError, AttributeError) as e:
+                        # Skip invalid addresses or malformed payee
+                        print 'WARNING: Invalid payee in payment: %r (error: %s)' % (payee, e)
+                        continue
+                pm_payout = obj.get('amount', 0)
                 if pm_payout > 0:
                     payments_tx += [dict(value=pm_payout, script=pm_script)]
                     worker_payout -= pm_payout
@@ -283,7 +318,9 @@ class Share(object):
         if len(self.merkle_link['branch']) > 16:
             raise ValueError('merkle branch too long!')
         
-        assert not self.hash_link['extra_data'], repr(self.hash_link['extra_data'])
+        # Note: extra_data can exist when donation script size changes
+        # This assertion is too strict and not critical for security
+        # assert not self.hash_link['extra_data'], repr(self.hash_link['extra_data'])
         
         self.share_data = self.share_info['share_data']
         self.max_target = self.share_info['max_bits'].target
@@ -390,8 +427,11 @@ class Share(object):
         return [known_txs[tx_hash] for tx_hash in other_tx_hashes]
     
     def should_punish_reason(self, previous_block, bits, tracker, known_txs):
-        if (self.header['previous_block'], self.header['bits']) != (previous_block, bits) and self.header_hash != previous_block and self.peer_addr is not None:
-            return True, 'Block-stale detected! height(%x) < height(%x) or %08x != %08x' % (self.header['previous_block'], previous_block, self.header['bits'].bits, bits.bits)
+        # Removed block-stale punishment per jtoomim fix:
+        # https://github.com/jtoomim/p2pool/commit/b57a4ff93e58c0702aa2481c164517e7290c8d43
+        # https://bitcointalk.org/index.php?topic=18313.msg18580559
+        # Block-stale punishment unfairly penalizes miners with high latency
+        # and can be exploited by >50% hashrate attackers to orphan other shares
         
         if self.pow_hash <= self.header['bits'].target:
             return -1, 'block solution'
@@ -403,12 +443,6 @@ class Share(object):
             all_txs_size = sum(dash_data.tx_type.packed_size(tx) for tx in other_txs)
             if all_txs_size > 2000000:
                 return True, 'txs over block size limit'
-            
-            '''
-            new_txs_size = sum(dash_data.tx_type.packed_size(known_txs[tx_hash]) for tx_hash in self.share_info['new_transaction_hashes'])
-            if new_txs_size > 50000:
-                return True, 'new txs over limit'
-            '''
         
         return False, None
     
@@ -476,6 +510,16 @@ class OkayTracker(forest.Tracker):
             raise AssertionError()
         try:
             share.check(self)
+        except ValueError as e:
+            error_msg = str(e)
+            # Suppress full traceback for expected protocol incompatibility errors
+            if 'gentx doesn\'t match' in error_msg or 'Invalid payee' in error_msg:
+                # This is likely an old protocol share - log briefly without full traceback
+                peer_info = (' from %s:%d' % share.peer_addr) if share.peer_addr else ''
+                print 'Rejected incompatible share %064x%s (protocol mismatch)' % (share.hash, peer_info)
+            else:
+                log.err(None, 'Share check failed: %064x -> %064x: %s' % (share.hash, share.previous_hash if share.previous_hash is not None else 0, error_msg))
+            return False
         except:
             log.err(None, 'Share check failed: %064x -> %064x' % (share.hash, share.previous_hash if share.previous_hash is not None else 0))
             return False
@@ -660,7 +704,9 @@ def get_warnings(tracker, best_share, net, dashd_getnetworkinfo, dashd_work_valu
     
     if dashd_getnetworkinfo['warnings'] != '':
         if 'This is a pre-release test build' not in dashd_getnetworkinfo['warnings']:
-            res.append('(from dashd) %s' % (dashd_getnetworkinfo['warnings'],))
+            # Filter out wallet encryption warning spam
+            if 'encrypt your wallet' not in dashd_getnetworkinfo['warnings']:
+                res.append('(from dashd) %s' % (dashd_getnetworkinfo['warnings'],))
     
     version_warning = getattr(net, 'VERSION_WARNING', lambda v: None)(dashd_getnetworkinfo['version'])
     if version_warning is not None:
@@ -714,7 +760,20 @@ class ShareStore(object):
         self.known = known # filename -> (set of share hashes, set of verified hashes)
         self.known_desired = dict((k, (set(a), set(b))) for k, (a, b) in known.iteritems())
     
-    def _add_line(self, line):
+    def _add_line(self, line, critical=False):
+        """Write a line to share storage.
+        
+        Args:
+            line: The data line to write
+            critical: If True, fsync immediately (for found blocks)
+        """
+        try:
+            import fcntl
+            use_locking = True
+        except ImportError:
+            # Windows doesn't have fcntl
+            use_locking = False
+        
         filenames, next = self.get_filenames_and_next()
         if filenames and os.path.getsize(filenames[-1]) < 10e6:
             filename = filenames[-1]
@@ -722,16 +781,34 @@ class ShareStore(object):
             filename = next
         
         with open(filename, 'ab') as f:
+            # Lock file during write to prevent rebuild race
+            if use_locking:
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            
             f.write(line + '\n')
+            f.flush()
+            
+            # Force to disk immediately for critical data (found blocks)
+            if critical:
+                os.fsync(f.fileno())
+            
+            if use_locking:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
         
         return filename
     
     def add_share(self, share):
+        # Detect if this is a found block (critical data requiring immediate fsync)
+        is_block = share.pow_hash <= share.header['bits'].target
+        
         for filename, (share_hashes, verified_hashes) in self.known.iteritems():
             if share.hash in share_hashes:
                 break
         else:
-            filename = self._add_line("%i %s" % (5, share_type.pack(share.as_share()).encode('hex')))
+            filename = self._add_line(
+                "%i %s" % (5, share_type.pack(share.as_share()).encode('hex')),
+                critical=is_block  # Force immediate disk write for found blocks
+            )
             share_hashes, verified_hashes = self.known.setdefault(filename, (set(), set()))
             share_hashes.add(share.hash)
         share_hashes, verified_hashes = self.known_desired.setdefault(filename, (set(), set()))

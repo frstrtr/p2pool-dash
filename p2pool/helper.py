@@ -7,30 +7,6 @@ import p2pool
 from p2pool.dash import data as dash_data
 from p2pool.util import deferral, jsonrpc
 
-# Global broadcaster instance (initialized by main.py)
-_broadcaster = None
-
-def set_broadcaster(broadcaster):
-    """Set the global broadcaster instance"""
-    global _broadcaster
-    print 'Helper: Broadcaster instance registered for multi-peer propagation'
-    _broadcaster = broadcaster
-
-def get_broadcaster():
-    """Get the global broadcaster instance"""
-    return _broadcaster
-
-def get_broadcaster_status():
-    """Get broadcaster status for web dashboard"""
-    if _broadcaster:
-        return _broadcaster.get_network_status()
-    else:
-        return {
-            'enabled': False,
-            'health': {'healthy': False, 'active_connections': 0},
-            'message': 'Multi-peer broadcaster disabled'
-        }
-
 @deferral.retry('Error while checking dash connection:', 1)
 @defer.inlineCallbacks
 def check(dashd, net):
@@ -59,9 +35,6 @@ def getwork(dashd, net, use_getblocktemplate=True):
     except twisted_error.ConnectionRefusedError:
         print >>sys.stderr, '    dashd connection refused - is dashd running?'
         raise deferral.RetrySilentlyException()
-    except jsonrpc.Error_for_code(-10): # Initial sync
-        print >>sys.stderr, '    Dash Core is in initial sync, waiting for blocks...'
-        raise deferral.RetrySilentlyException()
     except jsonrpc.Error_for_code(-32601): # Method not found
         use_getblocktemplate = not use_getblocktemplate
         try:
@@ -71,14 +44,6 @@ def getwork(dashd, net, use_getblocktemplate=True):
         except jsonrpc.Error_for_code(-32601): # Method not found
             print >>sys.stderr, 'Error: dash version too old! Upgrade to v20.0.0 or newer!'
             raise deferral.RetrySilentlyException()
-    except jsonrpc.Error, e:
-        # Catch any other JSON-RPC errors and handle them gracefully
-        try:
-            error_msg = str(e)
-        except:
-            error_msg = 'JSON-RPC error (code: %s)' % getattr(e, 'code', 'unknown')
-        print >>sys.stderr, '    dashd RPC error: %s' % error_msg
-        raise deferral.RetrySilentlyException()
 
     # Include ALL transactions from getblocktemplate
     # Per BIP 22, transactions are already ordered with dependencies before dependents
@@ -113,17 +78,16 @@ def getwork(dashd, net, use_getblocktemplate=True):
         if 'amount' in obj and obj['amount'] > 0:
             payment_amount += obj['amount']
             g['amount'] = obj['amount']
-            # Use 'payee' if available (regular masternode address)
-            # For script-only payments (like platform OP_RETURN), encode the script
-            # with '!' prefix so it survives serialization (minimal overhead)
-            if 'payee' in obj and obj['payee']:
-                # Regular payment with address
-                g['payee'] = str(obj['payee'])
+            # Use 'script' field if available (preferred - handles all payment types including platform)
+            # Fall back to 'payee' field for backwards compatibility
+            # Note: We store script in '_script' (underscore prefix) to avoid conflict with 
+            # the packed_payments serialization format which only expects 'payee' and 'amount'
+            if 'script' in obj and obj['script']:
+                g['_script'] = obj['script'].decode('hex')
+                g['payee'] = None  # None payee (will be packed as none_value), script will be used in coinbase generation
                 packed_payments.append(g)
-            elif 'script' in obj and obj['script']:
-                # Script-only payment (e.g., platform OP_RETURN with empty payee)
-                # Encode script as "!<hex>" - '!' prefix not in base58, minimal overhead
-                g['payee'] = '!' + obj['script']
+            elif 'payee' in obj and obj['payee']:
+                g['payee'] = str(obj['payee'])
                 packed_payments.append(g)
 
     coinbase_payload = None
@@ -226,10 +190,10 @@ def submit_block_rpc(block, ignore_failure, dashd, dashd_work, net):
     print 'BLOCK SUBMISSION RESULT (RPC):'
     if p2p_won_race:
         print '  *** P2P WON THE RACE! Block already propagated via P2P network ***'
-        print '  RPC result: %s (this is expected when P2P submits first)' % str(result)
+        print '  RPC result: %r (this is expected when P2P submits first)' % result
         print '  SUCCESS: Block was accepted!'
     else:
-        print '  RPC accepted: %s (result: %s)' % (success, str(result))
+        print '  RPC accepted: %s (result: %r)' % (success, result)
     print '  Expected success: %s' % success_expected
     
     if (not success and success_expected and not ignore_failure) or (success and not success_expected):
@@ -241,69 +205,11 @@ def submit_block_rpc(block, ignore_failure, dashd, dashd_work, net):
 
 @defer.inlineCallbacks
 def submit_block(block, ignore_failure, factory, dashd, dashd_work, net):
-    """Submit block via multiple propagation channels for maximum reliability.
-    
-    Strategy:
-    1. Multi-peer broadcast (if enabled) - parallel to many peers including local dashd
-    2. Local dashd P2P - ALWAYS USED as critical fallback (synchronous)
-    3. RPC submitblock - verification and final fallback
-    
-    NOTE: Local dashd P2P ALWAYS runs to ensure we never lose the block even if
-    all remote peers fail or broadcaster has issues!
-    """
-    print ''
-    print '=' * 80
-    print 'BLOCK SUBMISSION PIPELINE STARTED'
-    print '=' * 80
-    
-    # Try multi-peer broadcast first if enabled
-    broadcaster = get_broadcaster()
-    broadcast_success = False
-    broadcaster_peer_count = 0
-    
-    if broadcaster:
-        print 'PHASE 1: Multi-Peer Broadcast (PARALLEL to all peers)'
-        try:
-            success_count = yield broadcaster.broadcast_block(block)
-            broadcaster_peer_count = success_count
-            if success_count > 0:
-                broadcast_success = True
-                print 'Multi-peer broadcast: SUCCESS (%d peers reached)' % success_count
-            else:
-                print >>sys.stderr, 'Multi-peer broadcast: WARNING - 0 peers reached!'
-        except Exception as e:
-            print >>sys.stderr, 'Multi-peer broadcast: ERROR - %s' % e
-    else:
-        print 'PHASE 1: Multi-Peer Broadcast - DISABLED (not configured)'
-    
-    # ALWAYS submit to local dashd P2P as critical fallback!
-    # This ensures the block reaches the network even if:
-    # - Broadcaster fails completely
-    # - All remote peers are unavailable
-    # - Local dashd was not in broadcaster's peer list
-    print ''
-    print 'PHASE 2: Local dashd P2P (CRITICAL FALLBACK - ALWAYS RUNS)'
-    if broadcast_success:
-        print '  Note: Multi-peer broadcast succeeded (%d peers)' % broadcaster_peer_count
-        print '  BUT we still send to local dashd P2P for guaranteed delivery!'
-    else:
-        print '  CRITICAL: Multi-peer broadcast failed - local dashd is our lifeline!'
-    
+    """Submit block via both P2P and RPC for redundant propagation."""
+    # Submit via P2P first for fastest network propagation (synchronous)
     submit_block_p2p(block, factory, net)
-    print '  Local dashd P2P: Block sent (synchronous)'
-    
-    # Always submit via RPC for verification
-    print ''
-    print 'PHASE 3: RPC Verification (submitblock)'
+    # Also submit via RPC (submitblock call) and wait for result
     yield submit_block_rpc(block, ignore_failure, dashd, dashd_work, net)
-    
-    print '=' * 80
-    print 'BLOCK SUBMISSION PIPELINE COMPLETE'
-    print '  Multi-peer: %d peers' % broadcaster_peer_count
-    print '  Local dashd P2P: [OK] (always sent)'
-    print '  RPC verification: [OK] (completed)'
-    print '=' * 80
-    print ''
 
 @defer.inlineCallbacks
 def check_block_header(bitcoind, block_hash):

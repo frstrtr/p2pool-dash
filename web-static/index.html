@@ -46,6 +46,8 @@
                 d3.select('#efficiency').text(local_stats.efficiency != null ? d3.format('.4p')(local_stats.efficiency) : '???')
                 d3.select('#uptime').text(format_dt(local_stats.uptime));
                 d3.select('#block_value').text(local_stats.block_value);
+                d3.select('#block_value_payments').text(local_stats.block_value_payments || 0);
+                d3.select('#block_value_miner').text(local_stats.block_value_miner || local_stats.block_value);
                 
                 d3.select('#warnings').selectAll().data(local_stats.warnings).enter().append('p')
                     .text(function(w){ return 'Warning: ' + w })
@@ -62,7 +64,11 @@
                     var time_to_block = local_stats.attempts_to_block/global_stats.pool_hash_rate;
                     d3.select('#time_to_block').text(format_dt(time_to_block));
                     
-                    d3.select('#expected_payout_amount').text(d3.format('.3r')(local/global_stats.pool_hash_rate*local_stats.block_value*(1-local_stats.donation_proportion)));
+                    // Calculate expected payout for 24 hours of mining
+                    var blocks_in_24h = (24 * 3600) / time_to_block;
+                    var payout_per_block = (local/global_stats.pool_hash_rate) * local_stats.block_value_miner * (1-local_stats.donation_proportion);
+                    var expected_24h_payout = payout_per_block * blocks_in_24h;
+                    d3.select('#expected_payout_amount').text(d3.format('.3r')(expected_24h_payout));
                 });
             });
             
@@ -74,13 +80,13 @@
                 d3.selectAll('.symbol').text(currency_info.symbol);
                 
                 d3.json('../current_payouts', function(pays) {
-					var totamount=0.0;
-					
+                    var totamount=0.0;
+
                     d3.json('../payout_addr', function(addr) {
                         d3.select('#payout_addr').text(addr).attr('href', currency_info.address_explorer_url_prefix + addr);
                         d3.select('#payout_amount').text(addr in pays ? pays[addr] : 0);
                     });
-					 d3.json('../payout_addrs', function(addrs) {
+                    d3.json('../payout_addrs', function(addrs) {
                         d3.select('#payout_addrs').text(addrs);
 
                         for (var i in addrs) {
@@ -88,7 +94,7 @@
                         }
 	                d3.select('#payout_totamount').text(totamount);
                     });
-                    
+
                     var arr = []; for(var i in pays) arr.push(i); arr.sort(function(a, b){return pays[b] - pays[a]});
                     
                     var tr = d3.select('#payouts').selectAll().data(arr).enter().append('tr');
@@ -106,6 +112,37 @@
                     tr.append('td').text(function(block){return block.number});
                     tr.append('td').append('a').text(function(block){return block.hash}).attr('href', function(block){return currency_info.block_explorer_url_prefix + block.hash});
                     tr.append('td').append('a').text('→').attr('href', function(block){return 'share.html#' + block.share});
+                    tr.append('td')
+                        .style('color', function(block){
+                            if (!block.luck) return '#888';
+                            if (block.luck >= 100) return '#28a745';
+                            if (block.luck >= 75) return '#ffc107';
+                            return '#dc3545';
+                        })
+                        .style('font-weight', 'bold')
+                        .attr('title', function(block){
+                            if (!block.time_to_find) return '';
+                            var msg = 'Found in ' + format_dt(block.time_to_find);
+                            if (block.expected_time) msg += ' (expected: ' + format_dt(block.expected_time) + ')';
+                            if (block.luck_method) msg += ' [' + block.luck_method + ']';
+                            return msg;
+                        })
+                        .text(function(block){
+                            if (!block.luck) return '-';
+                            return d3.format('.0f')(block.luck) + '%';
+                        });
+                    tr.append('td')
+                        .style('color', function(block){
+                            if (block.status === 'confirmed') return '#28a745';
+                            if (block.status === 'orphaned') return '#dc3545';
+                            return '#ffc107';
+                        })
+                        .style('font-weight', 'bold')
+                        .text(function(block){
+                            if (block.status === 'confirmed') return '✓ Confirmed';
+                            if (block.status === 'orphaned') return '✗ Orphaned';
+                            return '⏳ Pending';
+                        });
                 });
             });
             
@@ -123,19 +160,19 @@
             fill('../web/heads', '#heads');
             fill('../web/verified_tails', '#verified_tails');
             fill('../web/tails', '#tails');
-            fill('../web/my_share_hashes', '#my_share_hashes');
+            fill('../web/my_share_hashes50', '#my_share_hashes');
         </script>
     </head>
     <body>
         <h1>P2Pool <span class="symbol"></span></h1>
-        <p><a href="graphs.html">Graphs</a></p>
+        <p><a href="dashboard.html"><strong>🆕 New Dashboard</strong></a> | <a href="graphs.html">Graphs</a> | <a href="stratum.html">Stratum Stats</a></p>
         <p>Version: <span id="version"></span></p>
         <p>Pool rate: <span id="pool_rate"></span> (<span id="pool_stale"></span> DOA+orphan) Share difficulty: <span id="difficulty"></span></p>
         <p>Node uptime: <span id="uptime"></span> Peers: <span id="peers_out"></span> out, <span id="peers_in"></span> in</p>
         <p>Local rate: <span id="local_rate"></span> (<span id="local_doa"></span> DOA) Expected time to share: <span id="time_to_share"></span></p>
         <p>Shares: <span id="shares_total"></span> total (<span id="shares_orphan"></span> orphaned, <span id="shares_dead"></span> dead) Efficiency: <span id="efficiency"></span></p>
-        <p>Payout if a block were found NOW: <span id="payout_totamount"></span> <span class="symbol"></span> to <a id="payout_addrs"></a>. Expected after mining for 24 hours:  <span id="expected_payout_amount"></span> <span class="symbol"></span> per block.</p>
-        <p>Current block value: <span id="block_value"></span> <span class="symbol"></span> Expected time to block: <span id="time_to_block"></span></p>
+        <p>Payout if a block were found NOW: <span id="payout_totamount"></span> <span class="symbol"></span> to <a id="payout_addrs"></a>. Expected payout after mining for 24 hours: <span id="expected_payout_amount"></span> <span class="symbol"></span></p>
+        <p>Current block value: <span id="block_value"></span> <span class="symbol"></span> (Masternode+Treasury: <span id="block_value_payments"></span>, Miner: <span id="block_value_miner"></span> <span class="symbol"></span>) Expected time to block: <span id="time_to_block"></span></p>
         <div id="warnings"></div>
         
         <h2>Share explorer</h2>
@@ -146,10 +183,10 @@
         <p>Tails: <span id="tails"></span></p>
         <p>My shares: <span id="my_share_hashes"></span></p>
         
-        <h2>Blocks found in last day:</h2>
+        <h2>Blocks found recently:</h2>
         <p>Note that blocks may have been orphaned from the P2Pool chain and so not be here.</p>
         <table border="1" id="blocks">
-            <tr><th>time</th><th>number</th><th>hash/explorer link</th><th>share</th></tr>
+            <tr><th>time</th><th>number</th><th>hash/explorer link</th><th>share</th><th>luck</th><th>status</th></tr>
         </table>
         
         <h2>Payouts if a block were found NOW:</h2>

@@ -39,8 +39,15 @@ class WorkerBridge(worker_interface.WorkerBridge):
         self.running = True
         self.pseudoshare_received = variable.Event()
         self.share_received = variable.Event()
-        self.local_rate_monitor = math.RateMonitor(10*60)
-        self.local_addr_rate_monitor = math.RateMonitor(10*60)
+        # Activity window must account for extreme variance in low-difficulty mining
+        # At minimum difficulty (0.001), miners can have very long gaps between shares
+        # due to Poisson distribution variance (95% CI = ~30x expected time)
+        # Formula: 100 * STRATUM_SHARE_RATE gives safe margin for variance
+        # For mainnet: 100 * 10 sec = 1000 seconds (~16.7 minutes)
+        # This keeps count stable while still being responsive to real disconnects
+        activity_window = 100 * self.node.net.STRATUM_SHARE_RATE
+        self.local_rate_monitor = math.RateMonitor(activity_window)
+        self.local_addr_rate_monitor = math.RateMonitor(activity_window)
 
         self.removed_unstales_var = variable.Variable((0, 0, 0))
         self.removed_doa_unstales_var = variable.Variable(0)
@@ -51,6 +58,7 @@ class WorkerBridge(worker_interface.WorkerBridge):
         self.my_doa_share_hashes = set()
 
         self.address_throttle = 0
+        self.share_rate = args.share_rate  # Stratum vardiff target (seconds per pseudoshare)
 
         self.tracker_view = forest.TrackerView(self.node.tracker, forest.get_attributedelta_type(dict(forest.AttributeDelta.attrs,
             my_count=lambda share: 1 if share.hash in self.my_share_hashes else 0,
@@ -175,6 +183,15 @@ class WorkerBridge(worker_interface.WorkerBridge):
         assert len(contents) % 2 == 1
 
         user, contents2 = contents[0], contents[1:]
+        
+        # Parse worker name (supports user.worker or user_worker format)
+        worker = ''
+        if '_' in user:
+            worker = user.split('_')[1]
+            user = user.split('_')[0]
+        elif '.' in user:
+            worker = user.split('.')[1]
+            user = user.split('.')[0]
 
         desired_pseudoshare_target = None
         desired_share_target = None
@@ -208,12 +225,15 @@ class WorkerBridge(worker_interface.WorkerBridge):
             except: # XXX blah
                 if self.args.address != 'dynamic':
                     pubkey_hash = self.my_pubkey_hash
+        
+        # Append worker name to user for identification
+        if worker:
+            user = user + '.' + worker
 
         return user, pubkey_hash, desired_share_target, desired_pseudoshare_target
 
     def preprocess_request(self, user):
-        if (self.node.p2p_node is None or len(self.node.p2p_node.peers) == 0) and self.node.net.PERSIST:
-            raise jsonrpc.Error_for_code(-12345)(u'p2pool is not connected to any peers')
+        # Removed peer connection check - allow solo mining
         if time.time() > self.current_work.value['last_update'] + 60:
             raise jsonrpc.Error_for_code(-12345)(u'lost contact with dashd')
         user, pubkey_hash, desired_share_target, desired_pseudoshare_target = self.get_user_details(user)
@@ -245,10 +265,10 @@ class WorkerBridge(worker_interface.WorkerBridge):
 
     def get_work(self, pubkey_hash, desired_share_target, desired_pseudoshare_target):
         global print_throttle
-        if (self.node.p2p_node is None or len(self.node.p2p_node.peers) == 0) and self.node.net.PERSIST:
-            raise jsonrpc.Error_for_code(-12345)(u'p2pool is not connected to any peers')
-        if self.node.best_share_var.value is None and self.node.net.PERSIST:
-            raise jsonrpc.Error_for_code(-12345)(u'p2pool is downloading shares')
+        t0 = time.time()  # Benchmarking start
+        
+        # Removed peer connection check - allow solo mining
+        # P2Pool can work standalone even with PERSIST=True
 
         if self.merged_work.value:
             tree, size = dash_data.make_auxpow_tree(self.merged_work.value)
@@ -354,9 +374,15 @@ class WorkerBridge(worker_interface.WorkerBridge):
                     dash_data.average_attempts_to_target(local_hash_rate * 1)) # limit to 1 share response every second by modulating pseudoshare difficulty
         else:
             target = desired_pseudoshare_target
-        target = max(target, share_info['bits'].target)
         for aux_work, index, hashes in mm_later:
             target = max(target, aux_work['target'])
+        
+        # Clip to SANE_TARGET_RANGE: [min_target (hardest), max_target (easiest)]
+        # SANE_TARGET_RANGE[0] = lowest target = highest difficulty (e.g., 10000)
+        # SANE_TARGET_RANGE[1] = highest target = lowest difficulty (e.g., 1)
+        # We do NOT enforce P2Pool share floor here - that would prevent vardiff from
+        # setting difficulty higher than the (potentially easy) P2Pool share chain.
+        # Stratum separately checks if shares meet P2Pool criteria before crediting them.
         target = math.clip(target, self.node.net.PARENT.SANE_TARGET_RANGE)
 
         getwork_time = time.time()
@@ -385,6 +411,9 @@ class WorkerBridge(worker_interface.WorkerBridge):
         if gentx['version'] == 3 and gentx['type'] == 5:
             coinbase_payload_data_size = len(pack.VarStrType().pack(gentx['extra_payload']))
 
+        # Fixed based on jtoomim's p2pool implementation
+        # share_target = vardiff pseudoshare difficulty (already floored at p2pool_share_floor above)
+        # min_share_target = P2Pool share chain difficulty floor (respects SANE_TARGET_RANGE)
         ba = dict(
             version=self.current_work.value['version'],
             previous_block=self.current_work.value['previous_block'],
@@ -393,12 +422,17 @@ class WorkerBridge(worker_interface.WorkerBridge):
             coinb2=packed_gentx[-coinbase_payload_data_size-4:],
             timestamp=self.current_work.value['time'],
             bits=self.current_work.value['bits'],
-            share_target=target,
+            min_share_target=min(share_info['bits'].target, self.node.net.PARENT.SANE_TARGET_RANGE[1]),  # P2Pool share difficulty floor
+            share_target=target,  # Vardiff pseudoshare target (already floored)
         )
 
         received_header_hashes = set()
 
-        def got_response(header, user, coinbase_nonce):
+        def got_response(header, user, coinbase_nonce, submitted_target=None):
+            # submitted_target: optional override for the target the miner was actually working at
+            # This is needed for vardiff - stratum adjusts target after get_work() returns
+            effective_target = submitted_target if submitted_target is not None else target
+            
             assert len(coinbase_nonce) == self.COINBASE_NONCE_LENGTH
             new_packed_gentx = packed_gentx[:-coinbase_payload_data_size-self.COINBASE_NONCE_LENGTH-4] + coinbase_nonce + packed_gentx[-coinbase_payload_data_size-4:] if coinbase_nonce != '\0'*self.COINBASE_NONCE_LENGTH else packed_gentx
             new_gentx = dash_data.tx_type.unpack(new_packed_gentx) if coinbase_nonce != '\0'*self.COINBASE_NONCE_LENGTH else gentx
@@ -407,11 +441,29 @@ class WorkerBridge(worker_interface.WorkerBridge):
             pow_hash = self.node.net.PARENT.POW_FUNC(dash_data.block_header_type.pack(header))
             try:
                 if pow_hash <= header['bits'].target or p2pool.DEBUG:
-                    helper.submit_block(dict(header=header, txs=[new_gentx] + other_transactions), False, self.node.factory, self.node.dashd, self.node.dashd_work, self.node.net)
                     if pow_hash <= header['bits'].target:
                         print
-                        print 'GOT BLOCK FROM MINER! Passing to dashd! %s%064x' % (self.node.net.PARENT.BLOCK_EXPLORER_URL_PREFIX, header_hash)
+                        print '#' * 70
+                        print '### DASH BLOCK FOUND! ###'
+                        print '#' * 70
+                        print 'Time:        %s' % time.strftime('%Y-%m-%d %H:%M:%S')
+                        print 'Miner:       %s' % user
+                        print 'Block hash:  %064x' % header_hash
+                        print 'POW hash:    %064x' % pow_hash
+                        print 'Target:      %064x' % header['bits'].target
+                        if 'height' in share_info:
+                            print 'Height:      %d' % share_info['height']
+                        print 'Txs:         %d' % (1 + len(other_transactions))
+                        print 'Explorer:    %s%064x' % (self.node.net.PARENT.BLOCK_EXPLORER_URL_PREFIX, header_hash)
+                        print '#' * 70
                         print
+                    # Submit block and add error callback to catch any failures
+                    block_submission = helper.submit_block(dict(header=header, txs=[new_gentx] + other_transactions), False, self.node.factory, self.node.dashd, self.node.dashd_work, self.node.net)
+                    @block_submission.addErrback
+                    def block_submit_error(err):
+                        print >>sys.stderr, '*** CRITICAL: Block submission failed! ***'
+                        log.err(err, 'Block submission error:')
+                    if pow_hash <= header['bits'].target:
                         # New block found
                         self.node.factory.new_block.happened(header_hash)
             except:
@@ -422,7 +474,10 @@ class WorkerBridge(worker_interface.WorkerBridge):
             assert header['merkle_root'] == dash_data.check_merkle_link(dash_data.hash256(new_packed_gentx), merkle_link)
             assert header['bits'] == ba['bits']
 
-            on_time = self.new_work_event.times == lp_count
+            # Allow shares that are within 3 work events of current (grace period for network latency)
+            # Work events fire on new blocks, new best shares, etc. - can be rapid
+            work_event_diff = self.new_work_event.times - lp_count
+            on_time = work_event_diff <= 3  # Allow up to 3 work events behind
 
             for aux_work, index, hashes in mm_later:
                 try:
@@ -476,23 +531,35 @@ class WorkerBridge(worker_interface.WorkerBridge):
                     log.err(None, 'Error forwarding block solution:')
 
                 self.share_received.happened(dash_data.target_to_average_attempts(share.target), not on_time, share.hash)
-
-            if pow_hash > target:
+                
+                # Update local rate monitor for shares (they are also pseudoshares)
+                # Use effective_target (vardiff target) for work calculation
+                # Use 'user' which contains full worker name (e.g. address.worker) for proper tracking
+                self.local_rate_monitor.add_datum(dict(work=dash_data.target_to_average_attempts(effective_target), dead=not on_time, user=user, share_target=share_info['bits'].target))
+                self.local_addr_rate_monitor.add_datum(dict(work=dash_data.target_to_average_attempts(effective_target), pubkey_hash=pubkey_hash))
+                received_header_hashes.add(header_hash)
+            elif pow_hash > effective_target:
                 print 'Worker %s submitted share with hash > target:' % (user,)
                 print '    Hash:   %56x' % (pow_hash,)
-                print '    Target: %56x' % (target,)
+                print '    Target: %56x' % (effective_target,)
             elif header_hash in received_header_hashes:
                 print >>sys.stderr, 'Worker %s submitted share more than once!' % (user,)
             else:
                 received_header_hashes.add(header_hash)
 
-                self.pseudoshare_received.happened(dash_data.target_to_average_attempts(target), not on_time, user)
-                self.recent_shares_ts_work.append((time.time(), dash_data.target_to_average_attempts(target)))
+                work_value = dash_data.target_to_average_attempts(effective_target)
+                self.pseudoshare_received.happened(work_value, not on_time, user)
+                self.recent_shares_ts_work.append((time.time(), work_value))
                 while len(self.recent_shares_ts_work) > 50:
                     self.recent_shares_ts_work.pop(0)
-                self.local_rate_monitor.add_datum(dict(work=dash_data.target_to_average_attempts(target), dead=not on_time, user=user, share_target=share_info['bits'].target))
-                self.local_addr_rate_monitor.add_datum(dict(work=dash_data.target_to_average_attempts(target), pubkey_hash=pubkey_hash))
+                # Use 'user' which contains full worker name (e.g. address.worker) for proper tracking
+                self.local_rate_monitor.add_datum(dict(work=work_value, dead=not on_time, user=user, share_target=share_info['bits'].target))
+                self.local_addr_rate_monitor.add_datum(dict(work=work_value, pubkey_hash=pubkey_hash))
 
             return on_time
 
+        t1 = time.time()
+        if p2pool.BENCH:
+            print "%8.3f ms for work.py:get_work(%s)" % ((t1-t0)*1000., dash_data.pubkey_hash_to_address(pubkey_hash, self.node.net.PARENT))
+        
         return ba, got_response
