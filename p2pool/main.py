@@ -480,6 +480,7 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
                 # Just forget old shares from storage without writing archive files
                 for share_hash in shares_to_archive:
                     ss.forget_share(share_hash)
+                    ss.forget_verified_share(share_hash)
                 if archived_count > 0:
                     print 'Pruned %d old shares from storage (%s) [archive disabled]' % (archived_count, reason)
                 return archived_count
@@ -509,6 +510,7 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
                         # Remove from active storage (disk)
                         # Note: Shares remain in tracker memory until clean_tracker() prunes them
                         ss.forget_share(share_hash)
+                        ss.forget_verified_share(share_hash)
                 
                 if archived_count > 0:
                     print 'Archived %d old shares to %s (%s)' % (archived_count, os.path.basename(archive_filename), reason)
