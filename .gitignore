@@ -21,3 +21,4 @@ block_history.json
 log*.txt
 log*.log
 *.log
+.ai-memory.md
