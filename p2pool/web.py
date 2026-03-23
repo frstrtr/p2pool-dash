@@ -2156,7 +2156,7 @@ def get_web_root(wb, datadir_path, bitcoind_getinfo_var, stop_event=variable.Eve
             ) for b in sorted(blocks, key=lambda x: x['ts'], reverse=True)]
         ))
     
-    web_root.putChild('recent_blocks', WebInterface(get_recent_blocks))
+    web_root.putChild('recent_blocks', WebInterface(lambda: get_recent_blocks(limit=10)))
     web_root.putChild('luck_stats', WebInterface(get_luck_stats))
     web_root.putChild('uptime', WebInterface(lambda: time.time() - start_time))
     web_root.putChild('stale_rates', WebInterface(lambda: p2pool_data.get_stale_counts(node.tracker, node.best_share_var.value, decent_height(), rates=True)))
