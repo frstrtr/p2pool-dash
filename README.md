@@ -22,6 +22,9 @@ Decentralized pool mining software for Dash cryptocurrency (X11).
 
 See also: [p2pool-merged-v36](https://github.com/frstrtr/p2pool-merged-v36) -- V36 share format with merged mining (LTC+DOGE), same developer.
 
+> **🔧 c2pool — next generation p2pool in C++**
+> [c2pool](https://github.com/frstrtr/c2pool) is a ground-up C++ reimplementation of p2pool for Litecoin with embedded DOGE merged mining. No coin daemon needed — built-in SPV syncs via P2P. Cross-platform (Linux/Windows/macOS). While p2pool-dash serves the Dash/X11 community, c2pool brings the same decentralized mining philosophy to Scrypt miners with a modern C++ codebase. [Download v0.1.1-alpha →](https://github.com/frstrtr/c2pool/releases/tag/v0.1.1-alpha)
+
 ## 📋 Documentation
 
 **⚠️ IMPORTANT**: For complete installation instructions, troubleshooting, and configuration, please see:
@@ -64,7 +67,7 @@ Python 2 is no longer available. Use PyPy:
 sudo snap install pypy --classic
 
 # Install dependencies
-pypy -m pip install twisted==19.10.0 pycryptodome
+pypy -m pip install zope.interface==4.1.3 Twisted==15.4.0 pycrypto
 
 # Clone and setup
 git clone https://github.com/frstrtr/p2pool-dash.git
