@@ -20,7 +20,9 @@ Decentralized pool mining software for Dash cryptocurrency (X11).
 | **Installation** | Requires Python 2.7 | PyPy on modern Ubuntu 24.04+ |
 | **Maintenance** | Last commit May 2023 | Active development |
 
-See also: [p2pool-merged-v36](https://github.com/frstrtr/p2pool-merged-v36) -- V36 share format with merged mining (LTC+DOGE), same developer.
+### 🔗 Sister project: P2Pool V36 — Merged Mining (LTC+DOGE)
+
+> **[frstrtr/p2pool-merged-v36](https://github.com/frstrtr/p2pool-merged-v36)** — V36 share format with AuxPoW merged mining for Litecoin + Dogecoin. Running on mainnet. [First merged-mined DOGE block found on 2026-03-23](https://blockchair.com/dogecoin/block/f84500c25a4cce2a08887f29763726bd5ecec7b66fed65a88b181fb0b0ab2383). Latest release: [v0.14.2](https://github.com/frstrtr/p2pool-merged-v36/releases/tag/v0.14.2-hotfix).
 
 > **🔧 c2pool — next generation p2pool in C++**
 > [c2pool](https://github.com/frstrtr/c2pool) is a ground-up C++ reimplementation of p2pool for Litecoin with embedded DOGE merged mining. No coin daemon needed — built-in SPV syncs via P2P. Cross-platform (Linux/Windows/macOS). While p2pool-dash serves the Dash/X11 community, c2pool brings the same decentralized mining philosophy to Scrypt miners with a modern C++ codebase. [Download v0.1.1-alpha →](https://github.com/frstrtr/c2pool/releases/tag/v0.1.1-alpha)
@@ -351,3 +353,4 @@ Thanks to:
 * The Litecoin Project for its generous donations to P2Pool
 * The Vertcoin Community for its great contribution to P2Pool
 * jakehaas, vertoe, chaeplin, dstorm, poiuty, elbereth  and mr.slaveg from the Darkcoin/Dash Community
+
