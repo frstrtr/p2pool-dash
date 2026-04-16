@@ -24,27 +24,35 @@ class Protocol(protocol.Protocol):
     
     def dataReceived(self, data):
         self.traffic_happened.happened('p2p/in', len(data))
+        peer_host = 'unknown'
+        try:
+            peer_host = self.transport.getPeer().host
+        except:
+            pass
+        print '[DEBUG-WIRE] dataReceived %d bytes from %s: %s' % (len(data), peer_host, data[:32].encode('hex'))
         self.dataReceived2(data)
-    
+
     def dataReceiver(self):
         while True:
             start = ''
             while start != self._message_prefix:
                 start = (start + (yield 1))[-len(self._message_prefix):]
-            
+
             command = (yield 12).rstrip('\0')
             length, = struct.unpack('<I', (yield 4))
+            print '[DEBUG-WIRE] prefix matched, command=%r length=%d' % (command, length)
             if length > self._max_payload_length:
-                print 'length too large'
+                print '[DEBUG-WIRE] length too large: %d > %d' % (length, self._max_payload_length)
                 continue
             checksum = yield 4
             payload = yield length
-            
+
             if hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4] != checksum:
-                print 'invalid hash for', self.transport.getPeer().host, repr(command), length, checksum.encode('hex')
-                if p2pool.DEBUG:
-                    print hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4].encode('hex'), payload.encode('hex')
-                self.badPeerHappened()
+                print '[DEBUG-WIRE] CHECKSUM FAIL for %s from %s len=%d' % (repr(command), self.transport.getPeer().host, length)
+                print '[DEBUG-WIRE]   expected: %s got: %s' % (hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4].encode('hex'), checksum.encode('hex'))
+                print '[DEBUG-WIRE]   payload[:64]: %s' % payload[:64].encode('hex')
+                # DON'T BAN — just log for debugging
+                # self.badPeerHappened()
                 continue
             
             type_ = getattr(self, 'message_' + command, None)

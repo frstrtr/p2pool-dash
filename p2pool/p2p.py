@@ -87,19 +87,23 @@ class Protocol(p2protocol.Protocol):
         self.disconnect()
     
     def packetReceived(self, command, payload2):
+        print '[DEBUG-P2P] packetReceived: cmd=%r connected2=%s from=%s' % (command, self.connected2, self.addr)
         try:
             if command != 'version' and not self.connected2:
                 raise PeerMisbehavingError('first message was not version message')
             p2protocol.Protocol.packetReceived(self, command, payload2)
         except PeerMisbehavingError, e:
-            print 'Peer %s:%i misbehaving, will drop and ban. Reason:' % self.addr, e.message
+            print '[DEBUG-P2P] PeerMisbehaving: %s from %s' % (e.message, self.addr)
             self.badPeerHappened()
     
     def badPeerHappened(self):
-        print "Bad peer banned:", self.addr
+        print "[DEBUG-BAN] Bad peer WOULD be banned (disabled for debug):", self.addr
+        import traceback
+        traceback.print_stack()
         self.disconnect()
-        if self.transport.getPeer().host != '127.0.0.1': # never ban localhost
-            self.node.bans[self.transport.getPeer().host] = time.time() + 60*60
+        # DISABLED FOR DEBUGGING — don't actually ban
+        # if self.transport.getPeer().host != '127.0.0.1':
+        #     self.node.bans[self.transport.getPeer().host] = time.time() + 60*60
     
     def _timeout(self):
         self.timeout_delayed = None
@@ -144,6 +148,8 @@ class Protocol(p2protocol.Protocol):
         ('best_share_hash', pack.PossiblyNoneType(0, pack.IntType(256))),
     ])
     def handle_version(self, version, services, addr_to, addr_from, nonce, sub_version, mode, best_share_hash):
+        print '[DEBUG-P2P] handle_version: ver=%d services=%d nonce=%x subver=%r best=%s from=%s' % (
+            version, services, nonce, sub_version, best_share_hash, self.addr)
         if self.other_version is not None:
             raise PeerMisbehavingError('more than one version message')
         minimum_version = getattr(self.node.net, 'MINIMUM_PROTOCOL_VERSION', 1700)
