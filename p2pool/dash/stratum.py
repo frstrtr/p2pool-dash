@@ -62,7 +62,7 @@ class PoolStatistics(object):
         
         # Pool-wide configuration limits (can be overridden by security_config)
         self.MAX_CONNECTIONS = 10000  # Maximum concurrent connections
-        self.MIN_DIFFICULTY_FLOOR = 0.001  # Absolute minimum difficulty (pool protection)
+        self.MIN_DIFFICULTY_FLOOR = 64.0  # Absolute minimum difficulty (pool protection)
         self.MAX_DIFFICULTY_CEILING = 1000000  # Maximum difficulty (miner protection - prevents never finding shares)
         self.MAX_SUBMISSIONS_PER_SECOND = 1000  # Global rate limit
         
@@ -915,10 +915,12 @@ class StratumRPCMiningProvider(object):
             if current_diff < self.minimum_difficulty:
                 self.target = dash_data.difficulty_to_target(self.minimum_difficulty)
         
-        # ==== NEW: Timeout-based difficulty reduction ====
-        # If no shares received for too long, reduce difficulty
-        # This handles the case where vardiff jumped too aggressively
-        if not self.fixed_target and self.target is not None and self.last_share_time is not None:
+        # ==== Timeout-based difficulty reduction ====
+        # Only reduce difficulty if the connection has already submitted at least one share.
+        # Backup/standby connections (shares_submitted == 0) never submit shares by design;
+        # running vardiff on them tanks difficulty to the floor so that when the miner
+        # fails over it floods the node with thousands of shares per second.
+        if not self.fixed_target and self.shares_submitted > 0 and self.target is not None and self.last_share_time is not None:
             time_since_last_share = time.time() - self.last_share_time
             effective_share_rate = self.worker_share_rate if self.worker_share_rate else self.share_rate
             # If we've waited 3x the expected time without a share, reduce difficulty
@@ -934,11 +936,9 @@ class StratumRPCMiningProvider(object):
                 new_diff = max(new_diff, pool_stats.get_safe_minimum_difficulty(new_diff))
                 if new_diff < current_diff:
                     self.target = dash_data.difficulty_to_target(new_diff)
-                    # Only log timeout for connections that have submitted shares
-                    # This suppresses noise from idle backup/redundant ASIC connections
-                    if self.shares_submitted > 0 and p2pool.DEBUG:
+                    if p2pool.DEBUG:
                         print 'Vardiff timeout %s: %.4f -> %.4f (no shares for %.1fs, target %.1fs)' % (
-                            self.username or self.worker_ip, current_diff, new_diff, 
+                            self.username or self.worker_ip, current_diff, new_diff,
                             time_since_last_share, effective_share_rate)
                     # Reset the timer so we don't immediately reduce again
                     self.last_share_time = time.time()
