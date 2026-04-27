@@ -656,37 +656,21 @@ class StratumRPCMiningProvider(object):
         if p2pool.DEBUG:
             print 'STRATUM: mining.authorize from %s - worker: %s' % (self.worker_ip, self.username)
         
-        # ==== ENHANCED: Parse username with extended format support ====
-        # Username formats supported:
-        #   address                      - Basic address
-        #   address+difficulty           - Address with pseudoshare difficulty
-        #   address/share_difficulty     - Address with share difficulty
-        #   address+diff/sharediff       - Both difficulties
-        #   address+diff+sN              - Difficulty + share rate N seconds
-        #   address.worker               - Address with worker name
-        #   address_worker               - Address with worker name (alt format)
-        
-        self.user = self.username
-        self.address = self.username.split('+')[0].split('/')[0].split('.')[0].split('_')[0]
-        self.desired_share_target = None
-        self.desired_pseudoshare_target = None
-        
-        # Parse extended options from username
-        parts = self.username.replace('/', '+').split('+')
-        for part in parts[1:]:
+        # Username difficulty parsing is delegated to work.py's get_user_details
+        # so stratum and the share-generation path agree on what '+N' / '/N' mean.
+        #   +N : pseudoshare difficulty -> locks stratum vardiff at diff N
+        #   /N : share difficulty hint  -> consensus-clamped at share-generation time
+        # Note: this is a behavior change from a prior stratum-local parser that
+        # treated '/N' as '+N'. '/N' no longer locks vardiff — use '+N' for that.
+        _, _, self.desired_share_target, self.desired_pseudoshare_target = self.wb.get_user_details(self.username)
+
+        # Stratum-only extension: '+sN' selects share rate (seconds per pseudoshare).
+        # Not handled by get_user_details because it has no effect on share generation.
+        for part in self.username.split('+')[1:]:
             if part.startswith('s') and part[1:].isdigit():
-                # Dynamic share rate: +s5 means 5 seconds per share
                 requested_rate = float(part[1:])
-                # Clamp to reasonable range (1-60 seconds)
                 self.worker_share_rate = clip(requested_rate, 1.0, 60.0)
                 print 'STRATUM: Worker %s requested share rate: %.1fs' % (self.username, self.worker_share_rate)
-            elif part.replace('.', '').isdigit():
-                # Difficulty specification
-                try:
-                    diff = float(part)
-                    self.desired_pseudoshare_target = dash_data.difficulty_to_target(diff)
-                except:
-                    pass
         
         reactor.callLater(0, self._send_work)
         return True
@@ -1053,11 +1037,6 @@ class StratumRPCMiningProvider(object):
         self.last_share_time = now
         current_diff = dash_data.target_to_difficulty(job_target)
         
-        # ==== Option C: Session Linkage ====
-        # Update last_share_time for ALL connections of this worker
-        # This prevents timeout vardiff on backup/redundant connections
-        pool_stats.update_worker_last_share_time(worker_name, now)
-        
         if result:
             self.shares_accepted += 1
             pool_stats.record_share(worker_name, current_diff, accepted=True)
@@ -1103,12 +1082,17 @@ class StratumRPCMiningProvider(object):
                 old_diff = dash_data.target_to_difficulty(self.target)
                 self.target = int(self.target * adjustment + 0.5)
                 
-                # Clip target to valid range for stratum vardiff
-                # SANE_TARGET_RANGE[0] = hardest (lowest target, e.g. diff 10000)
-                # For easiest, we allow much lower than SANE_TARGET_RANGE[1] to support slow miners
-                # Calculate max target for MIN_DIFFICULTY_FLOOR (0.001)
+                # Clip target to valid range for stratum vardiff.
+                # Easy bound: MIN_DIFFICULTY_FLOOR (pool flood protection).
+                # Hard bound: smaller of SANE_TARGET_RANGE[0] (parent-coin sane bound)
+                # and the current sharechain target. The sharechain bound matters for
+                # high-hashrate aggregators (>~5 TH/s/conn): when sharechain difficulty
+                # is far above the SANE cap, vardiff would otherwise plateau at the SANE
+                # cap and submit far more often than the configured share rate. Allowing
+                # vardiff to track sharechain difficulty bounds the over-submission ratio.
                 max_stratum_target = dash_data.difficulty_to_target(pool_stats.MIN_DIFFICULTY_FLOOR)
-                min_stratum_target = self.wb.net.SANE_TARGET_RANGE[0]  # Hardest allowed
+                chain_target = x.get('min_share_target', self.wb.net.SANE_TARGET_RANGE[0])
+                min_stratum_target = min(self.wb.net.SANE_TARGET_RANGE[0], chain_target)
                 newtarget = clip(self.target, min_stratum_target, max_stratum_target)
                 if newtarget != self.target:
                     self.target = newtarget
