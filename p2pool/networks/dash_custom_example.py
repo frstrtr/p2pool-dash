@@ -1,3 +1,4 @@
+# coding: utf-8
 # Example: Custom Private P2Pool Network Configuration
 # This demonstrates how to create a private pool with custom CHAIN_LENGTH
 # Copy and modify this file to create your own private network
