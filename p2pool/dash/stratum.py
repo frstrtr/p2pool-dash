@@ -555,18 +555,45 @@ class StratumRPCMiningProvider(object):
         self.wb = wb
         self.other = other
         self.transport = transport
-        
+
         self.username = None
         self.worker_ip = transport.getPeer().host if transport else None  # Track worker IP
         self.handler_map = expiring_dict.ExpiringDict(300)
-        
+
+        # Extranonce support for ASICs
+        self.extranonce_subscribe = False
+        self.extranonce1 = ""
+        self.last_extranonce_update = 0
+
+        self.recent_shares = []
+        self.target = None
+        self.share_rate = wb.share_rate  # From command-line or default (10 sec)
+        self.fixed_target = False
+        self.desired_pseudoshare_target = None
+
+        self.suggested_difficulty = None
+        self.minimum_difficulty = None
+        self.worker_share_rate = None
+
+        self.session_id = '%016x' % random.randrange(2**64)
+        self.connection_time = time.time()
+
+        self.shares_submitted = 0
+        self.shares_accepted = 0
+        self.shares_rejected = 0
+        self.last_share_time = None
+
+        # watch_id is set only if the connection is accepted
+        self.watch_id = None
+        self.conn_id = None
+
         # ==== Check if IP is banned ====
         if self.worker_ip and pool_stats.is_ip_banned(self.worker_ip):
             print 'Rejected connection from banned IP: %s' % self.worker_ip
             if transport:
                 transport.loseConnection()
             return
-        
+
         # ==== Check per-IP connection limit ====
         if self.worker_ip and not pool_stats.check_ip_connection_limit(self.worker_ip):
             print 'Rejected connection from %s: too many connections (%d)' % (
@@ -575,41 +602,11 @@ class StratumRPCMiningProvider(object):
             if transport:
                 transport.loseConnection()
             return
-        
-        # Extranonce support for ASICs
-        self.extranonce_subscribe = False
-        self.extranonce1 = ""
-        self.last_extranonce_update = 0
-        
+
+        # Connection accepted — register and subscribe to work events
         self.watch_id = self.wb.new_work_event.watch(self._send_work)
-        
-        self.recent_shares = []
-        self.target = None
-        self.share_rate = wb.share_rate  # From command-line or default (10 sec)
-        self.fixed_target = False
-        self.desired_pseudoshare_target = None
-        
-        # ==== NEW: Enhanced difficulty management ====
-        # Suggested difficulty from miner (mining.suggest_difficulty)
-        self.suggested_difficulty = None
-        # Minimum difficulty floor from BIP310 minimum-difficulty extension
-        self.minimum_difficulty = None
-        # Dynamic share rate (can be overridden per-worker)
-        self.worker_share_rate = None
-        
-        # ==== NEW: Session management ====
-        self.session_id = '%016x' % random.randrange(2**64)
-        self.connection_time = time.time()
-        
-        # ==== NEW: Connection tracking ====
         self.conn_id = id(self)
         pool_stats.register_connection(self.conn_id, self, self.worker_ip)
-        
-        # ==== NEW: Per-connection statistics ====
-        self.shares_submitted = 0
-        self.shares_accepted = 0
-        self.shares_rejected = 0
-        self.last_share_time = None
     
     def rpc_subscribe(self, miner_version=None, session_id=None, *args):
         """
@@ -1215,12 +1212,12 @@ class StratumRPCMiningProvider(object):
         - Store session for potential resumption
         - Update pool statistics
         """
-        # Only unwatch if watch_id was set (connection may have been rejected early)
-        if hasattr(self, 'watch_id') and self.watch_id is not None:
+        # Only unwatch if connection was accepted (watch_id is None for rejected connections)
+        if self.watch_id is not None:
             self.wb.new_work_event.unwatch(self.watch_id)
         
-        # Store session for potential resumption (only if session was established)
-        if hasattr(self, 'session_id') and self.session_id:
+        # Store session for potential resumption (only if connection was accepted)
+        if self.conn_id is not None and self.session_id:
             pool_stats.store_session(self.session_id, {
                 'target': getattr(self, 'target', None),
                 'suggested_difficulty': getattr(self, 'suggested_difficulty', None),
@@ -1231,7 +1228,8 @@ class StratumRPCMiningProvider(object):
             })
         
         # Unregister connection (with IP for per-IP tracking)
-        pool_stats.unregister_connection(self.conn_id, self.worker_ip)
+        if self.conn_id is not None:
+            pool_stats.unregister_connection(self.conn_id, self.worker_ip)
         
         # Log disconnect with statistics
         session_duration = time.time() - self.connection_time
