@@ -121,25 +121,42 @@ Password: anything
 
 ### Advanced Username Options
 
-You can append difficulty modifiers to your Dash address:
+You can append modifiers to your Dash address. They are parsed by `work.py:get_user_details` and apply to both the stratum and getwork paths.
 
-**Pseudoshare difficulty** (for vardiff tuning):
+**Pseudoshare difficulty `+N`** — locks stratum vardiff at diff N (disables auto-tuning for this connection):
 ```
 YOUR_ADDRESS+DIFFICULTY
 Example: XdgF55wEHBRWwbuBniNYH4GvvaoYMgL84u+4096
 ```
 
-**Actual share difficulty** (fixed minimum):
+**Share difficulty hint `/N`** — passed to share-generation as `desired_target`. The share class consensus-clamps it to the per-share band relative to chain history (`[pre_target3//30, pre_target3]` in [`p2pool/data.py`](p2pool/data.py)), so values outside the band are silently overridden — typically a no-op when sharechain difficulty is well above N. Does **not** lock stratum vardiff:
 ```
 YOUR_ADDRESS/DIFFICULTY
 Example: XdgF55wEHBRWwbuBniNYH4GvvaoYMgL84u/65536
 ```
+
+**Share rate `+sN`** (stratum-only) — selects target seconds per pseudoshare for vardiff tuning, clamped to [1, 60]. Overrides the pool default (`--share-rate`):
+```
+YOUR_ADDRESS+sN
+Example: XdgF55wEHBRWwbuBniNYH4GvvaoYMgL84u+s30
+```
+
+**Combined**: `YOUR_ADDRESS+4096+s15` locks vardiff at diff 4096 and asks for ~15 s per pseudoshare.
 
 **Worker names** (for monitoring):
 ```
 YOUR_ADDRESS.worker_name
 Example: XdgF55wEHBRWwbuBniNYH4GvvaoYMgL84u.antminer1
 ```
+
+### Stratum vardiff bounds
+
+Pool-side vardiff is bounded to protect both the pool and the miner:
+
+- **Floor**: `MIN_DIFFICULTY_FLOOR = 64` (in [`p2pool/dash/stratum.py`](p2pool/dash/stratum.py)) — hardest minimum the pool will offer. Prevents a misbehaving or low-end miner from being driven to a near-zero target and flooding the node with tens of thousands of submissions per second.
+- **Ceiling**: `min(SANE_TARGET_RANGE[0], current_chain_target)`. The chain-target term lets vardiff track the sharechain when its difficulty exceeds the static parent-coin sane bound (diff 10K for Dash). For single Dash X11 ASICs (D3 / D5 / D7 / D9 / iBeLink BM-N3) at default share rate, this ceiling does not engage — vardiff settles below it. It only matters for stratum proxies that aggregate multiple miners into one connection (>~5 TH/s/conn), where it bounds the over-submission ratio.
+
+Backup connections that have never submitted a share are exempt from timeout-based vardiff reduction, so they do not drift toward the floor while standing by.
 
 ## Configuration Modes
 
@@ -195,6 +212,14 @@ All issues and solutions are documented in **[INSTALL.md](INSTALL.md)**, includi
 **See [INSTALL.md](INSTALL.md) for complete troubleshooting guide.**
 
 ## Recent Updates
+
+### Stratum Vardiff & Username Parsing (April 2026)
+- ✅ **Vardiff floor raised to diff 64** ([d1b67299](https://github.com/frstrtr/p2pool-dash/commit/d1b67299)) — protects pool from share-flood when a connection is driven near the absolute minimum
+- ✅ **Idle-conn timeout vardiff gated on `shares_submitted > 0`** ([d1b67299](https://github.com/frstrtr/p2pool-dash/commit/d1b67299)) — backup/standby connections no longer drift to the floor while waiting; failover no longer triggers a flood
+- ✅ **Init-order fix for `StratumRPCMiningProvider`** ([0dc22a8c](https://github.com/frstrtr/p2pool-dash/commit/0dc22a8c)) — early-return rejection paths (banned IP / connection flood) no longer raise `AttributeError: conn_id`
+- ✅ **Username parser unified** ([69e1a972](https://github.com/frstrtr/p2pool-dash/commit/69e1a972)) — stratum delegates `+N` / `/N` parsing to `work.py:get_user_details`. Behavior change: `/N` no longer locks vardiff (use `+N` for that); `/N` is now a share-target hint that data.py consensus-clamps
+- ✅ **Removed redundant session-linkage call** ([69e1a972](https://github.com/frstrtr/p2pool-dash/commit/69e1a972)) — vardiff now decays per-connection honestly when an active conn goes silent, with `MIN_DIFFICULTY_FLOOR=64` as the worst-case bound
+- ✅ **Dynamic vardiff cap** ([69e1a972](https://github.com/frstrtr/p2pool-dash/commit/69e1a972)) — stratum cap = `min(SANE_TARGET_RANGE[0], current_chain_target)`, allowing vardiff on high-hashrate aggregators to track sharechain difficulty instead of plateauing at the static SANE cap and over-submitting
 
 ### v23.0+ Critical Fixes
 - ✅ Missing type classes in pack.py (ComposedWithContextualOptionalsType, ContextualOptionalType, BoolType)
