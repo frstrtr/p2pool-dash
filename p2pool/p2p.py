@@ -17,6 +17,17 @@ class PeerMisbehavingError(Exception):
     pass
 
 
+def is_loopback(host):
+    # Co-located / loopback peers (mixed-fleet, NAT'd deployments where c2pool and
+    # p2pool-dash reconnect over 127.0.0.1) must never be banned or rate-limited: a
+    # stale ban entry poisons ServerFactory.buildProtocol and silently RSTs every
+    # subsequent loopback re-accept. Matches the deliberate "never ban localhost"
+    # policy already applied in Protocol.badPeerHappened. See issue #757.
+    if host is None:
+        return False
+    return host == '::1' or host == '127.0.0.1' or host.startswith('127.')
+
+
 def fragment(f, **kwargs):
     try:
         f(**kwargs)
@@ -159,7 +170,18 @@ class Protocol(p2protocol.Protocol):
             # Rate-limit: allow occasional self-connects, but ban if too frequent
             peer_ip = self.transport.getPeer().host
             now = time.time()
-            
+
+            # Co-located / loopback self-connections are expected in mixed-fleet and
+            # NAT'd deployments (a node reaching its own advertised 127.0.0.1). Drop
+            # the loop, but never rate-limit or ban loopback — doing so poisons
+            # self.node.bans['127.0.0.1'] and RSTs every fresh loopback reconnect
+            # after connection churn (issue #757).
+            if is_loopback(peer_ip):
+                if p2pool.DEBUG:
+                    print 'Detected loopback self-connection, disconnecting from %s:%i (no ban)' % self.addr
+                self.disconnect()
+                return
+
             # Clean up old attempts (older than 10 minutes)
             if peer_ip in self.node.self_nonce_attempts:
                 count, first_time = self.node.self_nonce_attempts[peer_ip]
@@ -535,7 +557,7 @@ class ServerFactory(protocol.ServerFactory):
     def buildProtocol(self, addr):
         if sum(self.conns.itervalues()) >= self.max_conns or self.conns.get(self._host_to_ident(addr.host), 0) >= 3:
             return None
-        if addr.host in self.node.bans and self.node.bans[addr.host] > time.time():
+        if not is_loopback(addr.host) and addr.host in self.node.bans and self.node.bans[addr.host] > time.time():
             return None
         p = Protocol(self.node, True)
         p.factory = self
@@ -613,8 +635,12 @@ class ClientFactory(protocol.ClientFactory):
         host = connector.getDestination().host
         self.attempts.remove(self._host_to_ident(host))
         
-        # Temporarily ban hosts that fail to connect (60 second cooldown)
-        if host not in self.node.bans or self.node.bans[host] < time.time():
+        # Temporarily ban hosts that fail to connect (60 second cooldown).
+        # Never ban loopback: a co-located peer that is momentarily down during
+        # churn (restart) would otherwise get 127.0.0.1 banned, and every fresh
+        # incoming loopback reconnect is then silently RST'd in buildProtocol
+        # until the ban expires (issue #757).
+        if not is_loopback(host) and (host not in self.node.bans or self.node.bans[host] < time.time()):
             self.node.bans[host] = time.time() + 60
             if p2pool.DEBUG:
                 print 'Connection to %s failed, temporary ban for 60s: %s' % (host, reason.getErrorMessage())
