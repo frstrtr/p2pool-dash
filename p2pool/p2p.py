@@ -10,6 +10,7 @@ from twisted.python import failure, log
 
 import p2pool
 from p2pool import data as p2pool_data
+from p2pool import oracle_gate
 from p2pool.dash import data as dash_data
 from p2pool.util import deferral, p2protocol, pack, variable
 
@@ -93,13 +94,24 @@ class Protocol(p2protocol.Protocol):
             p2protocol.Protocol.packetReceived(self, command, payload2)
         except PeerMisbehavingError, e:
             print 'Peer %s:%i misbehaving, will drop and ban. Reason:' % self.addr, e.message
-            self.badPeerHappened()
+            self.badPeerHappened(reason='%s (command=%s)' % (e.message, command))
     
-    def badPeerHappened(self):
+    def badPeerHappened(self, reason=None):
+        # Oracle-gate: for allowlisted (or globally exempt) peers, do NOT ban or
+        # drop the connection on a bad/unrecognized share or protocol quirk.
+        # The offending share is still kept out of the chain by the caller; we
+        # only keep the CONNECTION alive so the peer can keep iterating.
+        host = self.transport.getPeer().host
+        if oracle_gate.noban(host):
+            oracle_gate.log('NOBAN',
+                addr='%s:%i' % self.addr,
+                reason=reason if reason is not None else 'unspecified',
+                action='connection-kept-alive')
+            return
         print "Bad peer banned:", self.addr
         self.disconnect()
-        if self.transport.getPeer().host != '127.0.0.1': # never ban localhost
-            self.node.bans[self.transport.getPeer().host] = time.time() + 60*60
+        if host != '127.0.0.1': # never ban localhost
+            self.node.bans[host] = time.time() + 60*60
     
     def _timeout(self):
         self.timeout_delayed = None
@@ -203,7 +215,19 @@ class Protocol(p2protocol.Protocol):
         self.dataReceived = new_dataReceived
         
         self.factory.proto_connected(self)
-        
+
+        # Oracle-gate: record the peer handshake for the live-peer / miner map.
+        # Payout/miner addresses this peer represents are not carried in the
+        # handshake; they are derived from the shares it sends (see SHARE_RECV,
+        # field payout_script). best_share_hash is the peer's advertised tip.
+        oracle_gate.log('PEER_HANDSHAKE',
+            addr='%s:%i' % self.addr,
+            incoming=self.incoming,
+            protocol_version=version,
+            sub_version=self.other_sub_version,
+            services=services,
+            best_share_hash=('%064x' % best_share_hash) if best_share_hash is not None else 'none')
+
         self._stop_thread = deferral.run_repeatedly(lambda: [
             self.send_ping(),
         random.expovariate(1/100)][-1])
@@ -331,10 +355,36 @@ class Protocol(p2protocol.Protocol):
     def handle_shares(self, shares):
         result = []
         for wrappedshare in shares:
+            # Oracle-gate: capture the raw serialized share BEFORE any decode so
+            # the corpus survives decode/PoW-check failures (KAT vector source).
+            if oracle_gate.is_enabled():
+                try:
+                    oracle_gate.log('SHARE_RAW',
+                        addr='%s:%i' % self.addr,
+                        share_version=wrappedshare['type'],
+                        raw=oracle_gate.hexify(p2pool_data.share_type.pack(wrappedshare)))
+                except Exception:
+                    pass
             if wrappedshare['type'] < p2pool_data.Share.VERSION: continue
             share = p2pool_data.load_share(wrappedshare, self.node.net, self.addr)
+            # Oracle-gate: decoded share fields -> live share corpus + miner map.
+            if oracle_gate.is_enabled():
+                try:
+                    oracle_gate.log('SHARE_RECV',
+                        addr='%s:%i' % self.addr,
+                        share_hash='%064x' % share.hash,
+                        share_version=share.VERSION,
+                        previous_hash=('%064x' % share.previous_hash) if share.previous_hash is not None else 'none',
+                        gentx_txid='%064x' % share.gentx_hash,
+                        payout_script=oracle_gate.hexify(share.new_script),
+                        payout_pubkey_hash='%040x' % share.share_data['pubkey_hash'],
+                        donation=share.share_data['donation'],
+                        new_tx_count=len(share.new_transaction_hashes))
+                except Exception:
+                    pass
             if wrappedshare['type'] >= 13:
                 txs = []
+                skip_share = False  # oracle-gate: set when an exempt peer sent an unresolved tx
                 for tx_hash in share.share_info['new_transaction_hashes']:
                     if tx_hash in self.node.known_txs_var.value:
                         tx = self.node.known_txs_var.value[tx_hash]
@@ -346,15 +396,26 @@ class Protocol(p2protocol.Protocol):
                                     print 'Transaction %064x rescued from peer latency cache!' % (tx_hash,)
                                 break
                         else:
+                            # Oracle-gate: keep exempt peers connected instead of
+                            # dropping them; just skip this one unresolved share.
+                            if oracle_gate.noban(self.transport.getPeer().host):
+                                oracle_gate.log('NOBAN',
+                                    addr='%s:%i' % self.addr,
+                                    reason='referenced unknown transaction %064x' % (tx_hash,),
+                                    action='share-skipped-connection-kept-alive')
+                                skip_share = True
+                                break
                             print >>sys.stderr, 'Peer referenced unknown transaction %064x, disconnecting' % (tx_hash,)
                             self.disconnect()
                             return
                     txs.append(tx)
+                if skip_share:
+                    continue  # don't accept the share, but keep the connection
             else:
                 txs = None
-            
+
             result.append((share, txs))
-            
+
         self.node.handle_shares(result, self)
     
     def sendShares(self, shares, tracker, known_txs, include_txs_with=[]):

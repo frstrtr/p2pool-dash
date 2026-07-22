@@ -9,6 +9,7 @@ import time
 from twisted.python import log
 
 import p2pool
+from p2pool import oracle_gate
 from p2pool.dash import data as dash_data, script, sha256
 from p2pool.util import math, forest, pack
 
@@ -399,13 +400,48 @@ class Share(object):
         share_info, gentx, other_tx_hashes2, get_share = self.generate_transaction(tracker, self.share_info['share_data'], self.header['bits'].target, self.share_info['timestamp'], self.share_info['bits'].target, self.contents['ref_merkle_link'], [(h, None) for h in other_tx_hashes], self.net, last_txout_nonce=self.contents['last_txout_nonce'])
         assert other_tx_hashes2 == other_tx_hashes
         if share_info != self.share_info:
+            # Oracle-gate: expected (what WE computed) vs received (what the peer
+            # sent) so we can see the exact field/byte gap c2pool must close.
+            if oracle_gate.is_enabled():
+                try:
+                    oracle_gate.log('VERIFY_DIFF',
+                        share_hash='%064x' % self.hash,
+                        peer=('%s:%i' % self.peer_addr) if self.peer_addr else 'none',
+                        check='share_info',
+                        expected=oracle_gate.hexify(self.share_info_type.pack(share_info)),
+                        received=oracle_gate.hexify(self.share_info_type.pack(self.share_info)))
+                except Exception:
+                    pass
             raise ValueError('share_info invalid')
-        if dash_data.hash256(dash_data.tx_type.pack(gentx)) != self.gentx_hash:
+        expected_gentx_txid = dash_data.hash256(dash_data.tx_type.pack(gentx))
+        if expected_gentx_txid != self.gentx_hash:
+            if oracle_gate.is_enabled():
+                try:
+                    oracle_gate.log('VERIFY_DIFF',
+                        share_hash='%064x' % self.hash,
+                        peer=('%s:%i' % self.peer_addr) if self.peer_addr else 'none',
+                        check='gentx',
+                        expected_gentx_txid='%064x' % expected_gentx_txid,
+                        received_gentx_txid='%064x' % self.gentx_hash,
+                        expected_gentx_bytes=oracle_gate.hexify(dash_data.tx_type.pack(gentx)))
+                except Exception:
+                    pass
             raise ValueError('''gentx doesn't match hash_link''')
-        
-        if dash_data.calculate_merkle_link([None] + other_tx_hashes, 0) != self.merkle_link:
+
+        expected_merkle_link = dash_data.calculate_merkle_link([None] + other_tx_hashes, 0)
+        if expected_merkle_link != self.merkle_link:
+            if oracle_gate.is_enabled():
+                try:
+                    oracle_gate.log('VERIFY_DIFF',
+                        share_hash='%064x' % self.hash,
+                        peer=('%s:%i' % self.peer_addr) if self.peer_addr else 'none',
+                        check='merkle_link',
+                        expected=repr(expected_merkle_link),
+                        received=repr(self.merkle_link))
+                except Exception:
+                    pass
             raise ValueError('merkle_link and other_tx_hashes do not match')
-        
+
         return gentx # only used by as_block
     
     def get_other_tx_hashes(self, tracker):
@@ -512,6 +548,13 @@ class OkayTracker(forest.Tracker):
             share.check(self)
         except ValueError as e:
             error_msg = str(e)
+            # Oracle-gate: record which verification check failed. The exact
+            # expected-vs-received byte diff is emitted from Share.check().
+            if oracle_gate.is_enabled():
+                oracle_gate.log('VERIFY_FAIL',
+                    share_hash='%064x' % share.hash,
+                    peer=('%s:%i' % share.peer_addr) if share.peer_addr else 'none',
+                    reason=error_msg)
             # Suppress full traceback for expected protocol incompatibility errors
             if 'gentx doesn\'t match' in error_msg or 'Invalid payee' in error_msg:
                 # This is likely an old protocol share - log briefly without full traceback
@@ -521,9 +564,18 @@ class OkayTracker(forest.Tracker):
                 log.err(None, 'Share check failed: %064x -> %064x: %s' % (share.hash, share.previous_hash if share.previous_hash is not None else 0, error_msg))
             return False
         except:
+            if oracle_gate.is_enabled():
+                oracle_gate.log('VERIFY_FAIL',
+                    share_hash='%064x' % share.hash,
+                    peer=('%s:%i' % share.peer_addr) if share.peer_addr else 'none',
+                    reason='non-ValueError exception (see stderr traceback)')
             log.err(None, 'Share check failed: %064x -> %064x' % (share.hash, share.previous_hash if share.previous_hash is not None else 0))
             return False
         else:
+            if oracle_gate.is_enabled():
+                oracle_gate.log('VERIFY_PASS',
+                    share_hash='%064x' % share.hash,
+                    peer=('%s:%i' % share.peer_addr) if share.peer_addr else 'none')
             self.verified.add(share)
             return True
     

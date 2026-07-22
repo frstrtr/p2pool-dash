@@ -25,6 +25,7 @@ from util import fixargparse, jsonrpc, variable, deferral, math, logging, switch
 from util.telegram import TelegramNotifier
 from . import networks, web, work
 import p2pool, p2pool.data as p2pool_data, p2pool.node as p2pool_node
+from p2pool import oracle_gate
 
 class keypool():
     keys = []
@@ -78,7 +79,17 @@ def main(args, net, datadir_path, merged_urls, worker_endpoint, telegram_notifie
     try:
         print 'p2pool (version %s)' % (p2pool.__version__,)
         print
-        
+
+        if oracle_gate.is_enabled():
+            print '*** ORACLE-GATE INSTRUMENTATION ACTIVE ***'
+            print '    log file: %s' % (oracle_gate._LOG_PATH,)
+            print '    no-ban:   %s' % ('ALL peers' if oracle_gate._NOBAN_ALL else ', '.join(sorted(oracle_gate._NOBAN_IPS)) or 'none')
+            print
+            oracle_gate.log('STARTUP',
+                version=p2pool.__version__,
+                noban_all=oracle_gate._NOBAN_ALL,
+                noban_ips=','.join(sorted(oracle_gate._NOBAN_IPS)) or 'none')
+
         @defer.inlineCallbacks
         def connect_p2p():
             # connect to dashd over dash-p2p
