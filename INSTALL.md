@@ -144,7 +144,7 @@ pypy -m pip install pyOpenSSL
 ### 1. Clone P2Pool-Dash Repository
 ```bash
 cd ~
-git clone https://github.com/dashpay/p2pool-dash.git
+git clone https://github.com/frstrtr/p2pool-dash.git
 cd p2pool-dash
 ```
 
@@ -539,7 +539,7 @@ sudo ufw enable
 
 ## Getting Help
 
-- **GitHub Issues**: https://github.com/dashpay/p2pool-dash/issues
+- **GitHub Issues**: https://github.com/frstrtr/p2pool-dash/issues
 - **Dash Forum**: https://www.dash.org/forum/
 - **Discord**: https://discord.gg/dash
 
