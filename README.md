@@ -24,8 +24,8 @@ Decentralized pool mining software for Dash cryptocurrency (X11).
 
 > **[frstrtr/p2pool-merged-v36](https://github.com/frstrtr/p2pool-merged-v36)** — V36 share format with AuxPoW merged mining for Litecoin + Dogecoin. Running on mainnet. [First merged-mined DOGE block found on 2026-03-23](https://blockchair.com/dogecoin/block/f84500c25a4cce2a08887f29763726bd5ecec7b66fed65a88b181fb0b0ab2383). Latest release: [v0.14.2](https://github.com/frstrtr/p2pool-merged-v36/releases/tag/v0.14.2-hotfix).
 
-> **🔧 c2pool — next generation p2pool in C++**
-> [c2pool](https://github.com/frstrtr/c2pool) is a ground-up C++ reimplementation of p2pool for Litecoin with embedded DOGE merged mining. No coin daemon needed — built-in SPV syncs via P2P. Cross-platform (Linux/Windows/macOS). While p2pool-dash serves the Dash/X11 community, c2pool brings the same decentralized mining philosophy to Scrypt miners with a modern C++ codebase. [Download v0.1.1-alpha →](https://github.com/frstrtr/c2pool/releases/tag/v0.1.1-alpha)
+> **c2pool - a C++ p2pool that needs no coin daemon**
+> [c2pool](https://github.com/frstrtr/c2pool) is a rewrite of p2pool in C++. It runs as one program with no separate daemon beside it: a built-in SPV node re-implements the coin's consensus rules, builds its own block templates, and follows the chain over P2P. It is cross-platform (Linux, Windows, macOS) and already runs Litecoin with DOGE merged mining. It also re-implements Dash consensus and runs a Dash node with no separate dashd, so it is the successor to this Python fork rather than a patch on it. The coinbase payout is unchanged, so no operator holds anyone else's coins. Finishing the Dash node is up for a treasury proposal: [dashcentral.org/p/c2pool-daemonless-finalize](https://www.dashcentral.org/p/c2pool-daemonless-finalize). Repo: [frstrtr/c2pool](https://github.com/frstrtr/c2pool).
 
 ## 📋 Documentation
 
