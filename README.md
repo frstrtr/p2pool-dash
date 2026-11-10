@@ -1,5 +1,7 @@
 # P2Pool-Dash
 
+> **⚠ Unsupported — migrate to c2pool.** This Python implementation is no longer maintained. All updates, including Dash Core v24 hard-fork support and security fixes, are published only in [c2pool](https://github.com/frstrtr/c2pool) (`c2pool-dash`, [v0.2.11.1](https://github.com/frstrtr/c2pool/releases/tag/v0.2.11.1)). Only c2pool is updated. See [#4](https://github.com/frstrtr/p2pool-dash/issues/4).
+
 [![Release](https://img.shields.io/github/v/tag/frstrtr/p2pool-dash?label=release&sort=semver)](https://github.com/frstrtr/p2pool-dash/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](COPYING)
 
